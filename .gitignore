@@ -1,0 +1,35 @@
+# Dependencies
+node_modules/
+package-lock.json
+
+# Build outputs
+dist/
+build/
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local environment
+.env
+.env.local
+
+# Android
+android/.gradle/
+android/build/
+android/local.properties
+android/.idea/
+*.iml
+*.apk
+*.aab
+
+# webOS
+webos/.ares/
