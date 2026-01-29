@@ -281,6 +281,81 @@ ${mediaJS}
         }
         break;
 
+      case 'pdf':
+        const pdfSrc = `${window.location.origin}/player/cache/media/${media.options.uri}`;
+        const pdfContainerId = `pdf_${regionId}_${media.id}`;
+        startFn = `async () => {
+        const container = document.createElement('div');
+        container.className = 'media pdf-container';
+        container.id = '${pdfContainerId}';
+        container.style.width = '100%';
+        container.style.height = '100%';
+        container.style.overflow = 'hidden';
+        container.style.backgroundColor = '#525659';
+
+        const region = document.getElementById('region_${regionId}');
+        region.innerHTML = '';
+        region.appendChild(container);
+
+        // Load PDF.js if not already loaded
+        if (typeof pdfjsLib === 'undefined') {
+          try {
+            const pdfjsModule = await import('pdfjs-dist');
+            window.pdfjsLib = pdfjsModule;
+            pdfjsLib.GlobalWorkerOptions.workerSrc = '${window.location.origin}/player/pdf.worker.min.mjs';
+          } catch (error) {
+            console.error('[PDF] Failed to load PDF.js:', error);
+            container.innerHTML = '<div style="color:white;padding:20px;text-align:center;">PDF viewer unavailable</div>';
+            return;
+          }
+        }
+
+        // Render PDF
+        try {
+          const loadingTask = pdfjsLib.getDocument('${pdfSrc}');
+          const pdf = await loadingTask.promise;
+          const page = await pdf.getPage(1);
+
+          const containerWidth = container.offsetWidth || ${width};
+          const containerHeight = container.offsetHeight || ${height};
+          const viewport = page.getViewport({ scale: 1 });
+
+          // Calculate scale to fit page within container
+          const scaleX = containerWidth / viewport.width;
+          const scaleY = containerHeight / viewport.height;
+          const scale = Math.min(scaleX, scaleY);
+
+          const scaledViewport = page.getViewport({ scale });
+
+          const canvas = document.createElement('canvas');
+          const context = canvas.getContext('2d');
+          canvas.width = scaledViewport.width;
+          canvas.height = scaledViewport.height;
+
+          // Center canvas in container
+          canvas.style.display = 'block';
+          canvas.style.margin = 'auto';
+          canvas.style.marginTop = Math.max(0, (containerHeight - scaledViewport.height) / 2) + 'px';
+
+          container.appendChild(canvas);
+
+          await page.render({
+            canvasContext: context,
+            viewport: scaledViewport
+          }).promise;
+
+          console.log('[PDF] Rendered:', '${pdfSrc}');
+        } catch (error) {
+          console.error('[PDF] Render failed:', error);
+          container.innerHTML = '<div style="color:white;padding:20px;text-align:center;">Failed to load PDF</div>';
+        }
+      }`;
+        stopFn = `() => {
+        const container = document.getElementById('${pdfContainerId}');
+        if (container) container.remove();
+      }`;
+        break;
+
       case 'webpage':
         const url = media.options.uri;
         startFn = `() => {
