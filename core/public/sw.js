@@ -5,12 +5,12 @@
 const CACHE_VERSION = 'v1';
 const STATIC_CACHE = `xibo-static-${CACHE_VERSION}`;
 
-// Files to cache on install
+// Files to cache on install (with /player/ prefix)
 const STATIC_FILES = [
-  '/',
-  '/index.html',
-  '/setup.html',
-  '/manifest.json'
+  '/player/',
+  '/player/index.html',
+  '/player/setup.html',
+  '/player/manifest.json'
 ];
 
 // Install event - cache static files
