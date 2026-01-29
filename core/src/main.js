@@ -7,11 +7,13 @@ import { XmdsClient } from './xmds.js';
 import { cacheManager } from './cache.js';
 import { scheduleManager } from './schedule.js';
 import { LayoutTranslator } from './layout.js';
+import { XmrWrapper } from './xmr-wrapper.js';
 
 class Player {
   constructor() {
     this.xmds = new XmdsClient(config);
     this.layoutTranslator = new LayoutTranslator(this.xmds);
+    this.xmr = null; // XMR real-time messaging
     this.settings = null;
     this.collectInterval = 900000; // 15 minutes default
     this.scheduleCheckInterval = 60000; // 1 minute
@@ -67,6 +69,11 @@ class Player {
           this.collectInterval = parseInt(this.settings.collectInterval) * 1000;
         }
         console.log('[Player] Settings updated:', this.settings);
+
+        // Initialize XMR if available and not already connected
+        if (!this.xmr && this.settings.xmrNetAddress) {
+          await this.initializeXmr();
+        }
       }
 
       // 2. Get required files
@@ -218,6 +225,91 @@ class Player {
       }
       document.body.appendChild(newScript); // Append to body, not container
     });
+  }
+
+  /**
+   * Initialize XMR real-time messaging
+   */
+  async initializeXmr() {
+    try {
+      // Construct XMR WebSocket URL
+      let xmrUrl = this.settings.xmrNetAddress;
+
+      // If xmrNetAddress is not a full WebSocket URL, construct it from CMS address
+      if (!xmrUrl || (!xmrUrl.startsWith('ws://') && !xmrUrl.startsWith('wss://'))) {
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const cmsBase = config.cmsAddress || window.location.origin;
+        const cmsHost = cmsBase.replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+        xmrUrl = `${protocol}//${cmsHost}/xmr`;
+      }
+
+      console.log('[Player] Initializing XMR with URL:', xmrUrl);
+
+      // Create and start XMR wrapper
+      this.xmr = new XmrWrapper(config, this);
+      const success = await this.xmr.start(xmrUrl, config.cmsKey);
+
+      if (success) {
+        console.log('[Player] XMR real-time messaging enabled');
+      } else {
+        console.log('[Player] Continuing without XMR (polling mode only)');
+      }
+    } catch (error) {
+      console.warn('[Player] XMR initialization failed:', error);
+      console.log('[Player] Continuing in polling mode (XMDS only)');
+    }
+  }
+
+  /**
+   * Update player status (called by XMR wrapper)
+   */
+  updateStatus(status) {
+    console.log('[Player] Status:', status);
+    // Could update UI status indicator here
+    const statusEl = document.getElementById('xmr-status');
+    if (statusEl) {
+      statusEl.textContent = status;
+      statusEl.className = status.includes('connected') ? 'status-connected' : 'status-disconnected';
+    }
+  }
+
+  /**
+   * Capture screenshot (called by XMR when CMS requests it)
+   */
+  async captureScreenshot() {
+    try {
+      console.log('[Player] Capturing screenshot...');
+
+      // Use html2canvas or native screenshot API if available
+      // For now, just log that we received the command
+      console.log('[Player] Screenshot capture not yet implemented');
+
+      // TODO: Implement screenshot capture
+      // 1. Use html2canvas to capture current layout
+      // 2. Convert to blob
+      // 3. Upload to CMS via SubmitScreenShot XMDS call
+
+      return true;
+    } catch (error) {
+      console.error('[Player] Screenshot capture failed:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Change layout immediately (called by XMR)
+   */
+  async changeLayout(layoutId) {
+    console.log('[Player] Changing to layout:', layoutId);
+    try {
+      // Find layout file by ID
+      const layoutFile = `${layoutId}.xlf`;
+      await this.showLayout(layoutFile);
+      return true;
+    } catch (error) {
+      console.error('[Player] Change layout failed:', error);
+      return false;
+    }
   }
 
   /**
