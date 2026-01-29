@@ -161,25 +161,62 @@ export class CacheManager {
     let fileSize;
 
     if (isLargeFile) {
-      // Large file: Stream directly to cache without MD5 verification
-      // MD5 verification for multi-GB files would load entire file into memory
-      console.log(`[Cache] Large file detected (${(contentLength / 1024 / 1024).toFixed(1)} MB), skipping MD5 verification`);
+      // Large file: Stream with progress tracking
+      console.log(`[Cache] Large file detected (${(contentLength / 1024 / 1024).toFixed(1)} MB), streaming with progress`);
 
-      // Cache the response directly (streaming)
-      await this.cache.put(cacheKey, response.clone());
+      // Notify UI about download start
+      this.notifyDownloadProgress(filename, 0, contentLength);
+
+      // Create a new response by reading the stream with progress tracking
+      const reader = response.body.getReader();
+      const chunks = [];
+      let receivedLength = 0;
+      let lastProgressUpdate = 0;
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        chunks.push(value);
+        receivedLength += value.length;
+
+        // Update progress every 5% or 10MB to avoid UI spam
+        const now = Date.now();
+        if (now - lastProgressUpdate > 500) { // Update max every 500ms
+          this.notifyDownloadProgress(filename, receivedLength, contentLength);
+          lastProgressUpdate = now;
+        }
+      }
+
+      // Combine chunks into blob
+      const blob = new Blob(chunks);
+
+      // Cache the blob
+      await this.cache.put(cacheKey, new Response(blob, {
+        headers: {
+          'Content-Type': response.headers.get('Content-Type') || 'application/octet-stream',
+          'Content-Length': blob.size
+        }
+      }));
+
+      // Notify completion
+      this.notifyDownloadProgress(filename, receivedLength, contentLength, true);
 
       calculatedMd5 = md5 || 'skipped'; // Use provided MD5 or mark as skipped
-      fileSize = contentLength;
+      fileSize = receivedLength;
 
       console.log(`[Cache] Cached ${type}/${id} (${fileSize} bytes, MD5 check skipped for large file)`);
     } else {
       // Small file: Download fully and verify MD5
+      this.notifyDownloadProgress(filename, 0, contentLength);
+
       const blob = await response.blob();
       const arrayBuffer = await blob.arrayBuffer();
 
       // Verify MD5
       calculatedMd5 = SparkMD5.ArrayBuffer.hash(arrayBuffer);
       if (md5 && calculatedMd5 !== md5) {
+        this.notifyDownloadProgress(filename, 0, contentLength, false, true); // Error
         throw new Error(`MD5 mismatch for ${id}: expected ${md5}, got ${calculatedMd5}`);
       }
 
@@ -192,6 +229,7 @@ export class CacheManager {
       }));
 
       fileSize = blob.size;
+      this.notifyDownloadProgress(filename, fileSize, contentLength, true);
       console.log(`[Cache] Cached ${type}/${id} (${fileSize} bytes, MD5: ${calculatedMd5})`);
     }
 
@@ -285,6 +323,23 @@ export class CacheManager {
     console.log(`[Cache] Stored widget HTML at ${cacheKey} (${modifiedHtml.length} bytes)`);
 
     return cacheKey;
+  }
+
+  /**
+   * Notify UI about download progress
+   */
+  notifyDownloadProgress(filename, loaded, total, complete = false, error = false) {
+    const event = new CustomEvent('download-progress', {
+      detail: {
+        filename,
+        loaded,
+        total,
+        percent: total > 0 ? (loaded / total) * 100 : 0,
+        complete,
+        error
+      }
+    });
+    window.dispatchEvent(event);
   }
 
   /**
