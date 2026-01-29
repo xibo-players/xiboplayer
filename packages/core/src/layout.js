@@ -73,16 +73,25 @@ export class LayoutTranslator {
     const options = {};
 
     // Check if this media is a streaming file (large video not fully cached)
-    if (type === 'video' && id && cacheManager) {
-      console.log(`[Layout] Checking if video media ${id} is streaming file...`);
-      const fileMetadata = await cacheManager.getFile(id);
-      console.log(`[Layout] File metadata for ${id}:`, fileMetadata);
+    // Note: Must check AFTER options are populated (need options.uri)
+    if (type === 'video' && options.uri && cacheManager) {
+      // Look up by filename, not media ID (IDs don't match between XLF and RequiredFiles)
+      const filename = options.uri; // e.g., "2.mp4"
+      console.log(`[Layout] Checking if video ${filename} (media ${id}) is streaming file...`);
 
-      if (fileMetadata && fileMetadata.isStreaming && fileMetadata.downloadUrl) {
-        options.streamingUrl = fileMetadata.downloadUrl;
-        console.log(`[Layout] ✓ Media ${id} will stream from server:`, fileMetadata.downloadUrl);
+      // Get all files and find by matching path/filename
+      const allFiles = await cacheManager.getAllFiles();
+      const streamingFile = allFiles.find(f =>
+        f.isStreaming && (f.path?.includes(filename) || f.downloadUrl?.includes(filename))
+      );
+
+      console.log(`[Layout] Streaming file search for ${filename}:`, streamingFile ? 'FOUND' : 'not found');
+
+      if (streamingFile && streamingFile.downloadUrl) {
+        options.streamingUrl = streamingFile.downloadUrl;
+        console.log(`[Layout] ✓ Video ${filename} will stream from server:`, streamingFile.downloadUrl);
       } else {
-        console.log(`[Layout] Media ${id} will use cache URL (not streaming or metadata missing)`);
+        console.log(`[Layout] Video ${filename} will use cache URL`);
       }
     }
 
