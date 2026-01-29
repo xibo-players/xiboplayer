@@ -181,7 +181,7 @@ class Player {
 
     console.log('[Player] Showing layout:', layoutId);
 
-    // Parse HTML and extract head and body
+    // Parse HTML
     const parser = new DOMParser();
     const doc = parser.parseFromString(htmlText, 'text/html');
 
@@ -189,29 +189,34 @@ class Player {
     const container = document.getElementById('layout-container');
     if (!container) return;
 
-    // Clear container
+    // Extract all content except scripts
+    const bodyWithoutScripts = doc.body.cloneNode(true);
+    const scriptsInBody = bodyWithoutScripts.querySelectorAll('script');
+    scriptsInBody.forEach(s => s.remove());
+
+    // Set HTML (styles + body content without scripts)
     container.innerHTML = '';
 
-    // Copy styles from layout head to container
-    const styles = doc.querySelectorAll('style');
-    styles.forEach(style => {
-      const newStyle = document.createElement('style');
-      newStyle.textContent = style.textContent;
-      container.appendChild(newStyle);
+    // Add head styles
+    doc.querySelectorAll('head > style').forEach(style => {
+      container.appendChild(style.cloneNode(true));
     });
 
-    // Copy body content
-    const bodyContent = doc.body.cloneNode(true);
-    while (bodyContent.firstChild) {
-      container.appendChild(bodyContent.firstChild);
+    // Add body content
+    while (bodyWithoutScripts.firstChild) {
+      container.appendChild(bodyWithoutScripts.firstChild);
     }
 
-    // Execute scripts
-    const scripts = doc.querySelectorAll('script');
-    scripts.forEach(oldScript => {
+    // Execute scripts manually (innerHTML doesn't execute them)
+    const allScripts = [...doc.querySelectorAll('head > script'), ...doc.querySelectorAll('body > script')];
+    allScripts.forEach(oldScript => {
       const newScript = document.createElement('script');
-      newScript.textContent = oldScript.textContent;
-      container.appendChild(newScript);
+      if (oldScript.src) {
+        newScript.src = oldScript.src;
+      } else {
+        newScript.textContent = oldScript.textContent;
+      }
+      document.body.appendChild(newScript); // Append to body, not container
     });
   }
 
