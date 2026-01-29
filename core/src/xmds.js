@@ -250,4 +250,20 @@ export class XmdsClient {
       mediaInventory: inventoryXml
     });
   }
+
+  /**
+   * GetResource - get rendered widget HTML
+   */
+  async getResource(layoutId, regionId, mediaId) {
+    const xml = await this.call('GetResource', {
+      serverKey: this.config.cmsKey,
+      hardwareKey: this.config.hardwareKey,
+      layoutId: String(layoutId),
+      regionId: String(regionId),
+      mediaId: String(mediaId)
+    });
+
+    // Response is just the HTML string
+    return xml;
+  }
 }

@@ -4,10 +4,14 @@
  */
 
 export class LayoutTranslator {
+  constructor(xmds) {
+    this.xmds = xmds;
+  }
+
   /**
    * Translate XLF XML to playable HTML
    */
-  async translateXLF(xlfXml, cacheManager) {
+  async translateXLF(layoutId, xlfXml, cacheManager) {
     const parser = new DOMParser();
     const doc = parser.parseFromString(xlfXml, 'text/xml');
 
@@ -22,7 +26,7 @@ export class LayoutTranslator {
 
     const regions = [];
     for (const regionEl of doc.querySelectorAll('region')) {
-      regions.push(await this.translateRegion(regionEl, cacheManager));
+      regions.push(await this.translateRegion(layoutId, regionEl, cacheManager));
     }
 
     return this.generateHTML(width, height, bgcolor, regions);
@@ -31,7 +35,7 @@ export class LayoutTranslator {
   /**
    * Translate a single region
    */
-  async translateRegion(regionEl, cacheManager) {
+  async translateRegion(layoutId, regionEl, cacheManager) {
     const id = regionEl.getAttribute('id');
     const width = parseInt(regionEl.getAttribute('width'));
     const height = parseInt(regionEl.getAttribute('height'));
@@ -41,7 +45,7 @@ export class LayoutTranslator {
 
     const media = [];
     for (const mediaEl of regionEl.querySelectorAll('media')) {
-      media.push(await this.translateMedia(mediaEl, cacheManager));
+      media.push(await this.translateMedia(layoutId, id, mediaEl, cacheManager));
     }
 
     return {
@@ -58,7 +62,7 @@ export class LayoutTranslator {
   /**
    * Translate a single media item
    */
-  async translateMedia(mediaEl, cacheManager) {
+  async translateMedia(layoutId, regionId, mediaEl, cacheManager) {
     const type = mediaEl.getAttribute('type');
     const duration = parseInt(mediaEl.getAttribute('duration') || '10');
     const id = mediaEl.getAttribute('id');
@@ -73,7 +77,21 @@ export class LayoutTranslator {
       }
     }
 
-    const raw = rawEl ? rawEl.textContent : '';
+    let raw = rawEl ? rawEl.textContent : '';
+
+    // For widgets (clock, calendar, etc.), fetch rendered HTML from CMS
+    const widgetTypes = ['clock', 'clock-digital', 'clock-analogue', 'calendar', 'weather',
+                         'currencies', 'stocks', 'twitter', 'global', 'embedded'];
+    if (widgetTypes.some(w => type.includes(w))) {
+      try {
+        console.log(`[Layout] Fetching resource for ${type} widget (layout=${layoutId}, region=${regionId}, media=${id})`);
+        raw = await this.xmds.getResource(layoutId, regionId, id);
+        console.log(`[Layout] Got resource HTML (${raw.length} chars)`);
+      } catch (error) {
+        console.error(`[Layout] Failed to get resource for ${type}:`, error);
+        raw = `<div>Widget ${type} unavailable</div>`;
+      }
+    }
 
     return {
       type,
@@ -240,8 +258,22 @@ ${mediaJS}
         break;
 
       default:
-        console.warn(`Unsupported media type: ${media.type}`);
-        startFn = `() => console.log('Unsupported media type: ${media.type}')`;
+        // Widgets (clock, calendar, weather, etc.) - use rendered HTML from GetResource
+        if (media.raw) {
+          const widgetHtml = media.raw.replace(/'/g, "\\'").replace(/\n/g, '\\n');
+          startFn = `() => {
+        const iframe = document.createElement('iframe');
+        iframe.srcdoc = '${widgetHtml}';
+        iframe.style.width = '100%';
+        iframe.style.height = '100%';
+        iframe.style.border = 'none';
+        document.getElementById('region_${regionId}').innerHTML = '';
+        document.getElementById('region_${regionId}').appendChild(iframe);
+      }`;
+        } else {
+          console.warn(`Unsupported media type: ${media.type}`);
+          startFn = `() => console.log('Unsupported media type: ${media.type}')`;
+        }
     }
 
     return `      {

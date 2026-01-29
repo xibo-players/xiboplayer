@@ -6,11 +6,12 @@ import { config } from './config.js';
 import { XmdsClient } from './xmds.js';
 import { cacheManager } from './cache.js';
 import { scheduleManager } from './schedule.js';
-import { layoutTranslator } from './layout.js';
+import { LayoutTranslator } from './layout.js';
 
 class Player {
   constructor() {
     this.xmds = new XmdsClient(config);
+    this.layoutTranslator = new LayoutTranslator(this.xmds);
     this.settings = null;
     this.collectInterval = 900000; // 15 minutes default
     this.scheduleCheckInterval = 60000; // 1 minute
@@ -124,7 +125,7 @@ class Player {
     }
 
     try {
-      const html = await layoutTranslator.translateXLF(xlfText, cacheManager);
+      const html = await this.layoutTranslator.translateXLF(fileInfo.id, xlfText, cacheManager);
 
       // Cache the translated HTML
       const htmlBlob = new Blob([html], { type: 'text/html' });
