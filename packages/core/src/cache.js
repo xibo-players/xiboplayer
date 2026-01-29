@@ -159,64 +159,34 @@ export class CacheManager {
     let fileSize;
 
     if (isLargeFile) {
-      // Large file: Download in chunks with Range requests to avoid timeouts
-      console.log(`[Cache] Large file detected (${(contentLength / 1024 / 1024).toFixed(1)} MB), using chunked download`);
+      // Large file: Use lazy chunk caching for streaming playback
+      // Instead of downloading all chunks upfront, we'll download on-demand
+      // as the video player requests ranges via Service Worker
+      console.log(`[Cache] Large file detected (${(contentLength / 1024 / 1024).toFixed(1)} MB), enabling streaming mode`);
 
-      const CHUNK_SIZE = 50 * 1024 * 1024; // 50 MB chunks
-      const chunks = [];
-      let downloadedBytes = 0;
+      // Create a streaming metadata record
+      // The actual chunks will be cached on-demand by Service Worker
+      const streamingMetadata = {
+        id,
+        type,
+        path,
+        md5: md5 || 'streaming',
+        size: contentLength,
+        cachedAt: Date.now(),
+        isStreaming: true,
+        downloadUrl: downloadUrl,
+        contentType: headResponse.headers.get('Content-Type') || 'video/mp4'
+      };
 
-      // Notify UI about download start
-      this.notifyDownloadProgress(filename, 0, contentLength);
+      await this.saveFile(streamingMetadata);
 
-      // Download in chunks using Range requests
-      for (let start = 0; start < contentLength; start += CHUNK_SIZE) {
-        const end = Math.min(start + CHUNK_SIZE - 1, contentLength - 1);
-        const rangeHeader = `bytes=${start}-${end}`;
+      // Mark as cached (Service Worker will handle on-demand chunk downloads)
+      console.log(`[Cache] Enabled streaming for ${type}/${id} (${contentLength} bytes, chunks downloaded on-demand)`);
 
-        try {
-          const chunkResponse = await fetch(downloadUrl, {
-            headers: {
-              'Range': rangeHeader
-            }
-          });
+      calculatedMd5 = md5 || 'streaming';
+      fileSize = contentLength;
 
-          if (!chunkResponse.ok && chunkResponse.status !== 206) {
-            throw new Error(`Chunk download failed: ${chunkResponse.status}`);
-          }
-
-          const chunkBlob = await chunkResponse.blob();
-          chunks.push(chunkBlob);
-          downloadedBytes += chunkBlob.size;
-
-          // Update progress
-          this.notifyDownloadProgress(filename, downloadedBytes, contentLength);
-
-          console.log(`[Cache] Downloaded chunk ${start}-${end} (${chunkBlob.size} bytes, ${((downloadedBytes/contentLength)*100).toFixed(1)}%)`);
-        } catch (error) {
-          console.error(`[Cache] Chunk ${start}-${end} failed:`, error);
-          throw new Error(`Chunked download failed at byte ${start}: ${error.message}`);
-        }
-      }
-
-      // Combine all chunks into one blob
-      const blob = new Blob(chunks);
-
-      // Cache the complete file
-      await this.cache.put(cacheKey, new Response(blob, {
-        headers: {
-          'Content-Type': response.headers.get('Content-Type') || 'application/octet-stream',
-          'Content-Length': blob.size
-        }
-      }));
-
-      // Notify completion
-      this.notifyDownloadProgress(filename, downloadedBytes, contentLength, true);
-
-      calculatedMd5 = md5 || 'skipped'; // Use provided MD5 or mark as skipped
-      fileSize = blob.size;
-
-      console.log(`[Cache] Cached ${type}/${id} (${fileSize} bytes in ${chunks.length} chunks, MD5 check skipped for large file)`);
+      return streamingMetadata;
     } else {
       // Small file: Download fully and verify MD5
       this.notifyDownloadProgress(filename, 0, contentLength);
