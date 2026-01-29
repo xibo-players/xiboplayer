@@ -115,7 +115,27 @@ ed82fcd feat: add Chrome extension wrapper
 
 ## ⚠️ Current Issues
 
-### **1. Video Playback - In Progress**
+### **1. Video Streaming URL Expiration**
+
+**Status:** Identified, needs fix
+
+**Symptom:**
+- Videos correctly use server streaming URLs ✓
+- But URLs have AWS signatures that expire
+- By playback time, signature expired → 404 error
+
+**Root Cause:**
+- Download URLs from RequiredFiles include expiring signatures
+- URLs cached during collection
+- Hours/days later when video plays, signature expired
+
+**Solution Needed:**
+- Don't cache download URLs for streaming files
+- Instead: Use cache URL pattern `/player/cache/media/X.mp4`
+- Service Worker intercepts and proxies to fresh server URL
+- Or: Store file ID, fetch fresh URL from CMS when needed
+
+### **2. Video Playback - WORKING with caveat**
 
 **Symptom:** Videos try to load from cache instead of streaming
 ```
