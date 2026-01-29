@@ -8,8 +8,7 @@
     "platforms/*"
   ],
   "scripts": {
-    "build": "npm run build:libs && npm run build:core && npm run build:platforms",
-    "build:libs": "npm run build --workspaces --if-present -w packages/layout-renderer -w packages/communication-framework -w packages/interactive-control",
+    "build": "npm run build:core && npm run build:platforms",
     "build:core": "npm run build -w packages/core",
     "build:platforms": "npm run build:electron && npm run build:chrome",
     "build:electron": "npm run build -w platforms/electron",
