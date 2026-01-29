@@ -14,8 +14,21 @@ const PORT = 8080;
 const server = http.createServer(async (req, res) => {
   console.log(`[Proxy] ${req.method} ${req.url}`);
 
+  // Handle OPTIONS preflight
+  if (req.method === 'OPTIONS') {
+    res.writeHead(204, {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'POST, GET, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type'
+    });
+    res.end();
+    return;
+  }
+
   const targetUrl = new URL(ACTUAL_CMS + req.url);
   const isHttps = targetUrl.protocol === 'https:';
+
+  console.log(`[Proxy] Forwarding to ${targetUrl.href}`);
 
   // Choose http or https module
   const httpModule = isHttps ? https : http;
