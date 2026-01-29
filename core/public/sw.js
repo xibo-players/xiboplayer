@@ -47,16 +47,23 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
 
-  // Handle cache URLs (/cache/*)
-  if (url.pathname.startsWith('/cache/')) {
+  // Handle cache URLs (/player/cache/*)
+  if (url.pathname.startsWith('/player/cache/')) {
+    // Strip /player/ prefix to match cached keys
+    const cacheKey = url.pathname.replace('/player', '');
+    const cacheUrl = new URL(cacheKey, url.origin);
+
     event.respondWith(
-      caches.match(event.request).then((response) => {
-        if (response) {
-          return response;
-        }
-        // Cache miss - this shouldn't happen for media files
-        console.warn('[SW] Cache miss for:', url.pathname);
-        return new Response('Not found', { status: 404 });
+      caches.open('xibo-media-v1').then((cache) => {
+        return cache.match(cacheUrl).then((response) => {
+          if (response) {
+            console.log('[SW] Serving from cache:', cacheKey);
+            return response;
+          }
+          // Cache miss - this shouldn't happen for media files
+          console.warn('[SW] Cache miss for:', cacheKey);
+          return new Response('Not found', { status: 404 });
+        });
       })
     );
     return;

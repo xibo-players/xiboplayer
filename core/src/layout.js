@@ -189,7 +189,8 @@ ${mediaJS}
 
     switch (media.type) {
       case 'image':
-        const imageSrc = `/cache/media/${media.options.uri}`;
+        // Use absolute URL within service worker scope
+        const imageSrc = `${window.location.origin}/player/cache/media/${media.options.uri}`;
         startFn = `() => {
         const img = document.createElement('img');
         img.className = 'media';
@@ -200,7 +201,8 @@ ${mediaJS}
         break;
 
       case 'video':
-        const videoSrc = `/cache/media/${media.options.uri}`;
+        // Use absolute URL within service worker scope
+        const videoSrc = `${window.location.origin}/player/cache/media/${media.options.uri}`;
         startFn = `() => {
         const video = document.createElement('video');
         video.className = 'media';
