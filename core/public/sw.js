@@ -8,8 +8,9 @@ const STATIC_CACHE = `xibo-static-${CACHE_VERSION}`;
 /**
  * Handle Range requests for video/audio seeking
  * Required for HTML5 video element to support seeking/scrubbing
+ * For streaming files, downloads chunks on-demand
  */
-async function handleRangeRequest(cachedResponse, rangeHeader) {
+async function handleRangeRequest(cachedResponse, rangeHeader, cacheKey, originalUrl) {
   const blob = await cachedResponse.blob();
   const fileSize = blob.size;
 
@@ -32,6 +33,28 @@ async function handleRangeRequest(cachedResponse, rangeHeader) {
       'Access-Control-Allow-Origin': '*'
     }
   });
+}
+
+/**
+ * Fetch and cache a chunk from the original URL on-demand
+ * Used for streaming large video files
+ */
+async function fetchAndCacheChunk(originalUrl, rangeHeader, cacheKey, cache) {
+  console.log('[SW] Fetching chunk on-demand:', rangeHeader);
+
+  const response = await fetch(originalUrl, {
+    headers: { 'Range': rangeHeader }
+  });
+
+  if (!response.ok && response.status !== 206) {
+    throw new Error(`Failed to fetch chunk: ${response.status}`);
+  }
+
+  // Cache this chunk for future requests
+  const responseClone = response.clone();
+  await cache.put(cacheKey + '#' + rangeHeader, responseClone);
+
+  return response;
 }
 
 // Files to cache on install (with /player/ prefix)
@@ -129,7 +152,7 @@ self.addEventListener('fetch', (event) => {
             // Handle Range requests for video/audio seeking
             const rangeHeader = event.request.headers.get('Range');
             if (rangeHeader) {
-              return handleRangeRequest(response, rangeHeader);
+              return handleRangeRequest(response, rangeHeader, cacheKey, event.request.url);
             }
 
             // Regular response
