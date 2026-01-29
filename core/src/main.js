@@ -179,30 +179,40 @@ class Player {
 
     const htmlText = await html.text();
 
-    // Parse HTML and inject into main page
+    console.log('[Player] Showing layout:', layoutId);
+
+    // Parse HTML and extract head and body
     const parser = new DOMParser();
     const doc = parser.parseFromString(htmlText, 'text/html');
 
-    // Extract body content and styles
-    const layoutContent = doc.body.innerHTML;
-    const layoutStyles = Array.from(doc.querySelectorAll('style')).map(s => s.innerHTML).join('\n');
-    const layoutScripts = Array.from(doc.querySelectorAll('script')).map(s => s.innerHTML).join('\n');
-
-    console.log('[Player] Showing layout:', layoutId);
-
-    // Clear and inject layout into main page
+    // Get the container
     const container = document.getElementById('layout-container');
-    if (container) {
-      container.innerHTML = `
-        <style>${layoutStyles}</style>
-        ${layoutContent}
-      `;
+    if (!container) return;
 
-      // Execute layout scripts
-      const script = document.createElement('script');
-      script.textContent = layoutScripts;
-      container.appendChild(script);
+    // Clear container
+    container.innerHTML = '';
+
+    // Copy styles from layout head to container
+    const styles = doc.querySelectorAll('style');
+    styles.forEach(style => {
+      const newStyle = document.createElement('style');
+      newStyle.textContent = style.textContent;
+      container.appendChild(newStyle);
+    });
+
+    // Copy body content
+    const bodyContent = doc.body.cloneNode(true);
+    while (bodyContent.firstChild) {
+      container.appendChild(bodyContent.firstChild);
     }
+
+    // Execute scripts
+    const scripts = doc.querySelectorAll('script');
+    scripts.forEach(oldScript => {
+      const newScript = document.createElement('script');
+      newScript.textContent = oldScript.textContent;
+      container.appendChild(newScript);
+    });
   }
 
   /**
