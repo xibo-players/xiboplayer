@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Xibo Player</title>
+  <link rel="manifest" href="/manifest.json">
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background-color: #000;
+      font-family: sans-serif;
+    }
+
+    #layout-iframe {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      border: none;
+    }
+
+    #message {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      padding: 20px 40px;
+      background: rgba(0, 0, 0, 0.9);
+      color: white;
+      font-size: 24px;
+      text-align: center;
+      border-radius: 8px;
+      display: none;
+      z-index: 9999;
+    }
+  </style>
+</head>
+<body>
+  <iframe id="layout-iframe"></iframe>
+  <div id="message"></div>
+
+  <script type="module" src="/src/main.js"></script>
+  <script>
+    // Register service worker
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js')
+        .then(reg => console.log('[SW] Registered:', reg.scope))
+        .catch(err => console.error('[SW] Registration failed:', err));
+    }
+  </script>
+</body>
+</html>

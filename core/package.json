@@ -1,0 +1,20 @@
+{
+  "name": "xibo-player-core",
+  "version": "0.1.0",
+  "description": "Free Xibo-compatible digital signage player (PWA core)",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "spark-md5": "^3.0.2"
+  },
+  "devDependencies": {
+    "vite": "^5.4.11"
+  },
+  "keywords": ["xibo", "digital-signage", "pwa", "player"],
+  "author": "TecMan",
+  "license": "AGPL-3.0-or-later"
+}
