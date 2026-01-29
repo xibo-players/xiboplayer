@@ -47,6 +47,14 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
 
+  // IMPORTANT: Let XMDS downloads bypass Service Worker
+  // Large video files (2GB+) cause timeouts if intercepted
+  // The cache.js module handles downloads directly
+  if (url.pathname.includes('xmds.php') && url.searchParams.has('file')) {
+    // Don't intercept - let it go directly to network
+    return;
+  }
+
   // Handle widget HTML requests (/player/cache/widget/*)
   if (url.pathname.startsWith('/player/cache/widget/')) {
     console.log('[SW] Widget HTML request:', url.pathname);
