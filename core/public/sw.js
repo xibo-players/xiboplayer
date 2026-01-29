@@ -58,12 +58,23 @@ self.addEventListener('fetch', (event) => {
         return cache.match(cacheUrl).then((response) => {
           if (response) {
             console.log('[SW] Serving from cache:', cacheKey);
-            return response;
+            // Clone response to avoid CORS issues
+            return new Response(response.body, {
+              status: response.status,
+              statusText: response.statusText,
+              headers: {
+                'Content-Type': response.headers.get('Content-Type') || 'application/octet-stream',
+                'Access-Control-Allow-Origin': '*'
+              }
+            });
           }
           // Cache miss - this shouldn't happen for media files
           console.warn('[SW] Cache miss for:', cacheKey);
           return new Response('Not found', { status: 404 });
         });
+      }).catch(err => {
+        console.error('[SW] Error serving:', cacheKey, err);
+        return new Response('Error: ' + err.message, { status: 500 });
       })
     );
     return;
