@@ -3,6 +3,7 @@
  */
 
 import SparkMD5 from 'spark-md5';
+import { config } from './config.js';
 
 const CACHE_NAME = 'xibo-media-v1';
 const DB_NAME = 'xibo-player';
@@ -13,6 +14,33 @@ export class CacheManager {
   constructor() {
     this.cache = null;
     this.db = null;
+  }
+
+  /**
+   * Rewrite CMS URL to use configured CMS address
+   * Handles cases where RequiredFiles returns absolute URLs
+   */
+  rewriteUrl(url) {
+    if (!url) return url;
+
+    // If URL is absolute and points to a different domain, rewrite it
+    try {
+      const urlObj = new URL(url);
+      const configUrl = new URL(config.cmsAddress);
+
+      // If domains differ, replace with configured CMS address
+      if (urlObj.origin !== configUrl.origin) {
+        console.log(`[Cache] Rewriting URL: ${urlObj.origin} → ${configUrl.origin}`);
+        urlObj.protocol = configUrl.protocol;
+        urlObj.hostname = configUrl.hostname;
+        urlObj.port = configUrl.port;
+        return urlObj.toString();
+      }
+    } catch (e) {
+      // Not a valid URL, return as-is
+    }
+
+    return url;
   }
 
   /**
@@ -97,8 +125,12 @@ export class CacheManager {
 
     console.log(`[Cache] Downloading ${type}/${id} from ${path}`);
 
+    // Rewrite URL to use configured CMS (handles proxy case)
+    const downloadUrl = this.rewriteUrl(path);
+    console.log(`[Cache] Using URL: ${downloadUrl}`);
+
     // Download file
-    const response = await fetch(path);
+    const response = await fetch(downloadUrl);
     if (!response.ok) {
       throw new Error(`Failed to download ${path}: ${response.status}`);
     }
