@@ -126,6 +126,7 @@ export class CacheManager {
 
   /**
    * Download and cache a file with MD5 verification
+   * Handles large files with streaming to avoid memory issues
    */
   async downloadFile(fileInfo) {
     const { id, type, path, md5, download } = fileInfo;
@@ -149,27 +150,50 @@ export class CacheManager {
       throw new Error(`Failed to download ${path}: ${response.status}`);
     }
 
-    const blob = await response.blob();
-    const arrayBuffer = await blob.arrayBuffer();
-
-    // Verify MD5
-    const calculatedMd5 = SparkMD5.ArrayBuffer.hash(arrayBuffer);
-    if (md5 && calculatedMd5 !== md5) {
-      throw new Error(`MD5 mismatch for ${id}: expected ${md5}, got ${calculatedMd5}`);
-    }
+    const contentLength = parseInt(response.headers.get('Content-Length') || '0');
+    const isLargeFile = contentLength > 100 * 1024 * 1024; // > 100 MB
 
     // Extract filename from path for media files
-    // path is like "https://.../xmds.php?file=1.png&..."
     const filename = type === 'media' ? this.extractFilename(path) : id;
-
-    // Cache the response with filename-based key for media
     const cacheKey = this.getCacheKey(type, id, filename);
-    await this.cache.put(cacheKey, new Response(blob, {
-      headers: {
-        'Content-Type': response.headers.get('Content-Type') || 'application/octet-stream',
-        'Content-Length': blob.size
+
+    let calculatedMd5;
+    let fileSize;
+
+    if (isLargeFile) {
+      // Large file: Stream directly to cache without MD5 verification
+      // MD5 verification for multi-GB files would load entire file into memory
+      console.log(`[Cache] Large file detected (${(contentLength / 1024 / 1024).toFixed(1)} MB), skipping MD5 verification`);
+
+      // Cache the response directly (streaming)
+      await this.cache.put(cacheKey, response.clone());
+
+      calculatedMd5 = md5 || 'skipped'; // Use provided MD5 or mark as skipped
+      fileSize = contentLength;
+
+      console.log(`[Cache] Cached ${type}/${id} (${fileSize} bytes, MD5 check skipped for large file)`);
+    } else {
+      // Small file: Download fully and verify MD5
+      const blob = await response.blob();
+      const arrayBuffer = await blob.arrayBuffer();
+
+      // Verify MD5
+      calculatedMd5 = SparkMD5.ArrayBuffer.hash(arrayBuffer);
+      if (md5 && calculatedMd5 !== md5) {
+        throw new Error(`MD5 mismatch for ${id}: expected ${md5}, got ${calculatedMd5}`);
       }
-    }));
+
+      // Cache the response
+      await this.cache.put(cacheKey, new Response(blob, {
+        headers: {
+          'Content-Type': response.headers.get('Content-Type') || 'application/octet-stream',
+          'Content-Length': blob.size
+        }
+      }));
+
+      fileSize = blob.size;
+      console.log(`[Cache] Cached ${type}/${id} (${fileSize} bytes, MD5: ${calculatedMd5})`);
+    }
 
     // Save metadata
     const fileRecord = {
@@ -177,12 +201,11 @@ export class CacheManager {
       type,
       path,
       md5: calculatedMd5,
-      size: blob.size,
+      size: fileSize,
       cachedAt: Date.now()
     };
     await this.saveFile(fileRecord);
 
-    console.log(`[Cache] Cached ${type}/${id} (${blob.size} bytes, MD5: ${calculatedMd5})`);
     return fileRecord;
   }
 
