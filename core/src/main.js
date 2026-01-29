@@ -328,13 +328,155 @@ class Player {
   }
 }
 
+/**
+ * Network Activity Tracker
+ */
+class NetworkActivityTracker {
+  constructor() {
+    this.activities = [];
+    this.maxActivities = 100;
+  }
+
+  addActivity(filename, status, size = null) {
+    const activity = {
+      timestamp: new Date(),
+      filename,
+      status,
+      size
+    };
+    this.activities.unshift(activity);
+    if (this.activities.length > this.maxActivities) {
+      this.activities.pop();
+    }
+    this.updateUI();
+  }
+
+  updateUI() {
+    const list = document.getElementById('activity-list');
+    if (!list) return;
+
+    if (this.activities.length === 0) {
+      list.innerHTML = '<li class="empty">No network activity yet</li>';
+      return;
+    }
+
+    list.innerHTML = this.activities.map(activity => {
+      const time = activity.timestamp.toLocaleTimeString();
+      const statusClass = activity.status === 'success' ? 'success' :
+                          activity.status === 'error' ? 'error' : 'loading';
+      const sizeText = activity.size ? this.formatSize(activity.size) : '-';
+
+      return `
+        <li>
+          <span class="time">${time}</span>
+          <span class="file" title="${activity.filename}">${activity.filename}</span>
+          <span class="size">${sizeText}</span>
+          <span class="status ${statusClass}">${activity.status}</span>
+        </li>
+      `;
+    }).join('');
+  }
+
+  formatSize(bytes) {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    if (bytes < 1024 * 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+    return (bytes / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
+  }
+}
+
+const networkTracker = new NetworkActivityTracker();
+
+/**
+ * Setup download progress UI
+ */
+function setupProgressUI() {
+  const progressEl = document.getElementById('download-progress');
+  const filenameEl = document.getElementById('progress-filename');
+  const fillEl = document.getElementById('progress-fill');
+  const percentEl = document.getElementById('progress-percent');
+  const sizeEl = document.getElementById('progress-size');
+
+  window.addEventListener('download-progress', (event) => {
+    const { filename, loaded, total, percent, complete, error } = event.detail;
+
+    if (error) {
+      // Show error
+      networkTracker.addActivity(filename, 'error', total);
+      fillEl.style.background = 'linear-gradient(90deg, #c62828, #e53935)';
+      setTimeout(() => {
+        progressEl.style.display = 'none';
+        fillEl.style.background = 'linear-gradient(90deg, #4CAF50, #66BB6A)';
+      }, 3000);
+    } else if (complete) {
+      // Show 100% briefly
+      fillEl.style.width = '100%';
+      percentEl.textContent = '100%';
+
+      // Hide progress after 2 seconds
+      setTimeout(() => {
+        progressEl.style.display = 'none';
+      }, 2000);
+      networkTracker.addActivity(filename, 'success', total);
+    } else {
+      // Show progress
+      progressEl.style.display = 'block';
+      filenameEl.textContent = filename;
+      fillEl.style.width = percent.toFixed(1) + '%';
+      percentEl.textContent = percent.toFixed(1) + '%';
+
+      const loadedMB = (loaded / 1024 / 1024).toFixed(1);
+      const totalMB = (total / 1024 / 1024).toFixed(1);
+      sizeEl.textContent = `${loadedMB} / ${totalMB} MB`;
+
+      if (percent === 0) {
+        networkTracker.addActivity(filename, 'loading', total);
+      }
+    }
+  });
+}
+
+/**
+ * Setup network activity panel (Ctrl+N)
+ */
+function setupNetworkPanel() {
+  const panel = document.getElementById('network-panel');
+  const closeBtn = document.getElementById('close-network');
+
+  // Keyboard shortcut: Ctrl+N
+  document.addEventListener('keydown', (event) => {
+    if (event.ctrlKey && event.key === 'n') {
+      event.preventDefault();
+      const isVisible = panel.style.display === 'block';
+      panel.style.display = isVisible ? 'none' : 'block';
+      if (!isVisible) {
+        networkTracker.updateUI(); // Refresh on open
+      }
+    }
+
+    // Also allow ESC to close
+    if (event.key === 'Escape' && panel.style.display === 'block') {
+      panel.style.display = 'none';
+    }
+  });
+
+  // Close button
+  closeBtn.addEventListener('click', () => {
+    panel.style.display = 'none';
+  });
+}
+
 // Auto-start player when DOM is ready
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', () => {
+    setupProgressUI();
+    setupNetworkPanel();
     const player = new Player();
     player.init();
   });
 } else {
+  setupProgressUI();
+  setupNetworkPanel();
   const player = new Player();
   player.init();
 }
