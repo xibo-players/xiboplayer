@@ -167,8 +167,20 @@ self.addEventListener('fetch', (event) => {
               }
             });
           }
-          // Cache miss - this shouldn't happen for media files
-          console.warn('[SW] Cache miss for:', cacheKey);
+
+          // Cache miss - might be background download in progress
+          // For media files, show a loading message instead of 404
+          console.warn('[SW] Cache miss for:', cacheKey, '(might be downloading in background)');
+
+          // Return a placeholder for videos being downloaded
+          if (cacheKey.includes('.mp4') || cacheKey.includes('.mov') || cacheKey.includes('.avi')) {
+            return new Response('Downloading video in background...', {
+              status: 202,
+              statusText: 'Accepted',
+              headers: { 'Content-Type': 'text/plain' }
+            });
+          }
+
           return new Response('Not found', { status: 404 });
         });
       }).catch(err => {
