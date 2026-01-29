@@ -71,9 +71,14 @@ export class LayoutTranslator {
     const rawEl = mediaEl.querySelector('raw');
 
     const options = {};
+    if (optionsEl) {
+      for (const child of optionsEl.children) {
+        options[child.tagName] = child.textContent;
+      }
+    }
 
     // Check if this media is a streaming file (large video not fully cached)
-    // Note: Must check AFTER options are populated (need options.uri)
+    // MUST be AFTER options are populated to access options.uri
     if (type === 'video' && options.uri && cacheManager) {
       // Look up by filename, not media ID (IDs don't match between XLF and RequiredFiles)
       const filename = options.uri; // e.g., "2.mp4"
@@ -92,12 +97,6 @@ export class LayoutTranslator {
         console.log(`[Layout] ✓ Video ${filename} will stream from server:`, streamingFile.downloadUrl);
       } else {
         console.log(`[Layout] Video ${filename} will use cache URL`);
-      }
-    }
-
-    if (optionsEl) {
-      for (const child of optionsEl.children) {
-        options[child.tagName] = child.textContent;
       }
     }
 
