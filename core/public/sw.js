@@ -47,6 +47,36 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
 
+  // Handle widget HTML requests (/player/cache/widget/*)
+  if (url.pathname.startsWith('/player/cache/widget/')) {
+    console.log('[SW] Widget HTML request:', url.pathname);
+    // Strip /player/ prefix to match cached keys
+    const cacheKey = url.pathname.replace('/player', '');
+    const cacheUrl = new URL(cacheKey, url.origin);
+    event.respondWith(
+      caches.open('xibo-media-v1').then((cache) => {
+        return cache.match(cacheUrl).then((response) => {
+          if (response) {
+            console.log('[SW] Serving widget HTML from cache:', cacheKey);
+            return new Response(response.body, {
+              headers: {
+                'Content-Type': 'text/html; charset=utf-8',
+                'Access-Control-Allow-Origin': '*',
+                'Cache-Control': 'public, max-age=31536000'
+              }
+            });
+          }
+          console.warn('[SW] Widget HTML not found in cache:', cacheKey);
+          return new Response('<!DOCTYPE html><html><body>Widget not found</body></html>', {
+            status: 404,
+            headers: { 'Content-Type': 'text/html' }
+          });
+        });
+      })
+    );
+    return;
+  }
+
   // Handle cache URLs (/player/cache/*)
   if (url.pathname.startsWith('/player/cache/')) {
     // Strip /player/ prefix to match cached keys

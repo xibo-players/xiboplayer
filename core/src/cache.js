@@ -220,6 +220,51 @@ export class CacheManager {
   }
 
   /**
+   * Store widget HTML in cache for iframe loading
+   * @param {string} layoutId - Layout ID
+   * @param {string} regionId - Region ID
+   * @param {string} mediaId - Media ID
+   * @param {string} html - Widget HTML content
+   * @returns {Promise<string>} Cache key URL
+   */
+  async cacheWidgetHtml(layoutId, regionId, mediaId, html) {
+    const cacheKey = `/cache/widget/${layoutId}/${regionId}/${mediaId}`;
+    const cache = await caches.open(CACHE_NAME);
+
+    // Inject <base> tag to fix relative paths for widget dependencies
+    // Widget HTML has relative paths like "bundle.min.js" that should resolve to /player/cache/media/
+    const baseTag = '<base href="/player/cache/media/">';
+    let modifiedHtml = html;
+
+    // Insert base tag after <head> opening tag
+    if (html.includes('<head>')) {
+      modifiedHtml = html.replace('<head>', '<head>' + baseTag);
+    } else if (html.includes('<HEAD>')) {
+      modifiedHtml = html.replace('<HEAD>', '<HEAD>' + baseTag);
+    } else {
+      // No head tag, prepend base tag
+      modifiedHtml = baseTag + html;
+    }
+
+    console.log(`[Cache] Injected base tag into widget HTML`);
+
+    // Construct full URL for cache storage
+    const cacheUrl = new URL(cacheKey, window.location.origin);
+
+    const response = new Response(modifiedHtml, {
+      headers: {
+        'Content-Type': 'text/html; charset=utf-8',
+        'Access-Control-Allow-Origin': '*'
+      }
+    });
+
+    await cache.put(cacheUrl, response);
+    console.log(`[Cache] Stored widget HTML at ${cacheKey} (${modifiedHtml.length} bytes)`);
+
+    return cacheKey;
+  }
+
+  /**
    * Clear all cached files
    */
   async clearAll() {

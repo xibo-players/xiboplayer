@@ -81,12 +81,16 @@ export class LayoutTranslator {
 
     // For widgets (clock, calendar, etc.), fetch rendered HTML from CMS
     const widgetTypes = ['clock', 'clock-digital', 'clock-analogue', 'calendar', 'weather',
-                         'currencies', 'stocks', 'twitter', 'global', 'embedded'];
+                         'currencies', 'stocks', 'twitter', 'global', 'embedded', 'text', 'ticker'];
     if (widgetTypes.some(w => type.includes(w))) {
       try {
         console.log(`[Layout] Fetching resource for ${type} widget (layout=${layoutId}, region=${regionId}, media=${id})`);
         raw = await this.xmds.getResource(layoutId, regionId, id);
         console.log(`[Layout] Got resource HTML (${raw.length} chars)`);
+
+        // Store widget HTML in cache and save cache key for iframe src generation
+        const widgetCacheKey = await cacheManager.cacheWidgetHtml(layoutId, regionId, id, raw);
+        options.widgetCacheKey = widgetCacheKey;
       } catch (error) {
         console.error(`[Layout] Failed to get resource for ${type}:`, error);
         raw = `<div>Widget ${type} unavailable</div>`;
@@ -150,6 +154,14 @@ function playRegion(id) {
   const region = regions[id];
   if (!region || region.media.length === 0) return;
 
+  // If only one media item, just show it and don't cycle (arexibo behavior)
+  if (region.media.length === 1) {
+    const media = region.media[0];
+    if (media.start) media.start();
+    return; // Don't schedule stop/restart
+  }
+
+  // Multiple media items - cycle normally
   let currentIndex = 0;
 
   function playNext() {
@@ -238,13 +250,35 @@ ${mediaJS}
 
       case 'text':
       case 'ticker':
-        const html = media.raw.replace(/'/g, "\\'").replace(/\n/g, '\\n');
-        startFn = `() => {
-        const iframe = document.createElement('iframe');
-        iframe.srcdoc = '${html}';
-        document.getElementById('region_${regionId}').innerHTML = '';
-        document.getElementById('region_${regionId}').appendChild(iframe);
+        // Use cache URL pattern for text/ticker widgets - must be in /player/ scope for SW
+        if (media.options.widgetCacheKey) {
+          const textUrl = `${window.location.origin}/player${media.options.widgetCacheKey}`;
+          const iframeId = `widget_${regionId}_${media.id}`;
+          startFn = `() => {
+        const region = document.getElementById('region_${regionId}');
+        let iframe = document.getElementById('${iframeId}');
+        if (!iframe) {
+          iframe = document.createElement('iframe');
+          iframe.id = '${iframeId}';
+          iframe.src = '${textUrl}';
+          iframe.style.width = '100%';
+          iframe.style.height = '100%';
+          iframe.style.border = 'none';
+          iframe.scrolling = 'no';
+          region.innerHTML = '';
+          region.appendChild(iframe);
+        } else {
+          iframe.style.display = 'block';
+        }
       }`;
+          stopFn = `() => {
+        const iframe = document.getElementById('${iframeId}');
+        if (iframe) iframe.style.display = 'none';
+      }`;
+        } else {
+          console.warn(`[Layout] Text media without widgetCacheKey`);
+          startFn = `() => console.log('Text media without cache key')`;
+        }
         break;
 
       case 'webpage':
@@ -258,20 +292,34 @@ ${mediaJS}
         break;
 
       default:
-        // Widgets (clock, calendar, weather, etc.) - use rendered HTML from GetResource
-        if (media.raw) {
-          const widgetHtml = media.raw.replace(/'/g, "\\'").replace(/\n/g, '\\n');
+        // Widgets (clock, calendar, weather, etc.) - use cache URL pattern in /player/ scope for SW
+        // Keep widget iframes alive across duration cycles (arexibo behavior)
+        if (media.options.widgetCacheKey) {
+          const widgetUrl = `${window.location.origin}/player${media.options.widgetCacheKey}`;
+          const iframeId = `widget_${regionId}_${media.id}`;
           startFn = `() => {
-        const iframe = document.createElement('iframe');
-        iframe.srcdoc = '${widgetHtml}';
-        iframe.style.width = '100%';
-        iframe.style.height = '100%';
-        iframe.style.border = 'none';
-        document.getElementById('region_${regionId}').innerHTML = '';
-        document.getElementById('region_${regionId}').appendChild(iframe);
+        const region = document.getElementById('region_${regionId}');
+        let iframe = document.getElementById('${iframeId}');
+        if (!iframe) {
+          iframe = document.createElement('iframe');
+          iframe.id = '${iframeId}';
+          iframe.src = '${widgetUrl}';
+          iframe.style.width = '100%';
+          iframe.style.height = '100%';
+          iframe.style.border = 'none';
+          iframe.scrolling = 'no';
+          region.innerHTML = '';
+          region.appendChild(iframe);
+        } else {
+          iframe.style.display = 'block';
+        }
+      }`;
+          stopFn = `() => {
+        const iframe = document.getElementById('${iframeId}');
+        if (iframe) iframe.style.display = 'none';
       }`;
         } else {
-          console.warn(`Unsupported media type: ${media.type}`);
+          console.warn(`[Layout] Unsupported media type: ${media.type}`);
           startFn = `() => console.log('Unsupported media type: ${media.type}')`;
         }
     }
