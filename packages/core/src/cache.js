@@ -159,30 +159,29 @@ export class CacheManager {
     let fileSize;
 
     if (isLargeFile) {
-      // Large file: Skip caching, let it stream directly from server
-      // Videos can play directly from CMS URL without caching
-      console.log(`[Cache] Large file detected (${(contentLength / 1024 / 1024).toFixed(1)} MB), skipping cache (will stream from server)`);
+      // Large file: Cache in background for future use, but don't block
+      console.log(`[Cache] Large file detected (${(contentLength / 1024 / 1024).toFixed(1)} MB), caching in background`);
 
-      // Save metadata indicating this is a streaming file
-      const streamingMetadata = {
+      // Start background download (don't await)
+      this.downloadLargeFileInBackground(downloadUrl, cacheKey, contentLength, filename, id, type, path, md5)
+        .catch(err => console.warn(`[Cache] Background download failed for ${id}:`, err));
+
+      // Return immediately - don't block collection cycle
+      const metadata = {
         id,
         type,
         path,
-        md5: md5 || 'streaming',
+        md5: md5 || 'pending',
         size: contentLength,
         cachedAt: Date.now(),
-        isStreaming: true, // Flag to indicate this streams from server
-        downloadUrl: downloadUrl
+        isBackgroundDownload: true
       };
 
-      await this.saveFile(streamingMetadata);
+      await this.saveFile(metadata);
 
-      console.log(`[Cache] ${type}/${id} marked as streaming (${contentLength} bytes, plays directly from server)`);
+      console.log(`[Cache] ${type}/${id} downloading in background (${contentLength} bytes)`);
 
-      calculatedMd5 = md5 || 'streaming';
-      fileSize = contentLength;
-
-      return streamingMetadata;
+      return metadata;
     } else {
       // Small file: Download fully and verify MD5
       this.notifyDownloadProgress(filename, 0, contentLength);
@@ -306,6 +305,80 @@ export class CacheManager {
     console.log(`[Cache] Stored widget HTML at ${cacheKey} (${modifiedHtml.length} bytes)`);
 
     return cacheKey;
+  }
+
+  /**
+   * Download large file in background (non-blocking)
+   * Continues after collection cycle completes
+   */
+  async downloadLargeFileInBackground(downloadUrl, cacheKey, contentLength, filename, id, type, path, md5) {
+    const CHUNK_SIZE = 50 * 1024 * 1024; // 50 MB chunks
+    const chunks = [];
+    let downloadedBytes = 0;
+
+    console.log(`[Cache] Background download started: ${filename}`);
+    this.notifyDownloadProgress(filename, 0, contentLength);
+
+    try {
+      // Download in chunks using Range requests
+      for (let start = 0; start < contentLength; start += CHUNK_SIZE) {
+        const end = Math.min(start + CHUNK_SIZE - 1, contentLength - 1);
+        const rangeHeader = `bytes=${start}-${end}`;
+
+        const chunkResponse = await fetch(downloadUrl, {
+          headers: { 'Range': rangeHeader }
+        });
+
+        if (!chunkResponse.ok && chunkResponse.status !== 206) {
+          throw new Error(`Chunk download failed: ${chunkResponse.status}`);
+        }
+
+        const chunkBlob = await chunkResponse.blob();
+        chunks.push(chunkBlob);
+        downloadedBytes += chunkBlob.size();
+
+        // Update progress
+        this.notifyDownloadProgress(filename, downloadedBytes, contentLength);
+
+        console.log(`[Cache] Background chunk ${start}-${end} (${((downloadedBytes/contentLength)*100).toFixed(1)}%)`);
+      }
+
+      // Combine all chunks
+      const blob = new Blob(chunks);
+
+      // Get content type from first chunk response
+      const contentType = chunks[0]?.type || 'video/mp4';
+
+      // Cache the complete file
+      await this.cache.put(cacheKey, new Response(blob, {
+        headers: {
+          'Content-Type': contentType,
+          'Content-Length': blob.size,
+          'Accept-Ranges': 'bytes'
+        }
+      }));
+
+      // Update metadata
+      const metadata = {
+        id,
+        type,
+        path,
+        md5: md5 || 'background',
+        size: blob.size,
+        cachedAt: Date.now(),
+        isBackgroundDownload: false,
+        cached: true
+      };
+
+      await this.saveFile(metadata);
+
+      this.notifyDownloadProgress(filename, downloadedBytes, contentLength, true);
+
+      console.log(`[Cache] Background download complete: ${filename} (${blob.size} bytes in ${chunks.length} chunks)`);
+    } catch (error) {
+      console.error(`[Cache] Background download failed for ${filename}:`, error);
+      this.notifyDownloadProgress(filename, downloadedBytes, contentLength, false, true);
+    }
   }
 
   /**

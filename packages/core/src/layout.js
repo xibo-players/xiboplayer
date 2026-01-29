@@ -77,28 +77,9 @@ export class LayoutTranslator {
       }
     }
 
-    // Check if this media is a streaming file (large video not fully cached)
-    // MUST be AFTER options are populated to access options.uri
-    if (type === 'video' && options.uri && cacheManager) {
-      // Look up by filename, not media ID (IDs don't match between XLF and RequiredFiles)
-      const filename = options.uri; // e.g., "2.mp4"
-      console.log(`[Layout] Checking if video ${filename} (media ${id}) is streaming file...`);
-
-      // Get all files and find by matching path/filename
-      const allFiles = await cacheManager.getAllFiles();
-      const streamingFile = allFiles.find(f =>
-        f.isStreaming && (f.path?.includes(filename) || f.downloadUrl?.includes(filename))
-      );
-
-      console.log(`[Layout] Streaming file search for ${filename}:`, streamingFile ? 'FOUND' : 'not found');
-
-      if (streamingFile && streamingFile.downloadUrl) {
-        options.streamingUrl = streamingFile.downloadUrl;
-        console.log(`[Layout] ✓ Video ${filename} will stream from server:`, streamingFile.downloadUrl);
-      } else {
-        console.log(`[Layout] Video ${filename} will use cache URL`);
-      }
-    }
+    // All videos use cache URL pattern
+    // Large videos download in background, small videos are already cached
+    // Service Worker handles both cases appropriately
 
     let raw = rawEl ? rawEl.textContent : '';
 
@@ -254,11 +235,9 @@ ${mediaJS}
         break;
 
       case 'video':
-        // Check if this is a streaming file (large, not fully cached)
-        // For streaming files, use direct CMS URL; for cached files, use cache URL
-        const videoSrc = media.options.streamingUrl
-          ? media.options.streamingUrl
-          : `${window.location.origin}/player/cache/media/${media.options.uri}`;
+        // All videos use cache URL pattern
+        // Background-downloaded videos will be served from cache when ready
+        const videoSrc = `${window.location.origin}/player/cache/media/${media.options.uri}`;
 
         startFn = `() => {
         const video = document.createElement('video');
@@ -272,7 +251,7 @@ ${mediaJS}
         video.style.objectFit = 'contain';
         document.getElementById('region_${regionId}').innerHTML = '';
         document.getElementById('region_${regionId}').appendChild(video);
-        console.log('[Video] Playing:', '${videoSrc}');
+        console.log('[Video] Playing:', '${media.options.uri}');
       }`;
         stopFn = `() => {
         const video = document.querySelector('#region_${regionId} video');
