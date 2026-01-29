@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Xibo Player</title>
+  <link rel="manifest" href="/manifest.json">
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background-color: #000;
+      font-family: sans-serif;
+    }
+
+    #layout-container {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+    }
+
+    #message {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      padding: 20px 40px;
+      background: rgba(0, 0, 0, 0.9);
+      color: white;
+      font-size: 24px;
+      text-align: center;
+      border-radius: 8px;
+      display: none;
+      z-index: 9999;
+    }
+  </style>
+</head>
+<body>
+  <div id="layout-container"></div>
+  <div id="message"></div>
+
+  <script type="module" src="/src/main.js"></script>
+  <script>
+    // Register service worker
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/player/sw.js', { scope: '/player/' })
+        .then(reg => {
+          console.log('[SW] Registered:', reg.scope);
+          console.log('[SW] State:', reg.active ? reg.active.state : 'installing');
+        })
+        .catch(err => console.error('[SW] Registration failed:', err));
+    } else {
+      console.warn('[SW] Service workers not supported');
+    }
+  </script>
+</body>
+</html>
