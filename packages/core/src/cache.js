@@ -159,13 +159,11 @@ export class CacheManager {
     let fileSize;
 
     if (isLargeFile) {
-      // Large file: Use lazy chunk caching for streaming playback
-      // Instead of downloading all chunks upfront, we'll download on-demand
-      // as the video player requests ranges via Service Worker
-      console.log(`[Cache] Large file detected (${(contentLength / 1024 / 1024).toFixed(1)} MB), enabling streaming mode`);
+      // Large file: Skip caching, let it stream directly from server
+      // Videos can play directly from CMS URL without caching
+      console.log(`[Cache] Large file detected (${(contentLength / 1024 / 1024).toFixed(1)} MB), skipping cache (will stream from server)`);
 
-      // Create a streaming metadata record
-      // The actual chunks will be cached on-demand by Service Worker
+      // Save metadata indicating this is a streaming file
       const streamingMetadata = {
         id,
         type,
@@ -173,15 +171,13 @@ export class CacheManager {
         md5: md5 || 'streaming',
         size: contentLength,
         cachedAt: Date.now(),
-        isStreaming: true,
-        downloadUrl: downloadUrl,
-        contentType: headResponse.headers.get('Content-Type') || 'video/mp4'
+        isStreaming: true, // Flag to indicate this streams from server
+        downloadUrl: downloadUrl
       };
 
       await this.saveFile(streamingMetadata);
 
-      // Mark as cached (Service Worker will handle on-demand chunk downloads)
-      console.log(`[Cache] Enabled streaming for ${type}/${id} (${contentLength} bytes, chunks downloaded on-demand)`);
+      console.log(`[Cache] ${type}/${id} marked as streaming (${contentLength} bytes, plays directly from server)`);
 
       calculatedMd5 = md5 || 'streaming';
       fileSize = contentLength;

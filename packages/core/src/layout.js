@@ -71,6 +71,16 @@ export class LayoutTranslator {
     const rawEl = mediaEl.querySelector('raw');
 
     const options = {};
+
+    // Check if this media is a streaming file (large video not fully cached)
+    if (type === 'video' && id && cacheManager) {
+      const fileMetadata = await cacheManager.getFile(id);
+      if (fileMetadata && fileMetadata.isStreaming && fileMetadata.downloadUrl) {
+        options.streamingUrl = fileMetadata.downloadUrl;
+        console.log(`[Layout] Media ${id} will stream from server:`, fileMetadata.downloadUrl);
+      }
+    }
+
     if (optionsEl) {
       for (const child of optionsEl.children) {
         options[child.tagName] = child.textContent;
@@ -231,20 +241,32 @@ ${mediaJS}
         break;
 
       case 'video':
-        // Use absolute URL within service worker scope
-        const videoSrc = `${window.location.origin}/player/cache/media/${media.options.uri}`;
+        // Check if this is a streaming file (large, not fully cached)
+        // For streaming files, use direct CMS URL; for cached files, use cache URL
+        const videoSrc = media.options.streamingUrl
+          ? media.options.streamingUrl
+          : `${window.location.origin}/player/cache/media/${media.options.uri}`;
+
         startFn = `() => {
         const video = document.createElement('video');
         video.className = 'media';
         video.src = '${videoSrc}';
         video.autoplay = true;
         video.muted = ${media.options.mute === '1' ? 'true' : 'false'};
+        video.loop = false;
+        video.style.width = '100%';
+        video.style.height = '100%';
+        video.style.objectFit = 'contain';
         document.getElementById('region_${regionId}').innerHTML = '';
         document.getElementById('region_${regionId}').appendChild(video);
+        console.log('[Video] Playing:', '${videoSrc}');
       }`;
         stopFn = `() => {
         const video = document.querySelector('#region_${regionId} video');
-        if (video) video.pause();
+        if (video) {
+          video.pause();
+          video.remove();
+        }
       }`;
         break;
 
