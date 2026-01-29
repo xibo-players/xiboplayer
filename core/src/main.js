@@ -165,14 +165,30 @@ class Player {
       return;
     }
 
-    // Extract layout ID from filename (e.g., "123.xlf" -> "123")
-    const layoutId = layoutFile.replace('.xlf', '');
-    const layoutUrl = `/cache/layout-html/${layoutId}`;
+    // Extract layout ID from filename (e.g., "123.xlf" -> "123" or just "1")
+    const layoutId = layoutFile.replace('.xlf', '').replace(/^.*\//, '');
 
-    console.log('[Player] Showing layout:', layoutUrl);
+    // Get the translated HTML from cache
+    const html = await cacheManager.cache.match(`/cache/layout-html/${layoutId}`);
+    if (!html) {
+      console.warn('[Player] Layout HTML not in cache:', layoutId);
+      this.showMessage(`Layout ${layoutId} not available`);
+      return;
+    }
+
+    // Create blob URL from cached HTML
+    const htmlText = await html.text();
+    const blob = new Blob([htmlText], { type: 'text/html' });
+    const layoutUrl = URL.createObjectURL(blob);
+
+    console.log('[Player] Showing layout:', layoutId);
 
     const iframe = document.getElementById('layout-iframe');
     if (iframe) {
+      // Revoke old blob URL if exists
+      if (iframe.src && iframe.src.startsWith('blob:')) {
+        URL.revokeObjectURL(iframe.src);
+      }
       iframe.src = layoutUrl;
     }
   }
