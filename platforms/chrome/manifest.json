@@ -1,0 +1,42 @@
+{
+  "manifest_version": 3,
+  "name": "Xibo Digital Signage Player",
+  "version": "1.0.0",
+  "description": "Free Xibo-compatible digital signage player for Chrome",
+  "author": "Pau Aliagas <linuxnow@gmail.com>",
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    },
+    "default_title": "Xibo Player Settings"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "permissions": [
+    "storage",
+    "alarms",
+    "tabs"
+  ],
+  "host_permissions": [
+    "http://*/*",
+    "https://*/*"
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["player/*"],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}

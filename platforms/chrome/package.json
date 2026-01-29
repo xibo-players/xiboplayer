@@ -1,0 +1,20 @@
+{
+  "name": "@tecman/xibo-player-chrome",
+  "version": "1.0.0",
+  "description": "Xibo Digital Signage Player for Chrome",
+  "type": "module",
+  "scripts": {
+    "prebuild": "npm run sync-core",
+    "sync-core": "node scripts/sync-core.js",
+    "build": "node scripts/build.js",
+    "package": "npm run build && cd dist && zip -r ../xibo-player-chrome.zip .",
+    "watch": "npm run sync-core && echo 'Load dist/ folder in chrome://extensions'"
+  },
+  "keywords": [
+    "xibo",
+    "digital-signage",
+    "chrome-extension"
+  ],
+  "author": "Pau Aliagas <linuxnow@gmail.com>",
+  "license": "AGPL-3.0-or-later"
+}
