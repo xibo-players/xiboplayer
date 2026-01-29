@@ -74,10 +74,15 @@ export class LayoutTranslator {
 
     // Check if this media is a streaming file (large video not fully cached)
     if (type === 'video' && id && cacheManager) {
+      console.log(`[Layout] Checking if video media ${id} is streaming file...`);
       const fileMetadata = await cacheManager.getFile(id);
+      console.log(`[Layout] File metadata for ${id}:`, fileMetadata);
+
       if (fileMetadata && fileMetadata.isStreaming && fileMetadata.downloadUrl) {
         options.streamingUrl = fileMetadata.downloadUrl;
-        console.log(`[Layout] Media ${id} will stream from server:`, fileMetadata.downloadUrl);
+        console.log(`[Layout] ✓ Media ${id} will stream from server:`, fileMetadata.downloadUrl);
+      } else {
+        console.log(`[Layout] Media ${id} will use cache URL (not streaming or metadata missing)`);
       }
     }
 
