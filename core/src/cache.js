@@ -17,6 +17,20 @@ export class CacheManager {
   }
 
   /**
+   * Extract filename from download URL
+   * URL format: https://.../xmds.php?file=1.png&...
+   */
+  extractFilename(url) {
+    try {
+      const urlObj = new URL(url);
+      const fileParam = urlObj.searchParams.get('file');
+      return fileParam || 'unknown';
+    } catch (e) {
+      return 'unknown';
+    }
+  }
+
+  /**
    * Rewrite CMS URL to use configured CMS address
    * Handles cases where RequiredFiles returns absolute URLs
    */
@@ -144,8 +158,12 @@ export class CacheManager {
       throw new Error(`MD5 mismatch for ${id}: expected ${md5}, got ${calculatedMd5}`);
     }
 
-    // Cache the response
-    const cacheKey = this.getCacheKey(type, id);
+    // Extract filename from path for media files
+    // path is like "https://.../xmds.php?file=1.png&..."
+    const filename = type === 'media' ? this.extractFilename(path) : id;
+
+    // Cache the response with filename-based key for media
+    const cacheKey = this.getCacheKey(type, id, filename);
     await this.cache.put(cacheKey, new Response(blob, {
       headers: {
         'Content-Type': response.headers.get('Content-Type') || 'application/octet-stream',
@@ -170,9 +188,11 @@ export class CacheManager {
 
   /**
    * Get cache key for a file
+   * For media, uses the actual filename; for layouts, uses the ID
    */
-  getCacheKey(type, id) {
-    return `/cache/${type}/${id}`;
+  getCacheKey(type, id, filename = null) {
+    const key = filename || id;
+    return `/cache/${type}/${key}`;
   }
 
   /**
