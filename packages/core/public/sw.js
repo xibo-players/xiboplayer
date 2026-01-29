@@ -5,6 +5,35 @@
 const CACHE_VERSION = 'v1';
 const STATIC_CACHE = `xibo-static-${CACHE_VERSION}`;
 
+/**
+ * Handle Range requests for video/audio seeking
+ * Required for HTML5 video element to support seeking/scrubbing
+ */
+async function handleRangeRequest(cachedResponse, rangeHeader) {
+  const blob = await cachedResponse.blob();
+  const fileSize = blob.size;
+
+  // Parse Range header: "bytes=START-END" or "bytes=START-"
+  const rangeParts = rangeHeader.replace(/bytes=/, '').split('-');
+  const start = parseInt(rangeParts[0], 10);
+  const end = rangeParts[1] ? parseInt(rangeParts[1], 10) : fileSize - 1;
+
+  // Extract requested range from blob
+  const rangeBlob = blob.slice(start, end + 1);
+
+  return new Response(rangeBlob, {
+    status: 206, // Partial Content
+    statusText: 'Partial Content',
+    headers: {
+      'Content-Type': cachedResponse.headers.get('Content-Type') || 'video/mp4',
+      'Content-Length': rangeBlob.size,
+      'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+      'Accept-Ranges': 'bytes',
+      'Access-Control-Allow-Origin': '*'
+    }
+  });
+}
+
 // Files to cache on install (with /player/ prefix)
 const STATIC_FILES = [
   '/player/',
@@ -93,15 +122,24 @@ self.addEventListener('fetch', (event) => {
 
     event.respondWith(
       caches.open('xibo-media-v1').then((cache) => {
-        return cache.match(cacheUrl).then((response) => {
+        return cache.match(cacheUrl).then(async (response) => {
           if (response) {
             console.log('[SW] Serving from cache:', cacheKey);
-            // Clone response to avoid CORS issues
+
+            // Handle Range requests for video/audio seeking
+            const rangeHeader = event.request.headers.get('Range');
+            if (rangeHeader) {
+              return handleRangeRequest(response, rangeHeader);
+            }
+
+            // Regular response
             return new Response(response.body, {
-              status: response.status,
-              statusText: response.statusText,
+              status: 200,
+              statusText: 'OK',
               headers: {
                 'Content-Type': response.headers.get('Content-Type') || 'application/octet-stream',
+                'Content-Length': response.headers.get('Content-Length') || '',
+                'Accept-Ranges': 'bytes',
                 'Access-Control-Allow-Origin': '*'
               }
             });
