@@ -161,37 +161,50 @@ export class CacheManager {
     let fileSize;
 
     if (isLargeFile) {
-      // Large file: Stream with progress tracking
-      console.log(`[Cache] Large file detected (${(contentLength / 1024 / 1024).toFixed(1)} MB), streaming with progress`);
+      // Large file: Download in chunks with Range requests to avoid timeouts
+      console.log(`[Cache] Large file detected (${(contentLength / 1024 / 1024).toFixed(1)} MB), using chunked download`);
+
+      const CHUNK_SIZE = 50 * 1024 * 1024; // 50 MB chunks
+      const chunks = [];
+      let downloadedBytes = 0;
 
       // Notify UI about download start
       this.notifyDownloadProgress(filename, 0, contentLength);
 
-      // Create a new response by reading the stream with progress tracking
-      const reader = response.body.getReader();
-      const chunks = [];
-      let receivedLength = 0;
-      let lastProgressUpdate = 0;
+      // Download in chunks using Range requests
+      for (let start = 0; start < contentLength; start += CHUNK_SIZE) {
+        const end = Math.min(start + CHUNK_SIZE - 1, contentLength - 1);
+        const rangeHeader = `bytes=${start}-${end}`;
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
+        try {
+          const chunkResponse = await fetch(downloadUrl, {
+            headers: {
+              'Range': rangeHeader
+            }
+          });
 
-        chunks.push(value);
-        receivedLength += value.length;
+          if (!chunkResponse.ok && chunkResponse.status !== 206) {
+            throw new Error(`Chunk download failed: ${chunkResponse.status}`);
+          }
 
-        // Update progress every 5% or 10MB to avoid UI spam
-        const now = Date.now();
-        if (now - lastProgressUpdate > 500) { // Update max every 500ms
-          this.notifyDownloadProgress(filename, receivedLength, contentLength);
-          lastProgressUpdate = now;
+          const chunkBlob = await chunkResponse.blob();
+          chunks.push(chunkBlob);
+          downloadedBytes += chunkBlob.size;
+
+          // Update progress
+          this.notifyDownloadProgress(filename, downloadedBytes, contentLength);
+
+          console.log(`[Cache] Downloaded chunk ${start}-${end} (${chunkBlob.size} bytes, ${((downloadedBytes/contentLength)*100).toFixed(1)}%)`);
+        } catch (error) {
+          console.error(`[Cache] Chunk ${start}-${end} failed:`, error);
+          throw new Error(`Chunked download failed at byte ${start}: ${error.message}`);
         }
       }
 
-      // Combine chunks into blob
+      // Combine all chunks into one blob
       const blob = new Blob(chunks);
 
-      // Cache the blob
+      // Cache the complete file
       await this.cache.put(cacheKey, new Response(blob, {
         headers: {
           'Content-Type': response.headers.get('Content-Type') || 'application/octet-stream',
@@ -200,12 +213,12 @@ export class CacheManager {
       }));
 
       // Notify completion
-      this.notifyDownloadProgress(filename, receivedLength, contentLength, true);
+      this.notifyDownloadProgress(filename, downloadedBytes, contentLength, true);
 
       calculatedMd5 = md5 || 'skipped'; // Use provided MD5 or mark as skipped
-      fileSize = receivedLength;
+      fileSize = blob.size;
 
-      console.log(`[Cache] Cached ${type}/${id} (${fileSize} bytes, MD5 check skipped for large file)`);
+      console.log(`[Cache] Cached ${type}/${id} (${fileSize} bytes in ${chunks.length} chunks, MD5 check skipped for large file)`);
     } else {
       // Small file: Download fully and verify MD5
       this.notifyDownloadProgress(filename, 0, contentLength);
