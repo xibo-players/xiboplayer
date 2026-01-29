@@ -141,11 +141,11 @@ self.addEventListener('fetch', (event) => {
   if (url.pathname.startsWith('/player/cache/')) {
     // Strip /player/ prefix to match cached keys
     const cacheKey = url.pathname.replace('/player', '');
-    const cacheUrl = new URL(cacheKey, url.origin);
+    console.log('[SW] Request for:', url.pathname, '→ Cache key:', cacheKey);
 
     event.respondWith(
       caches.open('xibo-media-v1').then((cache) => {
-        return cache.match(cacheUrl).then(async (response) => {
+        return cache.match(cacheKey).then(async (response) => {
           if (response) {
             console.log('[SW] Serving from cache:', cacheKey);
 
