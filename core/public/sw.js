@@ -87,8 +87,8 @@ self.addEventListener('fetch', (event) => {
         return response;
       }
       return fetch(event.request).then((networkResponse) => {
-        // Cache successful responses
-        if (networkResponse.ok) {
+        // Cache successful GET responses only (can't cache POST)
+        if (networkResponse.ok && event.request.method === 'GET') {
           const responseClone = networkResponse.clone();
           caches.open(STATIC_CACHE).then((cache) => {
             cache.put(event.request, responseClone);
@@ -99,7 +99,7 @@ self.addEventListener('fetch', (event) => {
     }).catch(() => {
       // Network failed and not in cache
       if (event.request.destination === 'document') {
-        return caches.match('/index.html');
+        return caches.match('/player/index.html');
       }
       return new Response('Offline', { status: 503 });
     })
