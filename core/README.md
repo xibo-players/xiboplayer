@@ -23,6 +23,38 @@ npm run dev
 
 Open http://localhost:5173 in your browser.
 
+### CORS Issues
+
+If you get "NetworkError when attempting to fetch resource", the CMS is blocking cross-origin requests. Choose one solution:
+
+**Option 1: Enable CORS on CMS (recommended)**
+
+Add to your CMS web server config:
+
+Apache (`/web/.htaccess`):
+```apache
+Header set Access-Control-Allow-Origin "*"
+Header set Access-Control-Allow-Methods "POST, GET, OPTIONS"
+Header set Access-Control-Allow-Headers "Content-Type"
+```
+
+Nginx:
+```nginx
+add_header Access-Control-Allow-Origin *;
+```
+
+**Option 2: Use the CORS proxy (for testing)**
+
+```bash
+# Terminal 1
+CMS_URL=http://your-cms-address npm run proxy
+
+# Terminal 2
+npm run dev
+```
+
+Then in the player setup, use `http://localhost:8080` as the CMS address.
+
 ### Configuration
 
 1. Enter your CMS address (e.g., `https://cms.example.com`)
