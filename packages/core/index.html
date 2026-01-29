@@ -235,8 +235,25 @@
         .then(reg => {
           console.log('[SW] Registered:', reg.scope);
           console.log('[SW] State:', reg.active ? reg.active.state : 'installing');
+
+          // Force update on page load to get latest SW
+          reg.update();
+
+          // Log when SW updates
+          reg.addEventListener('updatefound', () => {
+            console.log('[SW] Update found, installing new version...');
+          });
         })
         .catch(err => console.error('[SW] Registration failed:', err));
+
+      // Check if SW is controlling this page
+      navigator.serviceWorker.ready.then(reg => {
+        if (navigator.serviceWorker.controller) {
+          console.log('[SW] Controlling page:', navigator.serviceWorker.controller.scriptURL);
+        } else {
+          console.warn('[SW] NOT controlling page - hard refresh may be needed');
+        }
+      });
     } else {
       console.warn('[SW] Service workers not supported');
     }
