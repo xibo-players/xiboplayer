@@ -27,7 +27,7 @@ class Player {
     // Check configuration
     if (!config.isConfigured()) {
       console.log('[Player] Not configured, redirecting to setup');
-      window.location.href = '/setup.html';
+      window.location.href = '/player/setup.html';
       return;
     }
 

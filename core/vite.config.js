@@ -1,6 +1,7 @@
 import { defineConfig } from 'vite';
 
 export default defineConfig({
+  base: '/player/',
   build: {
     outDir: 'dist',
     rollupOptions: {
@@ -12,17 +13,6 @@ export default defineConfig({
   },
   server: {
     port: 5173,
-    strictPort: false,
-    proxy: {
-      // Proxy /xmds.php requests to avoid CORS
-      '/xmds.php': {
-        target: 'http://localhost',
-        changeOrigin: true,
-        configure: (proxy, options) => {
-          // This will be overridden at runtime based on config
-          // For now, requests will fail until we add dynamic proxy
-        }
-      }
-    }
+    strictPort: false
   }
 });

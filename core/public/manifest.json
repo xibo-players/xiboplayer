@@ -2,7 +2,7 @@
   "name": "Xibo Player",
   "short_name": "Xibo",
   "description": "Free Xibo-compatible digital signage player",
-  "start_url": "/",
+  "start_url": "/player/",
   "display": "fullscreen",
   "orientation": "any",
   "background_color": "#000000",

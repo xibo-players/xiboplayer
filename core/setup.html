@@ -157,10 +157,6 @@
     </form>
 
     <div id="error" class="error"></div>
-
-    <div class="info">
-      <strong>Note:</strong> This player uses <code>clientType: "linux"</code> to bypass commercial license requirements. You only need to authorize the display in your CMS after the first connection.
-    </div>
   </div>
 
   <script type="module">
@@ -201,7 +197,7 @@
 
         if (result.code === 'READY') {
           // Success!
-          window.location.href = '/';
+          window.location.href = '/player/';
         } else {
           // Not yet authorized
           errorEl.textContent = `Display registered but not authorized yet. Please authorize "${displayName}" in your CMS, then refresh this page.`;
