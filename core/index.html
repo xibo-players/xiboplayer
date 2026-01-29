@@ -20,13 +20,13 @@
       font-family: sans-serif;
     }
 
-    #layout-iframe {
+    #layout-container {
       position: absolute;
       top: 0;
       left: 0;
       width: 100%;
       height: 100%;
-      border: none;
+      overflow: hidden;
     }
 
     #message {
@@ -46,7 +46,7 @@
   </style>
 </head>
 <body>
-  <iframe id="layout-iframe"></iframe>
+  <div id="layout-container"></div>
   <div id="message"></div>
 
   <script type="module" src="/src/main.js"></script>

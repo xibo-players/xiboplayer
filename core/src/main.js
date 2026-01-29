@@ -157,7 +157,7 @@ class Player {
   }
 
   /**
-   * Show a layout in the iframe
+   * Show a layout by loading HTML directly into page (not iframe)
    */
   async showLayout(layoutFile) {
     if (!layoutFile) {
@@ -176,20 +176,31 @@ class Player {
       return;
     }
 
-    // Create blob URL from cached HTML
     const htmlText = await html.text();
-    const blob = new Blob([htmlText], { type: 'text/html' });
-    const layoutUrl = URL.createObjectURL(blob);
+
+    // Parse HTML and inject into main page
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(htmlText, 'text/html');
+
+    // Extract body content and styles
+    const layoutContent = doc.body.innerHTML;
+    const layoutStyles = Array.from(doc.querySelectorAll('style')).map(s => s.innerHTML).join('\n');
+    const layoutScripts = Array.from(doc.querySelectorAll('script')).map(s => s.innerHTML).join('\n');
 
     console.log('[Player] Showing layout:', layoutId);
 
-    const iframe = document.getElementById('layout-iframe');
-    if (iframe) {
-      // Revoke old blob URL if exists
-      if (iframe.src && iframe.src.startsWith('blob:')) {
-        URL.revokeObjectURL(iframe.src);
-      }
-      iframe.src = layoutUrl;
+    // Clear and inject layout into main page
+    const container = document.getElementById('layout-container');
+    if (container) {
+      container.innerHTML = `
+        <style>${layoutStyles}</style>
+        ${layoutContent}
+      `;
+
+      // Execute layout scripts
+      const script = document.createElement('script');
+      script.textContent = layoutScripts;
+      container.appendChild(script);
     }
   }
 
