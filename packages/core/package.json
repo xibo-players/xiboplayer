@@ -1,6 +1,6 @@
 {
-  "name": "xibo-player-core",
-  "version": "0.1.0",
+  "name": "@tecman/xibo-player-core",
+  "version": "1.0.0",
   "description": "Free Xibo-compatible digital signage player (PWA core)",
   "type": "module",
   "scripts": {
@@ -21,6 +21,6 @@
     "pwa",
     "player"
   ],
-  "author": "TecMan",
+  "author": "Pau Aliagas <linuxnow@gmail.com>",
   "license": "AGPL-3.0-or-later"
 }
