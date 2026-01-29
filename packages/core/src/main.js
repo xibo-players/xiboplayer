@@ -91,6 +91,7 @@ class Player {
           }
 
           // Translate layouts to HTML
+          // Always re-translate to pick up code changes (layout files are small)
           if (file.type === 'layout') {
             await this.translateLayout(file);
           }
