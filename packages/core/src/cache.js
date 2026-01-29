@@ -144,14 +144,12 @@ export class CacheManager {
     const downloadUrl = this.rewriteUrl(path);
     console.log(`[Cache] Using URL: ${downloadUrl}`);
 
-    // Download file
-    const response = await fetch(downloadUrl);
-    if (!response.ok) {
-      throw new Error(`Failed to download ${path}: ${response.status}`);
-    }
-
-    const contentLength = parseInt(response.headers.get('Content-Length') || '0');
+    // Check file size with HEAD request first (avoid downloading unnecessarily)
+    const headResponse = await fetch(downloadUrl, { method: 'HEAD' });
+    const contentLength = parseInt(headResponse.headers.get('Content-Length') || '0');
     const isLargeFile = contentLength > 100 * 1024 * 1024; // > 100 MB
+
+    console.log(`[Cache] File size: ${(contentLength / 1024 / 1024).toFixed(1)} MB ${isLargeFile ? '(large file)' : ''}`);
 
     // Extract filename from path for media files
     const filename = type === 'media' ? this.extractFilename(path) : id;
@@ -222,6 +220,12 @@ export class CacheManager {
     } else {
       // Small file: Download fully and verify MD5
       this.notifyDownloadProgress(filename, 0, contentLength);
+
+      // Now do the actual download for small files
+      const response = await fetch(downloadUrl);
+      if (!response.ok) {
+        throw new Error(`Failed to download ${path}: ${response.status}`);
+      }
 
       const blob = await response.blob();
       const arrayBuffer = await blob.arrayBuffer();
