@@ -375,6 +375,11 @@ export class CacheManager {
       this.notifyDownloadProgress(filename, downloadedBytes, contentLength, true);
 
       console.log(`[Cache] Background download complete: ${filename} (${blob.size} bytes in ${chunks.length} chunks)`);
+
+      // Notify that file is now available for playback
+      window.dispatchEvent(new CustomEvent('media-cached', {
+        detail: { filename, id, type, size: blob.size }
+      }));
     } catch (error) {
       console.error(`[Cache] Background download failed for ${filename}:`, error);
       this.notifyDownloadProgress(filename, downloadedBytes, contentLength, false, true);
