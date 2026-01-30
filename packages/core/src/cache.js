@@ -335,7 +335,7 @@ export class CacheManager {
 
         const chunkBlob = await chunkResponse.blob();
         chunks.push(chunkBlob);
-        downloadedBytes += chunkBlob.size();
+        downloadedBytes += chunkBlob.size;
 
         // Update progress
         this.notifyDownloadProgress(filename, downloadedBytes, contentLength);
