@@ -236,19 +236,33 @@ ${mediaJS}
 
       case 'video':
         // All videos use cache URL pattern
-        // Background-downloaded videos will be served from cache when ready
+        // Background-downloaded videos will auto-reload when cache completes
         const videoSrc = `${window.location.origin}/player/cache/media/${media.options.uri}`;
+        const videoFilename = media.options.uri;
 
         startFn = `() => {
         const video = document.createElement('video');
         video.className = 'media';
         video.src = '${videoSrc}';
+        video.dataset.filename = '${videoFilename}';
         video.autoplay = true;
         video.muted = ${media.options.mute === '1' ? 'true' : 'false'};
         video.loop = false;
         video.style.width = '100%';
         video.style.height = '100%';
         video.style.objectFit = 'contain';
+
+        // Retry loading if cache completes while video is playing
+        const retryOnCache = (event) => {
+          if (event.detail.filename === '${videoFilename}' && video.error) {
+            console.log('[Video] Cache complete, reloading:', '${videoFilename}');
+            video.load();
+            video.play();
+          }
+        };
+        window.addEventListener('media-cached', retryOnCache);
+        video.dataset.cacheListener = 'attached';
+
         document.getElementById('region_${regionId}').innerHTML = '';
         document.getElementById('region_${regionId}').appendChild(video);
         console.log('[Video] Playing:', '${media.options.uri}');
