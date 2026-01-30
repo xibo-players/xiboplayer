@@ -510,4 +510,47 @@ npm run release
 ---
 
 **End of Session Summary**
-**Resume Point:** Video streaming fix deployed, final testing needed
+**Resume Point:** Background video caching working, needs Service Worker fix
+
+## 🔄 To Resume - Critical Next Steps
+
+### **Issue: Video Playback Still Broken**
+
+**Current Status:**
+- ✅ Background downloads work perfectly (2.8GB cached successfully)
+- ✅ Collection cycle fast (~10 seconds)
+- ✅ Progress indicators showing
+- ❌ Videos get HTTP 202 "text/plain" response from SW → Can't play
+
+**Root Cause:**
+- Service Worker returns placeholder text/plain for uncached videos
+- Video element can't decode text/plain → playback fails
+- Even when cache completes and auto-retry fires, still fails
+
+**Fix Needed:**
+Remove the 202 placeholder response from Service Worker.
+For uncached videos, SW should either:
+1. Return nothing (let request fail gracefully)
+2. Or proxy request directly to server
+
+**File to Edit:** `packages/core/public/sw.js` lines ~180-190
+
+**Current code (WRONG):**
+```javascript
+if (cacheKey.includes('.mp4')) {
+  return new Response('Downloading...', {
+    status: 202,
+    statusText: 'Accepted',
+    headers: { 'Content-Type': 'text/plain' }  ← BAD!
+  });
+}
+```
+
+**Should be:**
+```javascript
+// For videos not yet cached, return 404 and let video element handle gracefully
+console.warn('[SW] Video not cached yet:', cacheKey);
+return new Response('Not cached', { status: 404 });
+```
+
+**Then:** Video element's error handler + auto-retry will work correctly
