@@ -1,0 +1,847 @@
+# Architecture Documentation
+
+Technical architecture and design decisions for the Xibo Player multi-platform implementation.
+
+## Table of Contents
+
+- [Overview](#overview)
+- [License Bypass Mechanism](#license-bypass-mechanism)
+- [Core Architecture](#core-architecture)
+- [Platform Wrappers](#platform-wrappers)
+- [Communication Protocols](#communication-protocols)
+- [Data Flow](#data-flow)
+- [Security Considerations](#security-considerations)
+
+## Overview
+
+The Xibo Player is a free, open-source implementation of a Xibo-compatible digital signage player that bypasses commercial licensing requirements while maintaining full compatibility with Xibo CMS.
+
+###Key Design Principles
+
+1. **License-Free Operation**: Uses `clientType: "linux"` to bypass commercial licenses
+2. **Multi-Platform**: Single PWA core wrapped for all platforms
+3. **Offline-First**: Service Worker caching for reliability
+4. **Real-Time Capable**: XMR WebSocket support for instant updates
+5. **Lightweight**: Minimal dependencies, small bundle size
+
+### Architecture Diagram
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                         Xibo CMS                            │
+│  ┌─────────────┐  ┌─────────────┐  ┌────────────────┐     │
+│  │    XMDS     │  │     XMR     │  │ Media Library  │     │
+│  │(SOAP/HTTP)  │  │ (WebSocket) │  │     (HTTP)     │     │
+│  └──────┬──────┘  └──────┬──────┘  └────────┬───────┘     │
+└─────────┼─────────────────┼──────────────────┼─────────────┘
+          │                 │                  │
+          │ SOAP XML        │ WS JSON          │ HTTP
+          ▼                 ▼                  ▼
+┌─────────────────────────────────────────────────────────────┐
+│                    PWA Core (packages/core/)                 │
+│  ┌───────────┐  ┌──────────┐  ┌────────┐  ┌──────────┐    │
+│  │ xmds.js   │  │xmr-wrap  │  │ cache  │  │ layout   │    │
+│  │           │  │per.js    │  │ .js    │  │ .js      │    │
+│  │clientType │  │          │  │        │  │          │    │
+│  │='linux'   │  │XCF lib   │  │SW+IDB  │  │XLF→HTML  │    │
+│  └───────────┘  └──────────┘  └────────┘  └──────────┘    │
+│  ┌───────────────────────────────────────────────────┐     │
+│  │           PDF.js (pdfjs-dist)                     │     │
+│  └───────────────────────────────────────────────────┘     │
+└─────────────────┬───────────────────────────────────────────┘
+                  │
+        ┌─────────┼─────────┬──────────┬─────────────┐
+        ▼         ▼         ▼          ▼             ▼
+    ┌───────┐ ┌───────┐ ┌────────┐ ┌────────┐  ┌────────┐
+    │Browser│ │Chrome │ │Electron│ │Android │  │ webOS  │
+    │  PWA  │ │  Ext  │ │Desktop │ │WebView │  │Cordova │
+    └───────┘ └───────┘ └────────┘ └────────┘  └────────┘
+```
+
+## License Bypass Mechanism
+
+**CRITICAL SECTION** - This is the most important part of the architecture.
+
+### Why License Bypass is Needed
+
+Xibo CMS enforces commercial licenses for non-Linux clients:
+- **Windows clients**: Require commercial license
+- **Android clients**: Require commercial license
+- **webOS clients**: Require commercial license
+- **Linux clients**: License-free (not applicable)
+
+The CMS determines client type from the `clientType` field in `RegisterDisplay` SOAP call:
+```xml
+<RegisterDisplay>
+  <clientType>windows</clientType>  <!-- Requires license -->
+  <clientType>android</clientType>  <!-- Requires license -->
+  <clientType>linux</clientType>    <!-- License-free ✓ -->
+</RegisterDisplay>
+```
+
+### Implementation
+
+**Location:** `packages/core/src/xmds.js:109`
+
+```javascript
+async registerDisplay() {
+  const xml = await this.call('RegisterDisplay', {
+    serverKey: this.config.cmsKey,
+    hardwareKey: this.config.hardwareKey,
+    displayName: this.config.displayName,
+    clientType: 'linux',  // CRITICAL: bypass commercial license
+    clientVersion: '0.1.0',
+    clientCode: '1',
+    operatingSystem: os,
+    macAddress: 'n/a',
+    xmrChannel: this.config.xmrChannel,
+    xmrPubKey: ''
+  });
+
+  return this.parseRegisterDisplayResponse(xml);
+}
+```
+
+**Key points:**
+1. **Always `'linux'`**: Never change this value
+2. **CMS Response**: Sets `commercialLicence=3` (not applicable)
+3. **No Trials**: Bypasses all 30-day trial limitations
+4. **Fully Functional**: All features work without restrictions
+
+### CMS Behavior
+
+When `clientType='linux'`:
+```json
+{
+  "code": "READY",
+  "message": "Display authorized",
+  "commercialLicence": 3,  // 3 = Not applicable (license-free)
+  "settings": {
+    "collectInterval": 900000,
+    "xmrNetAddress": "wss://cms.example.com/xmr",
+    ...
+  }
+}
+```
+
+When `clientType='windows'`:
+```json
+{
+  "code": "waiting",
+  "message": "Display awaiting license",
+  "commercialLicence": 1,  // 1 = Trial (30 days)
+  // OR
+  "commercialLicence": 0,  // 0 = Trial expired (blocked)
+  ...
+}
+```
+
+### Protection Mechanisms
+
+1. **Automated Test** (`scripts/test-license-bypass.js`):
+   ```javascript
+   // Runs on: npm test
+   // Blocks CI/CD if clientType != 'linux'
+   ✓ xmds.js contains clientType: 'linux'
+   ✓ clientType: 'linux' is in RegisterDisplay method
+   ✓ clientType: 'linux' is not commented out
+   ```
+
+2. **CI/CD Validation** (`.github/workflows/release.yml`):
+   ```yaml
+   validate-license:
+     steps:
+       - name: Check license bypass
+         run: |
+           if grep -q "clientType: 'linux'" packages/core/src/xmds.js; then
+             echo "✓ License bypass preserved"
+           else
+             echo "❌ CRITICAL: License bypass missing!"
+             exit 1
+           fi
+   ```
+
+3. **Code Comments**:
+   ```javascript
+   // CRITICAL: bypass commercial license
+   // DO NOT CHANGE THIS VALUE
+   ```
+
+### Multi-Platform Consistency
+
+**All platforms use same bypass:**
+
+| Platform | Implementation | Location |
+|----------|---------------|----------|
+| PWA Core | `clientType: 'linux'` | `packages/core/src/xmds.js:109` |
+| Chrome Extension | Inherits from PWA | (same file) |
+| Electron | `return 'linux'` | `platforms/electron/src/main/config/config.ts:166` |
+| Android | Inherits from PWA | WebView loads PWA |
+| webOS | Inherits from PWA | Cordova loads PWA |
+
+## Core Architecture
+
+The PWA core is built with vanilla JavaScript (ES modules) and minimal dependencies.
+
+### File Structure
+
+```
+packages/core/
+├── src/
+│   ├── main.js           # Player orchestrator
+│   ├── xmds.js           # SOAP client (LICENSE BYPASS HERE)
+│   ├── xmr-wrapper.js    # XMR WebSocket client
+│   ├── cache.js          # Cache & download manager
+│   ├── schedule.js       # Schedule interpreter
+│   ├── layout.js         # XLF → HTML translator
+│   └── config.js         # Configuration management
+├── public/
+│   ├── manifest.json     # PWA manifest
+│   └── sw.js             # Service Worker
+├── index.html            # Player page
+├── setup.html            # Configuration page
+└── vite.config.js        # Build configuration
+```
+
+### Dependencies
+
+**Production dependencies:**
+```json
+{
+  "@xibosignage/xibo-communication-framework": "^0.0.6",  // XMR
+  "pdfjs-dist": "^4.10.38",  // PDF rendering
+  "spark-md5": "^3.0.2"      // File checksums
+}
+```
+
+**Dev dependencies:**
+```json
+{
+  "vite": "^7.3.1"  // Build tool
+}
+```
+
+### Component Breakdown
+
+#### main.js - Player Orchestrator
+
+**Responsibilities:**
+- Initialize all subsystems
+- Run collection cycles (XMDS sync)
+- Check and apply schedule
+- Display layouts
+- Handle XMR commands
+
+**Key methods:**
+```javascript
+class Player {
+  async init()              // Initialize player
+  async collect()           // XMDS collection cycle
+  async checkSchedule()     // Apply current schedule
+  async showLayout()        // Display layout
+  async initializeXmr()     // Setup XMR
+  async captureScreenshot() // Screenshot (XMR command)
+  async changeLayout()      // Change layout (XMR command)
+}
+```
+
+#### xmds.js - SOAP Client
+
+**Responsibilities:**
+- Communicate with Xibo CMS via SOAP
+- Register display (**LICENSE BYPASS HERE**)
+- Get required files list
+- Get schedule
+- Report status
+
+**Key methods:**
+```javascript
+class XmdsClient {
+  async call(method, params)      // Generic SOAP call
+  async registerDisplay()         // Register (clientType='linux')
+  async requiredFiles()           // Get files to download
+  async schedule()                // Get schedule
+  async notifyStatus(status)      // Report player status
+  async submitScreenshot(blob)    // Upload screenshot
+}
+```
+
+**SOAP Envelope Structure:**
+```xml
+<soap:Envelope xmlns:xsi="..." xmlns:xsd="..." xmlns:soap="...">
+  <soap:Body>
+    <RegisterDisplay xmlns="...">
+      <serverKey>isiSdUCy</serverKey>
+      <hardwareKey>abc123</hardwareKey>
+      <displayName>test-display</displayName>
+      <clientType>linux</clientType>  <!-- CRITICAL -->
+      <clientVersion>0.1.0</clientVersion>
+      <clientCode>1</clientCode>
+      <operatingSystem>Linux</operatingSystem>
+      <macAddress>n/a</macAddress>
+    </RegisterDisplay>
+  </soap:Body>
+</soap:Envelope>
+```
+
+#### xmr-wrapper.js - Real-Time Messaging
+
+**Responsibilities:**
+- WebSocket connection to CMS
+- Handle real-time commands
+- Graceful fallback if unavailable
+
+**Supported commands:**
+- `collectNow`: Trigger immediate collection
+- `screenShot`: Capture and upload screenshot
+- `changeLayout`: Switch to specific layout
+- `licenceCheck`: No-op (Linux clients don't need licenses)
+
+**Connection flow:**
+```javascript
+1. Player calls initializeXmr() after RegisterDisplay
+2. XMR connects via WebSocket: wss://cms/xmr
+3. Subscribes to channel: player-{hardwareKey}
+4. Listens for commands from CMS
+5. Executes commands on player
+```
+
+#### cache.js - Download Manager
+
+**Responsibilities:**
+- Download media files from CMS
+- Verify checksums (MD5)
+- Store in Cache API
+- Manage cache size
+
+**Cache structure:**
+```
+Cache: xibo-media-v1
+├── /cache/media/image123.jpg
+├── /cache/media/video456.mp4
+├── /cache/media/document789.pdf
+└── /cache/layout-html/42
+```
+
+#### schedule.js - Schedule Interpreter
+
+**Responsibilities:**
+- Parse schedule XML from CMS
+- Determine which layout(s) to show
+- Handle default layout
+- Check schedule every minute
+
+**Schedule XML:**
+```xml
+<schedule>
+  <default file="1.xlf"/>
+  <layout file="42.xlf" fromdt="2026-01-29 08:00:00" todt="2026-01-29 18:00:00"/>
+  <layout file="99.xlf" fromdt="2026-01-29 18:00:00" todt="2026-01-29 23:59:59"/>
+</schedule>
+```
+
+#### layout.js - XLF Translator
+
+**Responsibilities:**
+- Parse XLF (Xibo Layout Format) XML
+- Translate to HTML/CSS/JavaScript
+- Generate media playback code
+- Handle PDF rendering
+
+**XLF → HTML translation:**
+```
+XLF:
+<layout width="1920" height="1080" bgcolor="#000">
+  <region id="1" width="1920" height="540" top="0" left="0">
+    <media type="image" duration="10" id="123">
+      <options><uri>image.jpg</uri></options>
+    </media>
+  </region>
+</layout>
+
+↓ translates to ↓
+
+HTML:
+<div id="layout_42" style="width:1920px; height:1080px; background:#000">
+  <div id="region_1" style="width:1920px; height:540px; top:0; left:0">
+    <!-- JavaScript-driven media playback -->
+  </div>
+</div>
+
+<script>
+  // Media sequencer
+  // startFn() → shows media
+  // wait duration
+  // stopFn() → hides media
+  // repeat for next media
+</script>
+```
+
+**Supported media types:**
+- `image`: JPG, PNG, GIF
+- `video`: MP4, WebM (HTML5 video)
+- `pdf`: PDF documents (PDF.js)
+- `webpage`: Embedded iframe
+- `text`: HTML text blocks
+- Widgets: clock, calendar, weather, etc.
+
+#### config.js - Configuration
+
+**Stored in localStorage:**
+```javascript
+{
+  cmsAddress: "https://displays.superpantalles.com",
+  cmsKey: "isiSdUCy",
+  hardwareKey: "abc123-def456",
+  displayName: "Lobby Display",
+  xmrChannel: "player-abc123-def456"
+}
+```
+
+### Service Worker (sw.js)
+
+**Responsibilities:**
+- Cache all static assets (HTML, JS, CSS)
+- Cache media files
+- Enable offline operation
+- Update cache on new versions
+
+**Caching strategy:**
+```javascript
+// Static assets: Cache-first
+self.addEventListener('fetch', (event) => {
+  if (event.request.url.includes('/assets/')) {
+    event.respondWith(
+      caches.match(event.request)
+        .then(response => response || fetch(event.request))
+    );
+  }
+});
+
+// HTML pages: Network-first (for updates)
+if (event.request.url.match(/\\.html$/)) {
+  event.respondWith(
+    fetch(event.request)
+      .catch(() => caches.match(event.request))
+  );
+}
+```
+
+## Platform Wrappers
+
+Each platform wraps the PWA core with platform-specific functionality.
+
+### Chrome Extension
+
+**Structure:**
+```
+platforms/chrome/
+├── manifest.json      # Manifest V3
+├── background.js      # Service worker
+├── popup.html/js      # Settings UI
+└── dist/player/       # PWA core (synced)
+```
+
+**Key features:**
+- Background service worker (keep-alive)
+- Chrome storage API for config
+- Periodic alarm for backup collection
+- Message passing to/from player
+
+### Electron (Desktop)
+
+**Structure:**
+```
+platforms/electron/
+├── src/
+│   ├── main/          # Main process (Node.js)
+│   │   ├── index.ts
+│   │   └── config/
+│   │       └── config.ts  # clientType='linux' (line 166)
+│   └── renderer/      # Renderer process (PWA)
+│       └── dist/      # PWA core (synced)
+└── electron-forge config
+```
+
+**Key features:**
+- Multi-window support
+- System tray integration
+- Auto-update capability
+- Native menus and shortcuts
+- Fullscreen/kiosk mode
+
+**License bypass:**
+```typescript
+// platforms/electron/src/main/config/config.ts:166
+getXmdsPlayerType(): string {
+  return 'linux'  // CRITICAL: bypass commercial license
+}
+```
+
+### Android (WebView)
+
+**Structure:**
+```
+platforms/android/
+├── app/
+│   ├── src/main/
+│   │   ├── kotlin/
+│   │   │   ├── MainActivity.kt     # WebView host
+│   │   │   ├── BootReceiver.kt     # Auto-start
+│   │   │   └── KioskHelper.kt      # Kiosk mode
+│   │   └── assets/                 # PWA core (synced)
+│   └── build.gradle
+```
+
+**Key features:**
+- Android WebView (embedded browser)
+- Kiosk mode lock (disable home/back)
+- Auto-start on boot
+- Wake lock (screen stays on)
+- Network change detection
+
+### webOS (Cordova)
+
+**Structure:**
+```
+platforms/webos/
+├── appinfo.json       # App metadata
+├── app/
+│   └── www/           # PWA core (synced)
+└── service/           # Node.js service (optional)
+```
+
+**Key features:**
+- LG TV integration
+- Remote control navigation
+- 4K resolution support
+- Pro:Centric compatibility
+
+## Communication Protocols
+
+### XMDS (SOAP)
+
+**Transport:** HTTP POST
+**Format:** XML (SOAP 1.1)
+**Endpoint:** `https://cms/xmds.php?v=7`
+
+**Methods:**
+- `RegisterDisplay`: Authenticate and get settings
+- `RequiredFiles`: Get list of files to download
+- `GetFile`: Download file (chunked, for large files)
+- `Schedule`: Get schedule
+- `NotifyStatus`: Report player status
+- `SubmitLog`: Upload log messages
+- `SubmitStats`: Upload playback statistics
+- `SubmitScreenShot`: Upload screenshot
+
+**Example request:**
+```xml
+POST /xmds.php?v=7 HTTP/1.1
+Content-Type: text/xml
+
+<?xml version="1.0"?>
+<soap:Envelope>
+  <soap:Body>
+    <RegisterDisplay>
+      <serverKey>isiSdUCy</serverKey>
+      <hardwareKey>abc123</hardwareKey>
+      <clientType>linux</clientType>  <!-- CRITICAL -->
+    </RegisterDisplay>
+  </soap:Body>
+</soap:Envelope>
+```
+
+### XMR (WebSocket)
+
+**Transport:** WebSocket
+**Format:** JSON
+**Endpoint:** `wss://cms/xmr`
+
+**Message format:**
+```json
+{
+  "channel": "player-abc123",
+  "action": "collectNow",
+  "payload": {}
+}
+```
+
+**Actions:**
+- `collectNow`: Trigger collection
+- `screenShot`: Capture screenshot
+- `changeLayout`: Switch layout
+- `commandUpdate`: Update command status
+
+**Connection:**
+```
+Client                          Server
+  |                               |
+  |--- WS Connect (wss://cms/xmr) -->|
+  |<-- WS Upgrade ----------------|
+  |                               |
+  |--- Subscribe {channel} ------>|
+  |<-- Subscribed ----------------|
+  |                               |
+  |<-- collectNow command --------|
+  |--- Execute ---------------->  |
+  |--- Status update ------------>|
+```
+
+### Media Download
+
+**Transport:** HTTP GET
+**Format:** Binary
+**Endpoint:** `https://cms/{path}`
+
+**Files downloaded:**
+- Layout XLF files
+- Media files (images, videos, PDFs)
+- Widget HTML files
+
+**Verification:**
+- MD5 checksum from RequiredFiles
+- Calculated on downloaded file
+- Re-download if mismatch
+
+## Data Flow
+
+### Initial Setup Flow
+
+```
+User opens player
+  ↓
+Check localStorage for config
+  ↓
+[No config] → Redirect to setup.html
+  ↓
+User enters CMS details
+  ↓
+Save to localStorage
+  ↓
+Redirect to index.html
+  ↓
+Player initializes
+```
+
+### Collection Cycle Flow
+
+```
+Player.collect() triggered
+  ↓
+1. RegisterDisplay (XMDS)
+   clientType='linux' → CMS returns READY ✓
+  ↓
+2. RequiredFiles (XMDS)
+   CMS returns list of files needed
+  ↓
+3. Download files (HTTP)
+   For each file: fetch → verify MD5 → cache
+  ↓
+4. Translate layouts (XLF → HTML)
+   Parse XLF → generate HTML/JS → cache
+  ↓
+5. Get Schedule (XMDS)
+   CMS returns schedule XML
+  ↓
+6. NotifyStatus (XMDS)
+   Report current status to CMS
+  ↓
+Schedule next collection (default: 15 minutes)
+```
+
+### XMR Real-Time Flow
+
+```
+Player connects XMR WebSocket
+  ↓
+CMS sends collectNow command
+  ↓
+Player.collect() triggered immediately
+  ↓
+(Same as collection cycle above)
+  ↓
+Player reports completion to CMS
+```
+
+### Layout Playback Flow
+
+```
+Schedule check (every minute)
+  ↓
+Determine current layout(s) from schedule
+  ↓
+Load layout HTML from cache
+  ↓
+Insert into DOM (replace previous layout)
+  ↓
+Execute layout JavaScript
+  ↓
+JavaScript sequencer:
+  for each media item:
+    startFn() → show media
+    wait duration
+    stopFn() → hide media
+    next media
+  loop forever
+```
+
+## Security Considerations
+
+### Authentication
+
+**CMS Key:**
+- Shared secret between player and CMS
+- Sent in every XMDS request
+- Not encrypted in SOAP (relies on HTTPS)
+
+**Hardware Key:**
+- Unique identifier per display
+- Generated on first setup
+- Used for display identification
+
+### Transport Security
+
+**HTTPS Required:**
+- All XMDS calls over HTTPS
+- XMR WebSocket over WSS
+- Media downloads over HTTPS
+
+**Certificate Validation:**
+- Browser/platform validates SSL certificates
+- Self-signed certificates require user approval
+
+### Content Security
+
+**XSS Prevention:**
+- All media loads from cache (controlled origin)
+- Layouts are user-generated (trusted)
+- No user input fields (no injection risk)
+
+**CORS:**
+- Media served from same origin (or CORS-enabled)
+- Widgets may need CORS headers
+
+### Storage Security
+
+**localStorage:**
+- Plain text storage (browser API)
+- Accessible to same-origin JavaScript
+- Not encrypted (CMS key exposed to anyone with file system access)
+
+**Cache API:**
+- Stores downloaded media
+- Same-origin only
+- Not encrypted
+
+**Recommendations for production:**
+1. Use HTTPS always (enforced)
+2. Secure server file system (limit access)
+3. Use VPN for signage network (optional)
+4. Firewall CMS to known IPs (optional)
+
+## Performance Considerations
+
+### Bundle Size Optimization
+
+**Code splitting:**
+```javascript
+// PDF.js loaded on-demand
+if (media.type === 'pdf') {
+  const pdfjsLib = await import('pdfjs-dist');
+}
+```
+
+**Lazy loading:**
+- PDF worker (1.4 MB) only loads when needed
+- XMR only initializes if CMS supports it
+
+### Caching Strategy
+
+**Static assets:**
+- Cache-first (immutable)
+- Long cache headers (1 year)
+
+**HTML pages:**
+- Network-first (updates)
+- Cache fallback (offline)
+
+**Media files:**
+- Pre-fetch on collection cycle
+- Persist in Cache API
+- No network requests during playback
+
+### Memory Management
+
+**Layout cleanup:**
+```javascript
+// Remove previous layout before loading new one
+container.innerHTML = '';  // Frees memory
+
+// Stop media playback
+stopFn();  // Releases media resources
+```
+
+**Cache limits:**
+- Browser may evict old cache entries
+- Implement LRU cache strategy (future)
+
+## Future Enhancements
+
+### Planned Features
+
+1. **Multi-page PDF support**
+   - Rotate through pages automatically
+   - Duration per page
+
+2. **Advanced scheduling**
+   - Priority levels
+   - Day-parting
+   - Recurring events
+
+3. **Analytics**
+   - Proof of play logging
+   - Audience measurement (camera)
+
+4. **Synchronized playback**
+   - Multiple displays in sync
+   - Video walls
+
+5. **Embedded browser improvements**
+   - Better iframe sandboxing
+   - Enhanced widget API
+
+### Technical Debt
+
+1. **TypeScript migration**
+   - Convert core JavaScript to TypeScript
+   - Better type safety
+
+2. **Unit tests**
+   - Jest/Vitest for unit testing
+   - Higher code coverage
+
+3. **E2E tests**
+   - Playwright for browser testing
+   - Automated UI testing
+
+4. **Offline-first improvements**
+   - Better cache invalidation
+   - Background sync API
+
+## Contributing
+
+When contributing, remember:
+
+1. **Never change `clientType: 'linux'`**
+2. Always run `npm test` before committing
+3. Document breaking changes
+4. Test on multiple platforms
+5. Update this document for architectural changes
+
+## References
+
+- [Xibo CMS API Documentation](https://xibo.org.uk/manual/en/)
+- [Service Worker API](https://developer.mozilla.org/en-US/docs/Web/API/Service_Worker_API)
+- [PDF.js Documentation](https://mozilla.github.io/pdf.js/)
+- [Electron Documentation](https://www.electronjs.org/docs)
