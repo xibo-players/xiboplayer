@@ -33,3 +33,6 @@ android/.idea/
 
 # webOS
 webos/.ares/
+
+# Session archives (private, not published)
+docs/archive/
