@@ -19,6 +19,9 @@ class Player {
     this.scheduleCheckInterval = 60000; // 1 minute
     this.lastScheduleCheck = 0;
     this.currentLayouts = [];
+    this.currentLayoutIndex = 0; // Track position in campaign
+    this.layoutChangeTimeout = null; // Timer for layout cycling
+    this.layoutScripts = []; // Track scripts from current layout
   }
 
   /**
@@ -161,7 +164,87 @@ class Player {
     if (JSON.stringify(layouts) !== JSON.stringify(this.currentLayouts)) {
       console.log('[Player] Schedule changed:', layouts);
       this.currentLayouts = layouts;
-      await this.showLayout(layouts[0]);
+      this.currentLayoutIndex = 0;
+
+      // Clear any existing layout change timer
+      if (this.layoutChangeTimeout) {
+        clearTimeout(this.layoutChangeTimeout);
+      }
+
+      // Show first layout and start cycling
+      await this.showCurrentLayout();
+    }
+  }
+
+  /**
+   * Show the current layout in the campaign and schedule next layout
+   */
+  async showCurrentLayout() {
+    if (this.currentLayouts.length === 0) {
+      this.showMessage('No layout scheduled');
+      return;
+    }
+
+    const layoutFile = this.currentLayouts[this.currentLayoutIndex];
+    await this.showLayout(layoutFile);
+
+    // If there are multiple layouts, schedule the next one
+    if (this.currentLayouts.length > 1) {
+      // Get layout duration (default to 60 seconds if not specified)
+      const layoutDuration = await this.getLayoutDuration(layoutFile);
+      const duration = layoutDuration || 60000; // milliseconds
+
+      console.log(`[Player] Layout will change in ${duration}ms`);
+
+      // Schedule next layout
+      this.layoutChangeTimeout = setTimeout(() => {
+        this.advanceToNextLayout();
+      }, duration);
+    }
+  }
+
+  /**
+   * Advance to the next layout in the campaign
+   */
+  async advanceToNextLayout() {
+    if (this.currentLayouts.length <= 1) {
+      return; // Nothing to cycle to
+    }
+
+    // Advance index (loop back to 0 at end)
+    this.currentLayoutIndex = (this.currentLayoutIndex + 1) % this.currentLayouts.length;
+    console.log(`[Player] Advancing to layout ${this.currentLayoutIndex + 1}/${this.currentLayouts.length}`);
+
+    // Show the next layout
+    await this.showCurrentLayout();
+  }
+
+  /**
+   * Get layout duration from cache or default to 60 seconds
+   */
+  async getLayoutDuration(layoutFile) {
+    try {
+      const layoutId = layoutFile.replace('.xlf', '').replace(/^.*\//, '');
+      const xlfText = await cacheManager.getCachedFileText('layout', layoutId);
+
+      if (!xlfText) {
+        return 60000; // Default 60 seconds
+      }
+
+      // Parse XLF to get duration
+      const parser = new DOMParser();
+      const xlf = parser.parseFromString(xlfText, 'text/xml');
+      const layoutNode = xlf.querySelector('layout');
+
+      if (layoutNode) {
+        const duration = parseInt(layoutNode.getAttribute('duration')) || 60;
+        return duration * 1000; // Convert to milliseconds
+      }
+
+      return 60000; // Default
+    } catch (error) {
+      console.warn('[Player] Could not get layout duration:', error);
+      return 60000; // Default
     }
   }
 
@@ -202,6 +285,14 @@ class Player {
     const scriptsInBody = bodyWithoutScripts.querySelectorAll('script');
     scriptsInBody.forEach(s => s.remove());
 
+    // Remove previous layout's scripts to avoid variable redeclaration errors
+    this.layoutScripts.forEach(script => {
+      if (script.parentNode) {
+        script.parentNode.removeChild(script);
+      }
+    });
+    this.layoutScripts = [];
+
     // Set HTML (styles + body content without scripts)
     container.innerHTML = '';
 
@@ -216,15 +307,21 @@ class Player {
     }
 
     // Execute scripts manually (innerHTML doesn't execute them)
+    // Wrap inline scripts in IIFE to prevent const redeclaration errors
     const allScripts = [...doc.querySelectorAll('head > script'), ...doc.querySelectorAll('body > script')];
     allScripts.forEach(oldScript => {
       const newScript = document.createElement('script');
       if (oldScript.src) {
         newScript.src = oldScript.src;
       } else {
-        newScript.textContent = oldScript.textContent;
+        // Wrap inline script in IIFE to create isolated scope
+        // This prevents const/let redeclaration errors when switching layouts
+        newScript.textContent = `(function() {\n${oldScript.textContent}\n})();`;
       }
-      document.body.appendChild(newScript); // Append to body, not container
+      // Mark script with data attribute for tracking
+      newScript.setAttribute('data-layout-script', layoutId);
+      document.body.appendChild(newScript);
+      this.layoutScripts.push(newScript); // Track for cleanup
     });
   }
 

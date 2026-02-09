@@ -3,6 +3,136 @@
  * Based on arexibo layout.rs
  */
 
+// Transition utility functions
+const Transitions = {
+  /**
+   * Apply fade in transition
+   */
+  fadeIn(element, duration) {
+    const keyframes = [
+      { opacity: 0 },
+      { opacity: 1 }
+    ];
+    const timing = {
+      duration: duration,
+      easing: 'linear',
+      fill: 'forwards'
+    };
+    return element.animate(keyframes, timing);
+  },
+
+  /**
+   * Apply fade out transition
+   */
+  fadeOut(element, duration) {
+    const keyframes = [
+      { opacity: 1 },
+      { opacity: 0, zIndex: 0 }
+    ];
+    const timing = {
+      duration: duration,
+      easing: 'linear',
+      fill: 'forwards'
+    };
+    return element.animate(keyframes, timing);
+  },
+
+  /**
+   * Get fly keyframes based on compass direction
+   */
+  getFlyKeyframes(direction, width, height, isIn) {
+    const keyframes = { from: {}, to: {} };
+
+    // Map compass directions to transform values
+    const dirMap = {
+      'N': { x: 0, y: isIn ? -height : height },
+      'NE': { x: isIn ? width : -width, y: isIn ? -height : height },
+      'E': { x: isIn ? width : -width, y: 0 },
+      'SE': { x: isIn ? width : -width, y: isIn ? height : -height },
+      'S': { x: 0, y: isIn ? height : -height },
+      'SW': { x: isIn ? -width : width, y: isIn ? height : -height },
+      'W': { x: isIn ? -width : width, y: 0 },
+      'NW': { x: isIn ? -width : width, y: isIn ? -height : height }
+    };
+
+    const offset = dirMap[direction] || dirMap['N'];
+
+    if (isIn) {
+      keyframes.from = {
+        transform: `translate(${offset.x}px, ${offset.y}px)`,
+        opacity: 0
+      };
+      keyframes.to = {
+        transform: 'translate(0, 0)',
+        opacity: 1
+      };
+    } else {
+      keyframes.from = {
+        transform: 'translate(0, 0)',
+        opacity: 1
+      };
+      keyframes.to = {
+        transform: `translate(${offset.x}px, ${offset.y}px)`,
+        opacity: 0
+      };
+    }
+
+    return keyframes;
+  },
+
+  /**
+   * Apply fly in transition
+   */
+  flyIn(element, duration, direction, regionWidth, regionHeight) {
+    const keyframes = this.getFlyKeyframes(direction, regionWidth, regionHeight, true);
+    const timing = {
+      duration: duration,
+      easing: 'ease-out',
+      fill: 'forwards'
+    };
+    return element.animate([keyframes.from, keyframes.to], timing);
+  },
+
+  /**
+   * Apply fly out transition
+   */
+  flyOut(element, duration, direction, regionWidth, regionHeight) {
+    const keyframes = this.getFlyKeyframes(direction, regionWidth, regionHeight, false);
+    const timing = {
+      duration: duration,
+      easing: 'ease-in',
+      fill: 'forwards'
+    };
+    return element.animate([keyframes.from, keyframes.to], timing);
+  },
+
+  /**
+   * Apply transition based on type
+   */
+  apply(element, transitionConfig, isIn, regionWidth, regionHeight) {
+    if (!transitionConfig || !transitionConfig.type) {
+      return null;
+    }
+
+    const type = transitionConfig.type.toLowerCase();
+    const duration = transitionConfig.duration || 1000;
+    const direction = transitionConfig.direction || 'N';
+
+    switch (type) {
+      case 'fadein':
+        return isIn ? this.fadeIn(element, duration) : null;
+      case 'fadeout':
+        return isIn ? null : this.fadeOut(element, duration);
+      case 'flyin':
+        return isIn ? this.flyIn(element, duration, direction, regionWidth, regionHeight) : null;
+      case 'flyout':
+        return isIn ? null : this.flyOut(element, duration, direction, regionWidth, regionHeight);
+      default:
+        return null;
+    }
+  }
+};
+
 export class LayoutTranslator {
   constructor(xmds) {
     this.xmds = xmds;
@@ -77,6 +207,35 @@ export class LayoutTranslator {
       }
     }
 
+    // Parse transition information
+    const transitions = {
+      in: null,
+      out: null
+    };
+
+    const transInEl = mediaEl.querySelector('options > transIn');
+    const transOutEl = mediaEl.querySelector('options > transOut');
+    const transInDurationEl = mediaEl.querySelector('options > transInDuration');
+    const transOutDurationEl = mediaEl.querySelector('options > transOutDuration');
+    const transInDirectionEl = mediaEl.querySelector('options > transInDirection');
+    const transOutDirectionEl = mediaEl.querySelector('options > transOutDirection');
+
+    if (transInEl && transInEl.textContent) {
+      transitions.in = {
+        type: transInEl.textContent,
+        duration: parseInt(transInDurationEl?.textContent || '1000'),
+        direction: transInDirectionEl?.textContent || 'N'
+      };
+    }
+
+    if (transOutEl && transOutEl.textContent) {
+      transitions.out = {
+        type: transOutEl.textContent,
+        duration: parseInt(transOutDurationEl?.textContent || '1000'),
+        direction: transOutDirectionEl?.textContent || 'N'
+      };
+    }
+
     // All videos use cache URL pattern
     // Large videos download in background, small videos are already cached
     // Service Worker handles both cases appropriately
@@ -87,17 +246,58 @@ export class LayoutTranslator {
     const widgetTypes = ['clock', 'clock-digital', 'clock-analogue', 'calendar', 'weather',
                          'currencies', 'stocks', 'twitter', 'global', 'embedded', 'text', 'ticker'];
     if (widgetTypes.some(w => type.includes(w))) {
-      try {
-        console.log(`[Layout] Fetching resource for ${type} widget (layout=${layoutId}, region=${regionId}, media=${id})`);
-        raw = await this.xmds.getResource(layoutId, regionId, id);
-        console.log(`[Layout] Got resource HTML (${raw.length} chars)`);
+      // Try to get widget HTML with retry logic for kiosk reliability
+      let retries = 3;
+      let lastError = null;
 
-        // Store widget HTML in cache and save cache key for iframe src generation
-        const widgetCacheKey = await cacheManager.cacheWidgetHtml(layoutId, regionId, id, raw);
-        options.widgetCacheKey = widgetCacheKey;
-      } catch (error) {
-        console.error(`[Layout] Failed to get resource for ${type}:`, error);
-        raw = `<div>Widget ${type} unavailable</div>`;
+      for (let attempt = 1; attempt <= retries; attempt++) {
+        try {
+          console.log(`[Layout] Fetching resource for ${type} widget (layout=${layoutId}, region=${regionId}, media=${id}) - attempt ${attempt}/${retries}`);
+          raw = await this.xmds.getResource(layoutId, regionId, id);
+          console.log(`[Layout] Got resource HTML (${raw.length} chars)`);
+
+          // Store widget HTML in cache and save cache key for iframe src generation
+          const widgetCacheKey = await cacheManager.cacheWidgetHtml(layoutId, regionId, id, raw);
+          options.widgetCacheKey = widgetCacheKey;
+
+          // Success - break retry loop
+          break;
+
+        } catch (error) {
+          lastError = error;
+          console.warn(`[Layout] Failed to get resource (attempt ${attempt}/${retries}):`, error.message);
+
+          // If not last attempt, wait before retry
+          if (attempt < retries) {
+            const delay = attempt * 2000; // 2s, 4s backoff
+            console.log(`[Layout] Retrying in ${delay}ms...`);
+            await new Promise(resolve => setTimeout(resolve, delay));
+          }
+        }
+      }
+
+      // If all retries failed, try to use cached version as fallback
+      if (!raw && lastError) {
+        console.warn(`[Layout] All retries failed, checking for cached widget HTML...`);
+
+        // Try to get cached widget HTML
+        try {
+          const cachedKey = `/cache/widget/${layoutId}/${regionId}/${id}.html`;
+          const cached = await cacheManager.cache.match(new Request(window.location.origin + '/player' + cachedKey));
+
+          if (cached) {
+            raw = await cached.text();
+            options.widgetCacheKey = cachedKey;
+            console.log(`[Layout] Using cached widget HTML (${raw.length} chars) - CMS update pending`);
+          } else {
+            console.error(`[Layout] No cached version available for widget ${id}`);
+            // Show minimal placeholder that doesn't look like an error
+            raw = `<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#999;font-size:18px;">Content updating...</div>`;
+          }
+        } catch (cacheError) {
+          console.error(`[Layout] Cache fallback failed:`, cacheError);
+          raw = `<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#999;font-size:18px;">Content updating...</div>`;
+        }
       }
     }
 
@@ -106,7 +306,8 @@ export class LayoutTranslator {
       duration,
       id,
       options,
-      raw
+      raw,
+      transitions
     };
   }
 
@@ -145,6 +346,105 @@ export class LayoutTranslator {
 <body>
 ${regionHTML}
 <script>
+// Transition utilities
+window.Transitions = {
+  fadeIn(element, duration) {
+    const keyframes = [
+      { opacity: 0 },
+      { opacity: 1 }
+    ];
+    const timing = {
+      duration: duration,
+      easing: 'linear',
+      fill: 'forwards'
+    };
+    return element.animate(keyframes, timing);
+  },
+
+  fadeOut(element, duration) {
+    const keyframes = [
+      { opacity: 1 },
+      { opacity: 0 }
+    ];
+    const timing = {
+      duration: duration,
+      easing: 'linear',
+      fill: 'forwards'
+    };
+    return element.animate(keyframes, timing);
+  },
+
+  getFlyKeyframes(direction, width, height, isIn) {
+    const dirMap = {
+      'N': { x: 0, y: isIn ? -height : height },
+      'NE': { x: isIn ? width : -width, y: isIn ? -height : height },
+      'E': { x: isIn ? width : -width, y: 0 },
+      'SE': { x: isIn ? width : -width, y: isIn ? height : -height },
+      'S': { x: 0, y: isIn ? height : -height },
+      'SW': { x: isIn ? -width : width, y: isIn ? height : -height },
+      'W': { x: isIn ? -width : width, y: 0 },
+      'NW': { x: isIn ? -width : width, y: isIn ? -height : height }
+    };
+
+    const offset = dirMap[direction] || dirMap['N'];
+
+    if (isIn) {
+      return [
+        { transform: \`translate(\${offset.x}px, \${offset.y}px)\`, opacity: 0 },
+        { transform: 'translate(0, 0)', opacity: 1 }
+      ];
+    } else {
+      return [
+        { transform: 'translate(0, 0)', opacity: 1 },
+        { transform: \`translate(\${offset.x}px, \${offset.y}px)\`, opacity: 0 }
+      ];
+    }
+  },
+
+  flyIn(element, duration, direction, regionWidth, regionHeight) {
+    const keyframes = this.getFlyKeyframes(direction, regionWidth, regionHeight, true);
+    const timing = {
+      duration: duration,
+      easing: 'ease-out',
+      fill: 'forwards'
+    };
+    return element.animate(keyframes, timing);
+  },
+
+  flyOut(element, duration, direction, regionWidth, regionHeight) {
+    const keyframes = this.getFlyKeyframes(direction, regionWidth, regionHeight, false);
+    const timing = {
+      duration: duration,
+      easing: 'ease-in',
+      fill: 'forwards'
+    };
+    return element.animate(keyframes, timing);
+  },
+
+  apply(element, transitionConfig, isIn, regionWidth, regionHeight) {
+    if (!transitionConfig || !transitionConfig.type) {
+      return null;
+    }
+
+    const type = transitionConfig.type.toLowerCase();
+    const duration = transitionConfig.duration || 1000;
+    const direction = transitionConfig.direction || 'N';
+
+    switch (type) {
+      case 'fadein':
+        return isIn ? this.fadeIn(element, duration) : null;
+      case 'fadeout':
+        return isIn ? null : this.fadeOut(element, duration);
+      case 'flyin':
+        return isIn ? this.flyIn(element, duration, direction, regionWidth, regionHeight) : null;
+      case 'flyout':
+        return isIn ? null : this.flyOut(element, duration, direction, regionWidth, regionHeight);
+      default:
+        return null;
+    }
+  }
+};
+
 const regions = {
 ${regionJS}
 };
@@ -218,6 +518,8 @@ ${mediaJS}
    */
   generateMediaJS(media, regionId) {
     const duration = media.duration || 10;
+    const transIn = media.transitions?.in ? JSON.stringify(media.transitions.in) : 'null';
+    const transOut = media.transitions?.out ? JSON.stringify(media.transitions.out) : 'null';
     let startFn = 'null';
     let stopFn = 'null';
 
@@ -226,11 +528,22 @@ ${mediaJS}
         // Use absolute URL within service worker scope
         const imageSrc = `${window.location.origin}/player/cache/media/${media.options.uri}`;
         startFn = `() => {
+        const region = document.getElementById('region_${regionId}');
         const img = document.createElement('img');
         img.className = 'media';
         img.src = '${imageSrc}';
-        document.getElementById('region_${regionId}').innerHTML = '';
-        document.getElementById('region_${regionId}').appendChild(img);
+        img.style.opacity = '0';
+        region.innerHTML = '';
+        region.appendChild(img);
+
+        // Apply transition
+        const transIn = ${transIn};
+        if (transIn && window.Transitions) {
+          const regionRect = region.getBoundingClientRect();
+          window.Transitions.apply(img, transIn, true, regionRect.width, regionRect.height);
+        } else {
+          img.style.opacity = '1';
+        }
       }`;
         break;
 
@@ -241,6 +554,7 @@ ${mediaJS}
         const videoFilename = media.options.uri;
 
         startFn = `() => {
+        const region = document.getElementById('region_${regionId}');
         const video = document.createElement('video');
         video.className = 'media';
         video.src = '${videoSrc}';
@@ -251,6 +565,7 @@ ${mediaJS}
         video.style.width = '100%';
         video.style.height = '100%';
         video.style.objectFit = 'contain';
+        video.style.opacity = '0';
 
         // Retry loading if cache completes while video is playing
         const retryOnCache = (event) => {
@@ -263,13 +578,36 @@ ${mediaJS}
         window.addEventListener('media-cached', retryOnCache);
         video.dataset.cacheListener = 'attached';
 
-        document.getElementById('region_${regionId}').innerHTML = '';
-        document.getElementById('region_${regionId}').appendChild(video);
+        region.innerHTML = '';
+        region.appendChild(video);
+
+        // Apply transition
+        const transIn = ${transIn};
+        if (transIn && window.Transitions) {
+          const regionRect = region.getBoundingClientRect();
+          window.Transitions.apply(video, transIn, true, regionRect.width, regionRect.height);
+        } else {
+          video.style.opacity = '1';
+        }
+
         console.log('[Video] Playing:', '${media.options.uri}');
       }`;
         stopFn = `() => {
+        const region = document.getElementById('region_${regionId}');
         const video = document.querySelector('#region_${regionId} video');
         if (video) {
+          const transOut = ${transOut};
+          if (transOut && window.Transitions) {
+            const regionRect = region.getBoundingClientRect();
+            const animation = window.Transitions.apply(video, transOut, false, regionRect.width, regionRect.height);
+            if (animation) {
+              animation.onfinish = () => {
+                video.pause();
+                video.remove();
+              };
+              return;
+            }
+          }
           video.pause();
           video.remove();
         }
@@ -293,15 +631,42 @@ ${mediaJS}
           iframe.style.height = '100%';
           iframe.style.border = 'none';
           iframe.scrolling = 'no';
+          iframe.style.opacity = '0';
           region.innerHTML = '';
           region.appendChild(iframe);
+
+          // Apply transition after iframe loads
+          iframe.onload = () => {
+            const transIn = ${transIn};
+            if (transIn && window.Transitions) {
+              const regionRect = region.getBoundingClientRect();
+              window.Transitions.apply(iframe, transIn, true, regionRect.width, regionRect.height);
+            } else {
+              iframe.style.opacity = '1';
+            }
+          };
         } else {
           iframe.style.display = 'block';
+          iframe.style.opacity = '1';
         }
       }`;
           stopFn = `() => {
+        const region = document.getElementById('region_${regionId}');
         const iframe = document.getElementById('${iframeId}');
-        if (iframe) iframe.style.display = 'none';
+        if (iframe) {
+          const transOut = ${transOut};
+          if (transOut && window.Transitions) {
+            const regionRect = region.getBoundingClientRect();
+            const animation = window.Transitions.apply(iframe, transOut, false, regionRect.width, regionRect.height);
+            if (animation) {
+              animation.onfinish = () => {
+                iframe.style.display = 'none';
+              };
+              return;
+            }
+          }
+          iframe.style.display = 'none';
+        }
       }`;
         } else {
           console.warn(`[Layout] Text media without widgetCacheKey`);
@@ -309,9 +674,127 @@ ${mediaJS}
         }
         break;
 
+      case 'audio':
+        const audioSrc = `${window.location.origin}/player/cache/media/${media.options.uri}`;
+        const audioId = `audio_${regionId}_${media.id}`;
+        const audioLoop = media.options.loop === '1';
+        const audioVolume = (parseInt(media.options.volume || '100') / 100).toFixed(2);
+
+        startFn = `() => {
+        const region = document.getElementById('region_${regionId}');
+
+        // Create audio element
+        const audio = document.createElement('audio');
+        audio.id = '${audioId}';
+        audio.className = 'media';
+        audio.src = '${audioSrc}';
+        audio.autoplay = true;
+        audio.loop = ${audioLoop};
+        audio.volume = ${audioVolume};
+
+        // Create visual feedback container
+        const visualContainer = document.createElement('div');
+        visualContainer.className = 'audio-visual';
+        visualContainer.style.cssText = \`
+          width: 100%;
+          height: 100%;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+          opacity: 0;
+        \`;
+
+        // Audio icon
+        const icon = document.createElement('div');
+        icon.innerHTML = '♪';
+        icon.style.cssText = \`
+          font-size: 120px;
+          color: white;
+          margin-bottom: 20px;
+          animation: pulse 2s ease-in-out infinite;
+        \`;
+
+        // Audio info
+        const info = document.createElement('div');
+        info.style.cssText = \`
+          color: white;
+          font-size: 24px;
+          text-align: center;
+          padding: 0 20px;
+        \`;
+        info.textContent = 'Playing Audio';
+
+        // Filename
+        const filename = document.createElement('div');
+        filename.style.cssText = \`
+          color: rgba(255,255,255,0.7);
+          font-size: 16px;
+          margin-top: 10px;
+        \`;
+        filename.textContent = '${media.options.uri}';
+
+        visualContainer.appendChild(icon);
+        visualContainer.appendChild(info);
+        visualContainer.appendChild(filename);
+
+        region.innerHTML = '';
+        region.appendChild(audio);
+        region.appendChild(visualContainer);
+
+        // Add pulse animation
+        const style = document.createElement('style');
+        style.textContent = \`
+          @keyframes pulse {
+            0%, 100% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.1); opacity: 0.8; }
+          }
+        \`;
+        document.head.appendChild(style);
+
+        // Apply transition
+        const transIn = ${transIn};
+        if (transIn && window.Transitions) {
+          const regionRect = region.getBoundingClientRect();
+          window.Transitions.apply(visualContainer, transIn, true, regionRect.width, regionRect.height);
+        } else {
+          visualContainer.style.opacity = '1';
+        }
+
+        console.log('[Audio] Playing:', '${audioSrc}', 'Volume:', ${audioVolume}, 'Loop:', ${audioLoop});
+      }`;
+
+        stopFn = `() => {
+        const audio = document.getElementById('${audioId}');
+        if (audio) {
+          audio.pause();
+          audio.remove();
+        }
+        const region = document.getElementById('region_${regionId}');
+        if (region) {
+          const visualContainer = region.querySelector('.audio-visual');
+          if (visualContainer) {
+            const transOut = ${transOut};
+            if (transOut && window.Transitions) {
+              const regionRect = region.getBoundingClientRect();
+              const animation = window.Transitions.apply(visualContainer, transOut, false, regionRect.width, regionRect.height);
+              if (animation) {
+                animation.onfinish = () => visualContainer.remove();
+                return;
+              }
+            }
+            visualContainer.remove();
+          }
+        }
+      }`;
+        break;
+
       case 'pdf':
         const pdfSrc = `${window.location.origin}/player/cache/media/${media.options.uri}`;
         const pdfContainerId = `pdf_${regionId}_${media.id}`;
+        const pdfDuration = duration; // Total duration for entire PDF
+
         startFn = `async () => {
         const container = document.createElement('div');
         container.className = 'media pdf-container';
@@ -320,6 +803,8 @@ ${mediaJS}
         container.style.height = '100%';
         container.style.overflow = 'hidden';
         container.style.backgroundColor = '#525659';
+        container.style.opacity = '0';
+        container.style.position = 'relative';
 
         const region = document.getElementById('region_${regionId}');
         region.innerHTML = '';
@@ -338,59 +823,182 @@ ${mediaJS}
           }
         }
 
-        // Render PDF
+        // Render PDF with multi-page support
         try {
           const loadingTask = pdfjsLib.getDocument('${pdfSrc}');
           const pdf = await loadingTask.promise;
-          const page = await pdf.getPage(1);
+          const totalPages = pdf.numPages;
+
+          // Calculate time per page (distribute total duration across all pages)
+          const timePerPage = (${pdfDuration} * 1000) / totalPages; // milliseconds per page
+
+          console.log(\`[PDF] Loading: \${totalPages} pages, \${timePerPage}ms per page\`);
 
           const containerWidth = container.offsetWidth || ${width};
           const containerHeight = container.offsetHeight || ${height};
-          const viewport = page.getViewport({ scale: 1 });
 
-          // Calculate scale to fit page within container
-          const scaleX = containerWidth / viewport.width;
-          const scaleY = containerHeight / viewport.height;
-          const scale = Math.min(scaleX, scaleY);
+          // Create page indicator
+          const pageIndicator = document.createElement('div');
+          pageIndicator.className = 'pdf-page-indicator';
+          pageIndicator.style.cssText = \`
+            position: absolute;
+            bottom: 10px;
+            right: 10px;
+            background: rgba(0,0,0,0.7);
+            color: white;
+            padding: 8px 12px;
+            border-radius: 4px;
+            font-size: 14px;
+            z-index: 10;
+          \`;
+          container.appendChild(pageIndicator);
 
-          const scaledViewport = page.getViewport({ scale });
+          let currentPage = 1;
+          let pageTimers = [];
 
-          const canvas = document.createElement('canvas');
-          const context = canvas.getContext('2d');
-          canvas.width = scaledViewport.width;
-          canvas.height = scaledViewport.height;
+          // Function to render a single page
+          async function renderPage(pageNum) {
+            const page = await pdf.getPage(pageNum);
+            const viewport = page.getViewport({ scale: 1 });
 
-          // Center canvas in container
-          canvas.style.display = 'block';
-          canvas.style.margin = 'auto';
-          canvas.style.marginTop = Math.max(0, (containerHeight - scaledViewport.height) / 2) + 'px';
+            // Calculate scale to fit page within container
+            const scaleX = containerWidth / viewport.width;
+            const scaleY = containerHeight / viewport.height;
+            const scale = Math.min(scaleX, scaleY);
 
-          container.appendChild(canvas);
+            const scaledViewport = page.getViewport({ scale });
 
-          await page.render({
-            canvasContext: context,
-            viewport: scaledViewport
-          }).promise;
+            const canvas = document.createElement('canvas');
+            canvas.className = 'pdf-page';
+            const context = canvas.getContext('2d');
+            canvas.width = scaledViewport.width;
+            canvas.height = scaledViewport.height;
 
-          console.log('[PDF] Rendered:', '${pdfSrc}');
+            // Center canvas in container
+            canvas.style.cssText = \`
+              display: block;
+              margin: auto;
+              margin-top: \${Math.max(0, (containerHeight - scaledViewport.height) / 2)}px;
+              position: absolute;
+              top: 0;
+              left: 50%;
+              transform: translateX(-50%);
+              opacity: 0;
+              transition: opacity 0.5s ease-in-out;
+            \`;
+
+            container.appendChild(canvas);
+
+            await page.render({
+              canvasContext: context,
+              viewport: scaledViewport
+            }).promise;
+
+            // Fade in new page
+            setTimeout(() => canvas.style.opacity = '1', 50);
+
+            return canvas;
+          }
+
+          // Function to cycle through pages
+          async function cyclePage() {
+            // Update page indicator
+            pageIndicator.textContent = \`Page \${currentPage} / \${totalPages}\`;
+
+            // Remove old pages
+            const oldPages = container.querySelectorAll('.pdf-page');
+            oldPages.forEach(oldPage => {
+              if (oldPage !== container.lastChild) {
+                oldPage.style.opacity = '0';
+                setTimeout(() => oldPage.remove(), 500);
+              }
+            });
+
+            // Render current page
+            await renderPage(currentPage);
+
+            console.log(\`[PDF] Showing page \${currentPage}/\${totalPages}\`);
+
+            // Schedule next page
+            if (totalPages > 1) {
+              const timer = setTimeout(() => {
+                currentPage = currentPage >= totalPages ? 1 : currentPage + 1;
+                cyclePage();
+              }, timePerPage);
+              pageTimers.push(timer);
+            }
+          }
+
+          // Start cycling
+          await cyclePage();
+
+          // Apply transition to container
+          const transIn = ${transIn};
+          if (transIn && window.Transitions) {
+            const regionRect = region.getBoundingClientRect();
+            window.Transitions.apply(container, transIn, true, regionRect.width, regionRect.height);
+          } else {
+            container.style.opacity = '1';
+          }
+
+          // Store timers for cleanup
+          container.dataset.pageTimers = JSON.stringify(pageTimers.map(t => t));
+
         } catch (error) {
           console.error('[PDF] Render failed:', error);
           container.innerHTML = '<div style="color:white;padding:20px;text-align:center;">Failed to load PDF</div>';
+          container.style.opacity = '1';
         }
       }`;
+
         stopFn = `() => {
+        const region = document.getElementById('region_${regionId}');
         const container = document.getElementById('${pdfContainerId}');
-        if (container) container.remove();
+        if (container) {
+          // Clear page cycling timers
+          const timers = container.dataset.pageTimers;
+          if (timers) {
+            try {
+              JSON.parse(timers).forEach(t => clearTimeout(t));
+            } catch (e) {}
+          }
+
+          const transOut = ${transOut};
+          if (transOut && window.Transitions) {
+            const regionRect = region.getBoundingClientRect();
+            const animation = window.Transitions.apply(container, transOut, false, regionRect.width, regionRect.height);
+            if (animation) {
+              animation.onfinish = () => {
+                container.remove();
+              };
+              return;
+            }
+          }
+          container.remove();
+        }
       }`;
         break;
 
       case 'webpage':
         const url = media.options.uri;
         startFn = `() => {
+        const region = document.getElementById('region_${regionId}');
         const iframe = document.createElement('iframe');
         iframe.src = '${url}';
-        document.getElementById('region_${regionId}').innerHTML = '';
-        document.getElementById('region_${regionId}').appendChild(iframe);
+        iframe.style.opacity = '0';
+        region.innerHTML = '';
+        region.appendChild(iframe);
+
+        // Apply transition after iframe loads
+        iframe.onload = () => {
+          const transIn = ${transIn};
+          if (transIn && window.Transitions) {
+            const regionRect = region.getBoundingClientRect();
+            window.Transitions.apply(iframe, transIn, true, regionRect.width, regionRect.height);
+          } else {
+            iframe.style.opacity = '1';
+          }
+        };
       }`;
         break;
 
@@ -411,15 +1019,42 @@ ${mediaJS}
           iframe.style.height = '100%';
           iframe.style.border = 'none';
           iframe.scrolling = 'no';
+          iframe.style.opacity = '0';
           region.innerHTML = '';
           region.appendChild(iframe);
+
+          // Apply transition after iframe loads
+          iframe.onload = () => {
+            const transIn = ${transIn};
+            if (transIn && window.Transitions) {
+              const regionRect = region.getBoundingClientRect();
+              window.Transitions.apply(iframe, transIn, true, regionRect.width, regionRect.height);
+            } else {
+              iframe.style.opacity = '1';
+            }
+          };
         } else {
           iframe.style.display = 'block';
+          iframe.style.opacity = '1';
         }
       }`;
           stopFn = `() => {
+        const region = document.getElementById('region_${regionId}');
         const iframe = document.getElementById('${iframeId}');
-        if (iframe) iframe.style.display = 'none';
+        if (iframe) {
+          const transOut = ${transOut};
+          if (transOut && window.Transitions) {
+            const regionRect = region.getBoundingClientRect();
+            const animation = window.Transitions.apply(iframe, transOut, false, regionRect.width, regionRect.height);
+            if (animation) {
+              animation.onfinish = () => {
+                iframe.style.display = 'none';
+              };
+              return;
+            }
+          }
+          iframe.style.display = 'none';
+        }
       }`;
         } else {
           console.warn(`[Layout] Unsupported media type: ${media.type}`);

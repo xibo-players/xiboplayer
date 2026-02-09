@@ -25,6 +25,9 @@ export class XmrWrapper {
     this.reconnectAttempts = 0;
     this.maxReconnectAttempts = 10;
     this.reconnectDelay = 5000; // 5 seconds
+    this.lastXmrUrl = null;
+    this.lastCmsKey = null;
+    this.reconnectTimer = null;
   }
 
   /**
@@ -37,12 +40,23 @@ export class XmrWrapper {
     try {
       console.log('[XMR] Initializing connection to:', xmrUrl);
 
-      // Create XMR instance with channel ID
-      const channel = this.config.xmrChannel || `player-${this.config.hardwareKey}`;
-      this.xmr = new Xmr(channel);
+      // Save connection details for reconnection
+      this.lastXmrUrl = xmrUrl;
+      this.lastCmsKey = cmsKey;
 
-      // Setup event handlers before connecting
-      this.setupEventHandlers();
+      // Cancel any pending reconnect attempts
+      if (this.reconnectTimer) {
+        clearTimeout(this.reconnectTimer);
+        this.reconnectTimer = null;
+      }
+
+      // Create XMR instance with channel ID (or reuse if already exists)
+      if (!this.xmr) {
+        const channel = this.config.xmrChannel || `player-${this.config.hardwareKey}`;
+        this.xmr = new Xmr(channel);
+        // Setup event handlers before connecting (only once)
+        this.setupEventHandlers();
+      }
 
       // Initialize and connect
       await this.xmr.init();
@@ -82,6 +96,12 @@ export class XmrWrapper {
       console.warn('[XMR] WebSocket disconnected');
       this.connected = false;
       this.player.updateStatus?.('XMR disconnected (polling mode)');
+
+      // Attempt to reconnect if we have the connection details
+      if (this.lastXmrUrl && this.lastCmsKey) {
+        console.log('[XMR] Connection lost, scheduling reconnection...');
+        this.scheduleReconnect(this.lastXmrUrl, this.lastCmsKey);
+      }
     });
 
     this.xmr.on('error', (error) => {
@@ -151,16 +171,23 @@ export class XmrWrapper {
   scheduleReconnect(xmrUrl, cmsKey) {
     if (this.reconnectAttempts >= this.maxReconnectAttempts) {
       console.warn('[XMR] Max reconnection attempts reached, giving up');
+      console.log('[XMR] Will retry on next collection cycle');
       return;
+    }
+
+    // Cancel any existing reconnect timer
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
     }
 
     this.reconnectAttempts++;
     const delay = this.reconnectDelay * this.reconnectAttempts;
 
-    console.log(`[XMR] Scheduling reconnect attempt ${this.reconnectAttempts} in ${delay}ms`);
+    console.log(`[XMR] Scheduling reconnect attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts} in ${delay}ms`);
 
-    setTimeout(() => {
+    this.reconnectTimer = setTimeout(() => {
       console.log('[XMR] Attempting to reconnect...');
+      this.reconnectTimer = null;
       this.start(xmrUrl, cmsKey);
     }, delay);
   }
@@ -169,6 +196,12 @@ export class XmrWrapper {
    * Stop XMR connection
    */
   async stop() {
+    // Cancel any pending reconnect attempts
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+
     if (!this.xmr) return;
 
     try {
