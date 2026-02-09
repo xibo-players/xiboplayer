@@ -1,143 +1,97 @@
-# Xibo Player Documentation
+# Xibo Players Documentation
 
-**Version**: 1.0
-**Last Updated**: 2026-02-05
+Welcome to the Xibo Players documentation! This repository contains multi-platform Xibo-compatible digital signage players built as a modular NPM package ecosystem.
 
----
+## 📚 Documentation by Audience
 
-## Quick Links
+### 🚀 [Getting Started](getting-started/)
+**New to Xibo Players?** Start here!
+- Installation guides
+- Quick start tutorials
+- Basic configuration
 
-### Performance Optimizations (NEW!)
+### 👥 [User Guides](user-guides/)
+**Operating the player?** Find user-focused documentation:
+- [Offline Kiosk Mode](user-guides/OFFLINE_KIOSK_MODE.md)
+- Campaign and scheduling guides
+- Troubleshooting common issues
 
-- 📊 **[Performance Optimizations](PERFORMANCE_OPTIMIZATIONS.md)** - Details on 4-10x performance improvements
-- 🧪 **[Performance Testing Guide](PERFORMANCE_TESTING.md)** - Comprehensive testing procedures
+### 🔧 [Technical Reference](technical-reference/)
+**Need architectural details?** Technical deep-dives:
+- [Performance Testing](technical-reference/PERFORMANCE_TESTING.md)
+- System architecture
+- API references
 
-### Getting Started
+### 💻 [Developer Guides](developer-guides/)
+**Contributing to the project?** Development documentation:
+- [Testing Guide](developer-guides/TESTING.md)
+- [Release Process](developer-guides/RELEASE.md)
+- [Build Instructions](developer-guides/BUILD.md)
+- [Deployment Guide](developer-guides/DEPLOYMENT.md)
 
-- 🚀 **[Quick Start Guide](../packages/docs/QUICKSTART.md)** - Get up and running
-- 🏗️ **[Architecture Overview](../packages/docs/ARCHITECTURE.md)** - System design
-- 📦 **[Deployment Guide](../packages/docs/DEPLOYMENT.md)** - Deployment instructions
-- 📊 **[Project Status](../packages/docs/STATUS.md)** - Current state
+## 📦 Package-Specific Documentation
 
----
+Each package has its own technical documentation:
 
-## Performance Optimizations Summary
+- [`packages/core/docs/`](../packages/core/docs/) - Player core architecture
+- [`packages/renderer/docs/`](../packages/renderer/docs/) - Rendering engine details
+- [`packages/cache/docs/`](../packages/cache/docs/) - Cache and download management
+- [`packages/schedule/docs/`](../packages/schedule/docs/) - Scheduling and campaigns
+- [`packages/sw/docs/`](../packages/sw/docs/) - Service Worker implementation
+- [`packages/xmds/docs/`](../packages/xmds/docs/) - XMDS SOAP client
+- [`packages/xmr/docs/`](../packages/xmr/docs/) - XMR WebSocket wrapper
+- [`packages/utils/docs/`](../packages/utils/docs/) - Shared utilities
 
-The PWA player now includes comprehensive performance optimizations:
+## 🎯 Quick Links
 
-### Key Improvements
+| I want to... | Go to... |
+|--------------|----------|
+| Install the player | [Getting Started](getting-started/) |
+| Run the player offline | [Offline Kiosk Mode](user-guides/OFFLINE_KIOSK_MODE.md) |
+| Understand the architecture | [packages/core/docs/](../packages/core/docs/) |
+| Run tests | [Testing Guide](developer-guides/TESTING.md) |
+| Build for production | [Build Instructions](developer-guides/BUILD.md) |
+| Publish a release | [Release Process](developer-guides/RELEASE.md) |
 
-| Metric | Before | After | Improvement |
-|--------|--------|-------|-------------|
-| Layout load time | 17-20s | 3-5s | **6-10x faster** |
-| 1GB file download | 5 min | 1-2 min | **4x faster** |
-| Widget HTML fetch (10) | 10s | <1s | **10x faster** |
-| Memory growth | +200MB/cycle | Stable | **50% reduction** |
-
-### What Was Optimized
-
-1. **Parallel Chunk Downloads** - Download multiple chunks simultaneously
-2. **Parallel Widget Fetching** - Fetch all widget HTML in one batch
-3. **Parallel Media Pre-fetching** - Pre-load media URLs before rendering
-4. **Element Reuse** - Toggle visibility instead of recreating DOM
-
-**Details**: [PERFORMANCE_OPTIMIZATIONS.md](PERFORMANCE_OPTIMIZATIONS.md)
-
----
-
-## Testing
-
-After deployment, verify optimizations are working:
-
-### Quick Console Check
-
-1. Open player in browser
-2. Press F12 → Console
-3. Look for these logs:
-
-```
-✅ [Cache] Downloading N chunks in parallel (4 concurrent)
-✅ [PWA] Fetching N widget HTML resources in parallel...
-✅ [RendererLite] Pre-fetching N media URLs in parallel...
-✅ [RendererLite] Pre-creating widget elements...
-```
-
-**Full Testing Guide**: [PERFORMANCE_TESTING.md](PERFORMANCE_TESTING.md)
-
----
-
-## Documentation Structure
+## 🏗️ Project Structure
 
 ```
-docs/
-├── README.md (this file)
-├── PERFORMANCE_OPTIMIZATIONS.md  ← Technical details
-└── PERFORMANCE_TESTING.md        ← Testing procedures
-
-packages/docs/
-├── QUICKSTART.md
-├── ARCHITECTURE.md
-├── DEPLOYMENT.md
-└── STATUS.md
+xibo-players/
+├── packages/              # NPM packages (@xiboplayer/*)
+│   ├── core/             # Player orchestration
+│   ├── renderer/         # Layout rendering
+│   ├── cache/            # Offline caching
+│   ├── schedule/         # Campaign scheduling
+│   └── ...
+├── platforms/            # Platform-specific implementations
+│   ├── pwa/              # Progressive Web App
+│   ├── electron/         # Desktop application
+│   ├── android/          # Android app
+│   └── ...
+└── docs/                 # This documentation
 ```
 
----
+## 📖 Documentation Standards
 
-## For Developers
+- **User Guides**: Step-by-step instructions for end users
+- **Technical Reference**: Architecture, design decisions, performance analysis
+- **Developer Guides**: How to contribute, test, build, and release
+- **Package Docs**: API documentation and implementation details for specific packages
 
-### Modified Files
+## 🗄️ Archive
 
-Performance optimizations changed:
-- `packages/core/src/cache.js` - Parallel chunk downloads
-- `packages/core/src/renderer-lite.js` - Element reuse + media pre-fetch
-- `platforms/pwa/src/main.ts` - Parallel widget fetching
+Historical session notes and development logs are archived in [`archive/2026-02-sessions/`](archive/2026-02-sessions/).
 
-### Configuration
+## 🆘 Getting Help
 
-Adjust chunk concurrency in `packages/core/src/cache.js:12`:
+- **Issues**: https://github.com/xibo/xibo-players/issues
+- **Discussions**: https://github.com/xibo/xibo-players/discussions
+- **Xibo Community**: https://community.xibo.org.uk/
 
-```javascript
-const CONCURRENT_CHUNKS = 4; // Adjust 2-6 based on network
-```
+## 📝 Contributing to Documentation
 
----
-
-## For Operators
-
-### Deployment
-
-See Ansible repository: `tecman_ansible/docs/services/PWA_PLAYER_DEPLOYMENT.md`
-
-**Quick Deploy**:
-```bash
-cd ~/Devel/tecman/xibo_players/platforms/pwa
-npm run build
-
-cd ~/Devel/tecman/tecman_ansible
-ansible-playbook playbooks/services/deploy-pwa.yml
-```
-
-**Deployed To**: h1.superpantalles.com (2026-02-05)
+Found a typo or want to improve the docs? See the [Contributing Guide](developer-guides/TESTING.md#documentation) for guidelines.
 
 ---
 
-## Support
-
-### Issues?
-
-1. Check browser console for errors
-2. Review [PERFORMANCE_TESTING.md](PERFORMANCE_TESTING.md) troubleshooting section
-3. Verify optimizations deployed (grep for "parallel" in console)
-4. Clear browser cache and hard reload
-
-### Contact
-
-File issues with:
-- Browser console logs
-- Network tab screenshots
-- Memory timeline (if memory issue)
-- Test results from PERFORMANCE_TESTING.md
-
----
-
-**Status**: ✅ Production Ready with Performance Optimizations
+**Last Updated**: 2026-02-10
