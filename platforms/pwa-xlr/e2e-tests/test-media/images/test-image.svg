@@ -1,0 +1,4 @@
+<svg width="1920" height="1080" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1920" height="1080" fill="#FF6B6B"/>
+  <text x="960" y="540" text-anchor="middle" font-size="72" fill="white">Test Image SVG</text>
+</svg>

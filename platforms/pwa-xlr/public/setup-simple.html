@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>PWA-XLR Setup (Debug)</title>
+  <script>
+    console.log('=== SETUP DEBUG PAGE LOADED ===');
+
+    document.addEventListener('DOMContentLoaded', () => {
+      console.log('DOM loaded');
+
+      const form = document.getElementById('test-form');
+      console.log('Form element:', form);
+
+      form.addEventListener('submit', (e) => {
+        e.preventDefault();
+        console.log('FORM SUBMITTED!');
+        alert('Form submitted! Check console.');
+      });
+    });
+  </script>
+</head>
+<body>
+  <h1>Debug Test Form</h1>
+  <form id="test-form">
+    <input name="test" value="test" />
+    <button type="submit">Test Submit</button>
+  </form>
+</body>
+</html>

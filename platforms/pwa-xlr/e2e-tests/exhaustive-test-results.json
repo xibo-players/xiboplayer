@@ -1,0 +1,1062 @@
+{
+  "startTime": "2026-02-02T18:17:06.013Z",
+  "iterations": [
+    {
+      "iteration": 1,
+      "startTime": "2026-02-02T18:17:34.105Z",
+      "success": true,
+      "error": null,
+      "screenshots": [
+        "iter001-check.png"
+      ],
+      "playbackStatus": {
+        "url": "https://displays.superpantalles.com/player/xlr/",
+        "isSetupPage": false,
+        "hasXlrContainer": true,
+        "bodyTextLength": 91,
+        "bodyPreview": "CMS: https://displays.superpantalles.com | Display: E2E-Test-XLR-Persistent\n1 layouts ready",
+        "pageTitle": "Xibo PWA Player (XLR)",
+        "xlrExists": true,
+        "xlrState": "legacy",
+        "isPlaying": true
+      },
+      "endTime": "2026-02-02T18:17:34.173Z"
+    },
+    {
+      "iteration": 2,
+      "startTime": "2026-02-02T18:17:44.174Z",
+      "success": true,
+      "error": null,
+      "screenshots": [
+        "iter002-check.png"
+      ],
+      "playbackStatus": {
+        "url": "https://displays.superpantalles.com/player/xlr/",
+        "isSetupPage": false,
+        "hasXlrContainer": true,
+        "bodyTextLength": 91,
+        "bodyPreview": "CMS: https://displays.superpantalles.com | Display: E2E-Test-XLR-Persistent\n1 layouts ready",
+        "pageTitle": "Xibo PWA Player (XLR)",
+        "xlrExists": true,
+        "xlrState": "legacy",
+        "isPlaying": true
+      },
+      "endTime": "2026-02-02T18:17:44.244Z"
+    },
+    {
+      "iteration": 3,
+      "startTime": "2026-02-02T18:17:54.245Z",
+      "success": true,
+      "error": null,
+      "screenshots": [
+        "iter003-check.png"
+      ],
+      "playbackStatus": {
+        "url": "https://displays.superpantalles.com/player/xlr/",
+        "isSetupPage": false,
+        "hasXlrContainer": true,
+        "bodyTextLength": 91,
+        "bodyPreview": "CMS: https://displays.superpantalles.com | Display: E2E-Test-XLR-Persistent\n1 layouts ready",
+        "pageTitle": "Xibo PWA Player (XLR)",
+        "xlrExists": true,
+        "xlrState": "legacy",
+        "isPlaying": true
+      },
+      "endTime": "2026-02-02T18:17:54.309Z"
+    },
+    {
+      "iteration": 4,
+      "startTime": "2026-02-02T18:18:04.309Z",
+      "success": true,
+      "error": null,
+      "screenshots": [
+        "iter004-check.png"
+      ],
+      "playbackStatus": {
+        "url": "https://displays.superpantalles.com/player/xlr/",
+        "isSetupPage": false,
+        "hasXlrContainer": true,
+        "bodyTextLength": 91,
+        "bodyPreview": "CMS: https://displays.superpantalles.com | Display: E2E-Test-XLR-Persistent\n1 layouts ready",
+        "pageTitle": "Xibo PWA Player (XLR)",
+        "xlrExists": true,
+        "xlrState": "legacy",
+        "isPlaying": true
+      },
+      "endTime": "2026-02-02T18:18:04.391Z"
+    },
+    {
+      "iteration": 5,
+      "startTime": "2026-02-02T18:18:14.393Z",
+      "success": true,
+      "error": null,
+      "screenshots": [
+        "iter005-check.png"
+      ],
+      "playbackStatus": {
+        "url": "https://displays.superpantalles.com/player/xlr/",
+        "isSetupPage": false,
+        "hasXlrContainer": true,
+        "bodyTextLength": 91,
+        "bodyPreview": "CMS: https://displays.superpantalles.com | Display: E2E-Test-XLR-Persistent\n1 layouts ready",
+        "pageTitle": "Xibo PWA Player (XLR)",
+        "xlrExists": true,
+        "xlrState": "legacy",
+        "isPlaying": true
+      },
+      "endTime": "2026-02-02T18:18:14.814Z"
+    },
+    {
+      "iteration": 6,
+      "startTime": "2026-02-02T18:18:24.815Z",
+      "success": true,
+      "error": null,
+      "screenshots": [
+        "iter006-check.png"
+      ],
+      "playbackStatus": {
+        "url": "https://displays.superpantalles.com/player/xlr/",
+        "isSetupPage": false,
+        "hasXlrContainer": true,
+        "bodyTextLength": 91,
+        "bodyPreview": "CMS: https://displays.superpantalles.com | Display: E2E-Test-XLR-Persistent\n1 layouts ready",
+        "pageTitle": "Xibo PWA Player (XLR)",
+        "xlrExists": true,
+        "xlrState": "legacy",
+        "isPlaying": true
+      },
+      "endTime": "2026-02-02T18:18:24.885Z"
+    },
+    {
+      "iteration": 7,
+      "startTime": "2026-02-02T18:18:34.886Z",
+      "success": true,
+      "error": null,
+      "screenshots": [
+        "iter007-check.png"
+      ],
+      "playbackStatus": {
+        "url": "https://displays.superpantalles.com/player/xlr/",
+        "isSetupPage": false,
+        "hasXlrContainer": true,
+        "bodyTextLength": 91,
+        "bodyPreview": "CMS: https://displays.superpantalles.com | Display: E2E-Test-XLR-Persistent\n1 layouts ready",
+        "pageTitle": "Xibo PWA Player (XLR)",
+        "xlrExists": true,
+        "xlrState": "legacy",
+        "isPlaying": true
+      },
+      "endTime": "2026-02-02T18:18:34.954Z"
+    },
+    {
+      "iteration": 8,
+      "startTime": "2026-02-02T18:18:44.955Z",
+      "success": true,
+      "error": null,
+      "screenshots": [
+        "iter008-check.png"
+      ],
+      "playbackStatus": {
+        "url": "https://displays.superpantalles.com/player/xlr/",
+        "isSetupPage": false,
+        "hasXlrContainer": true,
+        "bodyTextLength": 91,
+        "bodyPreview": "CMS: https://displays.superpantalles.com | Display: E2E-Test-XLR-Persistent\n1 layouts ready",
+        "pageTitle": "Xibo PWA Player (XLR)",
+        "xlrExists": true,
+        "xlrState": "legacy",
+        "isPlaying": true
+      },
+      "endTime": "2026-02-02T18:18:45.040Z"
+    },
+    {
+      "iteration": 9,
+      "startTime": "2026-02-02T18:18:55.042Z",
+      "success": true,
+      "error": null,
+      "screenshots": [
+        "iter009-check.png"
+      ],
+      "playbackStatus": {
+        "url": "https://displays.superpantalles.com/player/xlr/",
+        "isSetupPage": false,
+        "hasXlrContainer": true,
+        "bodyTextLength": 91,
+        "bodyPreview": "CMS: https://displays.superpantalles.com | Display: E2E-Test-XLR-Persistent\n1 layouts ready",
+        "pageTitle": "Xibo PWA Player (XLR)",
+        "xlrExists": true,
+        "xlrState": "legacy",
+        "isPlaying": true
+      },
+      "endTime": "2026-02-02T18:18:55.108Z"
+    },
+    {
+      "iteration": 10,
+      "startTime": "2026-02-02T18:19:05.110Z",
+      "success": true,
+      "error": null,
+      "screenshots": [
+        "iter010-check.png"
+      ],
+      "playbackStatus": {
+        "url": "https://displays.superpantalles.com/player/xlr/",
+        "isSetupPage": false,
+        "hasXlrContainer": true,
+        "bodyTextLength": 91,
+        "bodyPreview": "CMS: https://displays.superpantalles.com | Display: E2E-Test-XLR-Persistent\n1 layouts ready",
+        "pageTitle": "Xibo PWA Player (XLR)",
+        "xlrExists": true,
+        "xlrState": "legacy",
+        "isPlaying": true
+      },
+      "endTime": "2026-02-02T18:19:05.177Z"
+    },
+    {
+      "iteration": 11,
+      "startTime": "2026-02-02T18:19:15.179Z",
+      "success": true,
+      "error": null,
+      "screenshots": [
+        "iter011-check.png"
+      ],
+      "playbackStatus": {
+        "url": "https://displays.superpantalles.com/player/xlr/",
+        "isSetupPage": false,
+        "hasXlrContainer": true,
+        "bodyTextLength": 91,
+        "bodyPreview": "CMS: https://displays.superpantalles.com | Display: E2E-Test-XLR-Persistent\n1 layouts ready",
+        "pageTitle": "Xibo PWA Player (XLR)",
+        "xlrExists": true,
+        "xlrState": "legacy",
+        "isPlaying": true
+      },
+      "endTime": "2026-02-02T18:19:15.283Z"
+    },
+    {
+      "iteration": 12,
+      "startTime": "2026-02-02T18:19:25.283Z",
+      "success": true,
+      "error": null,
+      "screenshots": [
+        "iter012-check.png"
+      ],
+      "playbackStatus": {
+        "url": "https://displays.superpantalles.com/player/xlr/",
+        "isSetupPage": false,
+        "hasXlrContainer": true,
+        "bodyTextLength": 91,
+        "bodyPreview": "CMS: https://displays.superpantalles.com | Display: E2E-Test-XLR-Persistent\n1 layouts ready",
+        "pageTitle": "Xibo PWA Player (XLR)",
+        "xlrExists": true,
+        "xlrState": "legacy",
+        "isPlaying": true
+      },
+      "endTime": "2026-02-02T18:19:25.349Z"
+    },
+    {
+      "iteration": 13,
+      "startTime": "2026-02-02T18:19:35.350Z",
+      "success": true,
+      "error": null,
+      "screenshots": [
+        "iter013-check.png"
+      ],
+      "playbackStatus": {
+        "url": "https://displays.superpantalles.com/player/xlr/",
+        "isSetupPage": false,
+        "hasXlrContainer": true,
+        "bodyTextLength": 91,
+        "bodyPreview": "CMS: https://displays.superpantalles.com | Display: E2E-Test-XLR-Persistent\n1 layouts ready",
+        "pageTitle": "Xibo PWA Player (XLR)",
+        "xlrExists": true,
+        "xlrState": "legacy",
+        "isPlaying": true
+      },
+      "endTime": "2026-02-02T18:19:35.410Z"
+    },
+    {
+      "iteration": 14,
+      "startTime": "2026-02-02T18:19:45.412Z",
+      "success": true,
+      "error": null,
+      "screenshots": [
+        "iter014-check.png"
+      ],
+      "playbackStatus": {
+        "url": "https://displays.superpantalles.com/player/xlr/",
+        "isSetupPage": false,
+        "hasXlrContainer": true,
+        "bodyTextLength": 91,
+        "bodyPreview": "CMS: https://displays.superpantalles.com | Display: E2E-Test-XLR-Persistent\n1 layouts ready",
+        "pageTitle": "Xibo PWA Player (XLR)",
+        "xlrExists": true,
+        "xlrState": "legacy",
+        "isPlaying": true
+      },
+      "endTime": "2026-02-02T18:19:45.516Z"
+    },
+    {
+      "iteration": 15,
+      "startTime": "2026-02-02T18:19:55.517Z",
+      "success": true,
+      "error": null,
+      "screenshots": [
+        "iter015-check.png"
+      ],
+      "playbackStatus": {
+        "url": "https://displays.superpantalles.com/player/xlr/",
+        "isSetupPage": false,
+        "hasXlrContainer": true,
+        "bodyTextLength": 91,
+        "bodyPreview": "CMS: https://displays.superpantalles.com | Display: E2E-Test-XLR-Persistent\n1 layouts ready",
+        "pageTitle": "Xibo PWA Player (XLR)",
+        "xlrExists": true,
+        "xlrState": "legacy",
+        "isPlaying": true
+      },
+      "endTime": "2026-02-02T18:19:55.577Z"
+    },
+    {
+      "iteration": 16,
+      "startTime": "2026-02-02T18:20:05.579Z",
+      "success": true,
+      "error": null,
+      "screenshots": [
+        "iter016-check.png"
+      ],
+      "playbackStatus": {
+        "url": "https://displays.superpantalles.com/player/xlr/",
+        "isSetupPage": false,
+        "hasXlrContainer": true,
+        "bodyTextLength": 91,
+        "bodyPreview": "CMS: https://displays.superpantalles.com | Display: E2E-Test-XLR-Persistent\n1 layouts ready",
+        "pageTitle": "Xibo PWA Player (XLR)",
+        "xlrExists": true,
+        "xlrState": "legacy",
+        "isPlaying": true
+      },
+      "endTime": "2026-02-02T18:20:05.667Z"
+    },
+    {
+      "iteration": 17,
+      "startTime": "2026-02-02T18:20:15.669Z",
+      "success": true,
+      "error": null,
+      "screenshots": [
+        "iter017-check.png"
+      ],
+      "playbackStatus": {
+        "url": "https://displays.superpantalles.com/player/xlr/",
+        "isSetupPage": false,
+        "hasXlrContainer": true,
+        "bodyTextLength": 91,
+        "bodyPreview": "CMS: https://displays.superpantalles.com | Display: E2E-Test-XLR-Persistent\n1 layouts ready",
+        "pageTitle": "Xibo PWA Player (XLR)",
+        "xlrExists": true,
+        "xlrState": "legacy",
+        "isPlaying": true
+      },
+      "endTime": "2026-02-02T18:20:15.759Z"
+    },
+    {
+      "iteration": 18,
+      "startTime": "2026-02-02T18:20:25.759Z",
+      "success": true,
+      "error": null,
+      "screenshots": [
+        "iter018-check.png"
+      ],
+      "playbackStatus": {
+        "url": "https://displays.superpantalles.com/player/xlr/",
+        "isSetupPage": false,
+        "hasXlrContainer": true,
+        "bodyTextLength": 91,
+        "bodyPreview": "CMS: https://displays.superpantalles.com | Display: E2E-Test-XLR-Persistent\n1 layouts ready",
+        "pageTitle": "Xibo PWA Player (XLR)",
+        "xlrExists": true,
+        "xlrState": "legacy",
+        "isPlaying": true
+      },
+      "endTime": "2026-02-02T18:20:25.812Z"
+    },
+    {
+      "iteration": 19,
+      "startTime": "2026-02-02T18:20:35.813Z",
+      "success": true,
+      "error": null,
+      "screenshots": [
+        "iter019-check.png"
+      ],
+      "playbackStatus": {
+        "url": "https://displays.superpantalles.com/player/xlr/",
+        "isSetupPage": false,
+        "hasXlrContainer": true,
+        "bodyTextLength": 91,
+        "bodyPreview": "CMS: https://displays.superpantalles.com | Display: E2E-Test-XLR-Persistent\n1 layouts ready",
+        "pageTitle": "Xibo PWA Player (XLR)",
+        "xlrExists": true,
+        "xlrState": "legacy",
+        "isPlaying": true
+      },
+      "endTime": "2026-02-02T18:20:35.867Z"
+    },
+    {
+      "iteration": 20,
+      "startTime": "2026-02-02T18:20:45.868Z",
+      "success": true,
+      "error": null,
+      "screenshots": [
+        "iter020-check.png"
+      ],
+      "playbackStatus": {
+        "url": "https://displays.superpantalles.com/player/xlr/",
+        "isSetupPage": false,
+        "hasXlrContainer": true,
+        "bodyTextLength": 91,
+        "bodyPreview": "CMS: https://displays.superpantalles.com | Display: E2E-Test-XLR-Persistent\n1 layouts ready",
+        "pageTitle": "Xibo PWA Player (XLR)",
+        "xlrExists": true,
+        "xlrState": "legacy",
+        "isPlaying": true
+      },
+      "endTime": "2026-02-02T18:20:45.955Z"
+    },
+    {
+      "iteration": 21,
+      "startTime": "2026-02-02T18:20:55.956Z",
+      "success": true,
+      "error": null,
+      "screenshots": [
+        "iter021-check.png"
+      ],
+      "playbackStatus": {
+        "url": "https://displays.superpantalles.com/player/xlr/",
+        "isSetupPage": false,
+        "hasXlrContainer": true,
+        "bodyTextLength": 91,
+        "bodyPreview": "CMS: https://displays.superpantalles.com | Display: E2E-Test-XLR-Persistent\n1 layouts ready",
+        "pageTitle": "Xibo PWA Player (XLR)",
+        "xlrExists": true,
+        "xlrState": "legacy",
+        "isPlaying": true
+      },
+      "endTime": "2026-02-02T18:20:56.015Z"
+    },
+    {
+      "iteration": 22,
+      "startTime": "2026-02-02T18:21:06.016Z",
+      "success": true,
+      "error": null,
+      "screenshots": [
+        "iter022-check.png"
+      ],
+      "playbackStatus": {
+        "url": "https://displays.superpantalles.com/player/xlr/",
+        "isSetupPage": false,
+        "hasXlrContainer": true,
+        "bodyTextLength": 91,
+        "bodyPreview": "CMS: https://displays.superpantalles.com | Display: E2E-Test-XLR-Persistent\n1 layouts ready",
+        "pageTitle": "Xibo PWA Player (XLR)",
+        "xlrExists": true,
+        "xlrState": "legacy",
+        "isPlaying": true
+      },
+      "endTime": "2026-02-02T18:21:06.079Z"
+    },
+    {
+      "iteration": 23,
+      "startTime": "2026-02-02T18:21:16.080Z",
+      "success": true,
+      "error": null,
+      "screenshots": [
+        "iter023-check.png"
+      ],
+      "playbackStatus": {
+        "url": "https://displays.superpantalles.com/player/xlr/",
+        "isSetupPage": false,
+        "hasXlrContainer": true,
+        "bodyTextLength": 91,
+        "bodyPreview": "CMS: https://displays.superpantalles.com | Display: E2E-Test-XLR-Persistent\n1 layouts ready",
+        "pageTitle": "Xibo PWA Player (XLR)",
+        "xlrExists": true,
+        "xlrState": "legacy",
+        "isPlaying": true
+      },
+      "endTime": "2026-02-02T18:21:16.137Z"
+    },
+    {
+      "iteration": 24,
+      "startTime": "2026-02-02T18:21:26.138Z",
+      "success": true,
+      "error": null,
+      "screenshots": [
+        "iter024-check.png"
+      ],
+      "playbackStatus": {
+        "url": "https://displays.superpantalles.com/player/xlr/",
+        "isSetupPage": false,
+        "hasXlrContainer": true,
+        "bodyTextLength": 91,
+        "bodyPreview": "CMS: https://displays.superpantalles.com | Display: E2E-Test-XLR-Persistent\n1 layouts ready",
+        "pageTitle": "Xibo PWA Player (XLR)",
+        "xlrExists": true,
+        "xlrState": "legacy",
+        "isPlaying": true
+      },
+      "endTime": "2026-02-02T18:21:26.198Z"
+    },
+    {
+      "iteration": 25,
+      "startTime": "2026-02-02T18:21:36.199Z",
+      "success": true,
+      "error": null,
+      "screenshots": [
+        "iter025-check.png"
+      ],
+      "playbackStatus": {
+        "url": "https://displays.superpantalles.com/player/xlr/",
+        "isSetupPage": false,
+        "hasXlrContainer": true,
+        "bodyTextLength": 91,
+        "bodyPreview": "CMS: https://displays.superpantalles.com | Display: E2E-Test-XLR-Persistent\n1 layouts ready",
+        "pageTitle": "Xibo PWA Player (XLR)",
+        "xlrExists": true,
+        "xlrState": "legacy",
+        "isPlaying": true
+      },
+      "endTime": "2026-02-02T18:21:36.262Z"
+    },
+    {
+      "iteration": 26,
+      "startTime": "2026-02-02T18:21:46.263Z",
+      "success": true,
+      "error": null,
+      "screenshots": [
+        "iter026-check.png"
+      ],
+      "playbackStatus": {
+        "url": "https://displays.superpantalles.com/player/xlr/",
+        "isSetupPage": false,
+        "hasXlrContainer": true,
+        "bodyTextLength": 91,
+        "bodyPreview": "CMS: https://displays.superpantalles.com | Display: E2E-Test-XLR-Persistent\n1 layouts ready",
+        "pageTitle": "Xibo PWA Player (XLR)",
+        "xlrExists": true,
+        "xlrState": "legacy",
+        "isPlaying": true
+      },
+      "endTime": "2026-02-02T18:21:46.344Z"
+    },
+    {
+      "iteration": 27,
+      "startTime": "2026-02-02T18:21:56.346Z",
+      "success": true,
+      "error": null,
+      "screenshots": [
+        "iter027-check.png"
+      ],
+      "playbackStatus": {
+        "url": "https://displays.superpantalles.com/player/xlr/",
+        "isSetupPage": false,
+        "hasXlrContainer": true,
+        "bodyTextLength": 91,
+        "bodyPreview": "CMS: https://displays.superpantalles.com | Display: E2E-Test-XLR-Persistent\n1 layouts ready",
+        "pageTitle": "Xibo PWA Player (XLR)",
+        "xlrExists": true,
+        "xlrState": "legacy",
+        "isPlaying": true
+      },
+      "endTime": "2026-02-02T18:21:56.413Z"
+    },
+    {
+      "iteration": 28,
+      "startTime": "2026-02-02T18:22:06.414Z",
+      "success": true,
+      "error": null,
+      "screenshots": [
+        "iter028-check.png"
+      ],
+      "playbackStatus": {
+        "url": "https://displays.superpantalles.com/player/xlr/",
+        "isSetupPage": false,
+        "hasXlrContainer": true,
+        "bodyTextLength": 91,
+        "bodyPreview": "CMS: https://displays.superpantalles.com | Display: E2E-Test-XLR-Persistent\n1 layouts ready",
+        "pageTitle": "Xibo PWA Player (XLR)",
+        "xlrExists": true,
+        "xlrState": "legacy",
+        "isPlaying": true
+      },
+      "endTime": "2026-02-02T18:22:06.482Z"
+    },
+    {
+      "iteration": 29,
+      "startTime": "2026-02-02T18:22:16.482Z",
+      "success": true,
+      "error": null,
+      "screenshots": [
+        "iter029-check.png"
+      ],
+      "playbackStatus": {
+        "url": "https://displays.superpantalles.com/player/xlr/",
+        "isSetupPage": false,
+        "hasXlrContainer": true,
+        "bodyTextLength": 91,
+        "bodyPreview": "CMS: https://displays.superpantalles.com | Display: E2E-Test-XLR-Persistent\n1 layouts ready",
+        "pageTitle": "Xibo PWA Player (XLR)",
+        "xlrExists": true,
+        "xlrState": "legacy",
+        "isPlaying": true
+      },
+      "endTime": "2026-02-02T18:22:16.552Z"
+    },
+    {
+      "iteration": 30,
+      "startTime": "2026-02-02T18:22:26.553Z",
+      "success": true,
+      "error": null,
+      "screenshots": [
+        "iter030-check.png"
+      ],
+      "playbackStatus": {
+        "url": "https://displays.superpantalles.com/player/xlr/",
+        "isSetupPage": false,
+        "hasXlrContainer": true,
+        "bodyTextLength": 91,
+        "bodyPreview": "CMS: https://displays.superpantalles.com | Display: E2E-Test-XLR-Persistent\n1 layouts ready",
+        "pageTitle": "Xibo PWA Player (XLR)",
+        "xlrExists": true,
+        "xlrState": "legacy",
+        "isPlaying": true
+      },
+      "endTime": "2026-02-02T18:22:26.628Z"
+    },
+    {
+      "iteration": 31,
+      "startTime": "2026-02-02T18:22:36.629Z",
+      "success": true,
+      "error": null,
+      "screenshots": [
+        "iter031-check.png"
+      ],
+      "playbackStatus": {
+        "url": "https://displays.superpantalles.com/player/xlr/",
+        "isSetupPage": false,
+        "hasXlrContainer": true,
+        "bodyTextLength": 91,
+        "bodyPreview": "CMS: https://displays.superpantalles.com | Display: E2E-Test-XLR-Persistent\n1 layouts ready",
+        "pageTitle": "Xibo PWA Player (XLR)",
+        "xlrExists": true,
+        "xlrState": "legacy",
+        "isPlaying": true
+      },
+      "endTime": "2026-02-02T18:22:36.707Z"
+    },
+    {
+      "iteration": 32,
+      "startTime": "2026-02-02T18:22:46.709Z",
+      "success": true,
+      "error": null,
+      "screenshots": [
+        "iter032-check.png"
+      ],
+      "playbackStatus": {
+        "url": "https://displays.superpantalles.com/player/xlr/",
+        "isSetupPage": false,
+        "hasXlrContainer": true,
+        "bodyTextLength": 91,
+        "bodyPreview": "CMS: https://displays.superpantalles.com | Display: E2E-Test-XLR-Persistent\n1 layouts ready",
+        "pageTitle": "Xibo PWA Player (XLR)",
+        "xlrExists": true,
+        "xlrState": "legacy",
+        "isPlaying": true
+      },
+      "endTime": "2026-02-02T18:22:46.774Z"
+    },
+    {
+      "iteration": 33,
+      "startTime": "2026-02-02T18:22:56.776Z",
+      "success": true,
+      "error": null,
+      "screenshots": [
+        "iter033-check.png"
+      ],
+      "playbackStatus": {
+        "url": "https://displays.superpantalles.com/player/xlr/",
+        "isSetupPage": false,
+        "hasXlrContainer": true,
+        "bodyTextLength": 91,
+        "bodyPreview": "CMS: https://displays.superpantalles.com | Display: E2E-Test-XLR-Persistent\n1 layouts ready",
+        "pageTitle": "Xibo PWA Player (XLR)",
+        "xlrExists": true,
+        "xlrState": "legacy",
+        "isPlaying": true
+      },
+      "endTime": "2026-02-02T18:22:56.847Z"
+    },
+    {
+      "iteration": 34,
+      "startTime": "2026-02-02T18:23:06.848Z",
+      "success": true,
+      "error": null,
+      "screenshots": [
+        "iter034-check.png"
+      ],
+      "playbackStatus": {
+        "url": "https://displays.superpantalles.com/player/xlr/",
+        "isSetupPage": false,
+        "hasXlrContainer": true,
+        "bodyTextLength": 91,
+        "bodyPreview": "CMS: https://displays.superpantalles.com | Display: E2E-Test-XLR-Persistent\n1 layouts ready",
+        "pageTitle": "Xibo PWA Player (XLR)",
+        "xlrExists": true,
+        "xlrState": "legacy",
+        "isPlaying": true
+      },
+      "endTime": "2026-02-02T18:23:06.918Z"
+    },
+    {
+      "iteration": 35,
+      "startTime": "2026-02-02T18:23:16.920Z",
+      "success": true,
+      "error": null,
+      "screenshots": [
+        "iter035-check.png"
+      ],
+      "playbackStatus": {
+        "url": "https://displays.superpantalles.com/player/xlr/",
+        "isSetupPage": false,
+        "hasXlrContainer": true,
+        "bodyTextLength": 91,
+        "bodyPreview": "CMS: https://displays.superpantalles.com | Display: E2E-Test-XLR-Persistent\n1 layouts ready",
+        "pageTitle": "Xibo PWA Player (XLR)",
+        "xlrExists": true,
+        "xlrState": "legacy",
+        "isPlaying": true
+      },
+      "endTime": "2026-02-02T18:23:16.984Z"
+    },
+    {
+      "iteration": 36,
+      "startTime": "2026-02-02T18:23:26.985Z",
+      "success": true,
+      "error": null,
+      "screenshots": [
+        "iter036-check.png"
+      ],
+      "playbackStatus": {
+        "url": "https://displays.superpantalles.com/player/xlr/",
+        "isSetupPage": false,
+        "hasXlrContainer": true,
+        "bodyTextLength": 91,
+        "bodyPreview": "CMS: https://displays.superpantalles.com | Display: E2E-Test-XLR-Persistent\n1 layouts ready",
+        "pageTitle": "Xibo PWA Player (XLR)",
+        "xlrExists": true,
+        "xlrState": "legacy",
+        "isPlaying": true
+      },
+      "endTime": "2026-02-02T18:23:27.049Z"
+    },
+    {
+      "iteration": 37,
+      "startTime": "2026-02-02T18:23:37.051Z",
+      "success": true,
+      "error": null,
+      "screenshots": [
+        "iter037-check.png"
+      ],
+      "playbackStatus": {
+        "url": "https://displays.superpantalles.com/player/xlr/",
+        "isSetupPage": false,
+        "hasXlrContainer": true,
+        "bodyTextLength": 91,
+        "bodyPreview": "CMS: https://displays.superpantalles.com | Display: E2E-Test-XLR-Persistent\n1 layouts ready",
+        "pageTitle": "Xibo PWA Player (XLR)",
+        "xlrExists": true,
+        "xlrState": "legacy",
+        "isPlaying": true
+      },
+      "endTime": "2026-02-02T18:23:37.128Z"
+    },
+    {
+      "iteration": 38,
+      "startTime": "2026-02-02T18:23:47.129Z",
+      "success": true,
+      "error": null,
+      "screenshots": [
+        "iter038-check.png"
+      ],
+      "playbackStatus": {
+        "url": "https://displays.superpantalles.com/player/xlr/",
+        "isSetupPage": false,
+        "hasXlrContainer": true,
+        "bodyTextLength": 91,
+        "bodyPreview": "CMS: https://displays.superpantalles.com | Display: E2E-Test-XLR-Persistent\n1 layouts ready",
+        "pageTitle": "Xibo PWA Player (XLR)",
+        "xlrExists": true,
+        "xlrState": "legacy",
+        "isPlaying": true
+      },
+      "endTime": "2026-02-02T18:23:47.270Z"
+    },
+    {
+      "iteration": 39,
+      "startTime": "2026-02-02T18:23:57.271Z",
+      "success": true,
+      "error": null,
+      "screenshots": [
+        "iter039-check.png"
+      ],
+      "playbackStatus": {
+        "url": "https://displays.superpantalles.com/player/xlr/",
+        "isSetupPage": false,
+        "hasXlrContainer": true,
+        "bodyTextLength": 91,
+        "bodyPreview": "CMS: https://displays.superpantalles.com | Display: E2E-Test-XLR-Persistent\n1 layouts ready",
+        "pageTitle": "Xibo PWA Player (XLR)",
+        "xlrExists": true,
+        "xlrState": "legacy",
+        "isPlaying": true
+      },
+      "endTime": "2026-02-02T18:23:57.336Z"
+    },
+    {
+      "iteration": 40,
+      "startTime": "2026-02-02T18:24:07.337Z",
+      "success": true,
+      "error": null,
+      "screenshots": [
+        "iter040-check.png"
+      ],
+      "playbackStatus": {
+        "url": "https://displays.superpantalles.com/player/xlr/",
+        "isSetupPage": false,
+        "hasXlrContainer": true,
+        "bodyTextLength": 91,
+        "bodyPreview": "CMS: https://displays.superpantalles.com | Display: E2E-Test-XLR-Persistent\n1 layouts ready",
+        "pageTitle": "Xibo PWA Player (XLR)",
+        "xlrExists": true,
+        "xlrState": "legacy",
+        "isPlaying": true
+      },
+      "endTime": "2026-02-02T18:24:07.422Z"
+    },
+    {
+      "iteration": 41,
+      "startTime": "2026-02-02T18:24:17.422Z",
+      "success": true,
+      "error": null,
+      "screenshots": [
+        "iter041-check.png"
+      ],
+      "playbackStatus": {
+        "url": "https://displays.superpantalles.com/player/xlr/",
+        "isSetupPage": false,
+        "hasXlrContainer": true,
+        "bodyTextLength": 91,
+        "bodyPreview": "CMS: https://displays.superpantalles.com | Display: E2E-Test-XLR-Persistent\n1 layouts ready",
+        "pageTitle": "Xibo PWA Player (XLR)",
+        "xlrExists": true,
+        "xlrState": "legacy",
+        "isPlaying": true
+      },
+      "endTime": "2026-02-02T18:24:17.490Z"
+    },
+    {
+      "iteration": 42,
+      "startTime": "2026-02-02T18:24:27.492Z",
+      "success": true,
+      "error": null,
+      "screenshots": [
+        "iter042-check.png"
+      ],
+      "playbackStatus": {
+        "url": "https://displays.superpantalles.com/player/xlr/",
+        "isSetupPage": false,
+        "hasXlrContainer": true,
+        "bodyTextLength": 91,
+        "bodyPreview": "CMS: https://displays.superpantalles.com | Display: E2E-Test-XLR-Persistent\n1 layouts ready",
+        "pageTitle": "Xibo PWA Player (XLR)",
+        "xlrExists": true,
+        "xlrState": "legacy",
+        "isPlaying": true
+      },
+      "endTime": "2026-02-02T18:24:27.588Z"
+    },
+    {
+      "iteration": 43,
+      "startTime": "2026-02-02T18:24:37.588Z",
+      "success": true,
+      "error": null,
+      "screenshots": [
+        "iter043-check.png"
+      ],
+      "playbackStatus": {
+        "url": "https://displays.superpantalles.com/player/xlr/",
+        "isSetupPage": false,
+        "hasXlrContainer": true,
+        "bodyTextLength": 91,
+        "bodyPreview": "CMS: https://displays.superpantalles.com | Display: E2E-Test-XLR-Persistent\n1 layouts ready",
+        "pageTitle": "Xibo PWA Player (XLR)",
+        "xlrExists": true,
+        "xlrState": "legacy",
+        "isPlaying": true
+      },
+      "endTime": "2026-02-02T18:24:37.687Z"
+    },
+    {
+      "iteration": 44,
+      "startTime": "2026-02-02T18:24:47.688Z",
+      "success": true,
+      "error": null,
+      "screenshots": [
+        "iter044-check.png"
+      ],
+      "playbackStatus": {
+        "url": "https://displays.superpantalles.com/player/xlr/",
+        "isSetupPage": false,
+        "hasXlrContainer": true,
+        "bodyTextLength": 91,
+        "bodyPreview": "CMS: https://displays.superpantalles.com | Display: E2E-Test-XLR-Persistent\n1 layouts ready",
+        "pageTitle": "Xibo PWA Player (XLR)",
+        "xlrExists": true,
+        "xlrState": "legacy",
+        "isPlaying": true
+      },
+      "endTime": "2026-02-02T18:24:47.786Z"
+    },
+    {
+      "iteration": 45,
+      "startTime": "2026-02-02T18:24:57.787Z",
+      "success": true,
+      "error": null,
+      "screenshots": [
+        "iter045-check.png"
+      ],
+      "playbackStatus": {
+        "url": "https://displays.superpantalles.com/player/xlr/",
+        "isSetupPage": false,
+        "hasXlrContainer": true,
+        "bodyTextLength": 91,
+        "bodyPreview": "CMS: https://displays.superpantalles.com | Display: E2E-Test-XLR-Persistent\n1 layouts ready",
+        "pageTitle": "Xibo PWA Player (XLR)",
+        "xlrExists": true,
+        "xlrState": "legacy",
+        "isPlaying": true
+      },
+      "endTime": "2026-02-02T18:24:57.882Z"
+    },
+    {
+      "iteration": 46,
+      "startTime": "2026-02-02T18:25:07.883Z",
+      "success": true,
+      "error": null,
+      "screenshots": [
+        "iter046-check.png"
+      ],
+      "playbackStatus": {
+        "url": "https://displays.superpantalles.com/player/xlr/",
+        "isSetupPage": false,
+        "hasXlrContainer": true,
+        "bodyTextLength": 91,
+        "bodyPreview": "CMS: https://displays.superpantalles.com | Display: E2E-Test-XLR-Persistent\n1 layouts ready",
+        "pageTitle": "Xibo PWA Player (XLR)",
+        "xlrExists": true,
+        "xlrState": "legacy",
+        "isPlaying": true
+      },
+      "endTime": "2026-02-02T18:25:07.986Z"
+    },
+    {
+      "iteration": 47,
+      "startTime": "2026-02-02T18:25:17.991Z",
+      "success": true,
+      "error": null,
+      "screenshots": [
+        "iter047-check.png"
+      ],
+      "playbackStatus": {
+        "url": "https://displays.superpantalles.com/player/xlr/",
+        "isSetupPage": false,
+        "hasXlrContainer": true,
+        "bodyTextLength": 91,
+        "bodyPreview": "CMS: https://displays.superpantalles.com | Display: E2E-Test-XLR-Persistent\n1 layouts ready",
+        "pageTitle": "Xibo PWA Player (XLR)",
+        "xlrExists": true,
+        "xlrState": "legacy",
+        "isPlaying": true
+      },
+      "endTime": "2026-02-02T18:25:18.072Z"
+    },
+    {
+      "iteration": 48,
+      "startTime": "2026-02-02T18:25:28.074Z",
+      "success": true,
+      "error": null,
+      "screenshots": [
+        "iter048-check.png"
+      ],
+      "playbackStatus": {
+        "url": "https://displays.superpantalles.com/player/xlr/",
+        "isSetupPage": false,
+        "hasXlrContainer": true,
+        "bodyTextLength": 91,
+        "bodyPreview": "CMS: https://displays.superpantalles.com | Display: E2E-Test-XLR-Persistent\n1 layouts ready",
+        "pageTitle": "Xibo PWA Player (XLR)",
+        "xlrExists": true,
+        "xlrState": "legacy",
+        "isPlaying": true
+      },
+      "endTime": "2026-02-02T18:25:28.153Z"
+    },
+    {
+      "iteration": 49,
+      "startTime": "2026-02-02T18:25:38.155Z",
+      "success": true,
+      "error": null,
+      "screenshots": [
+        "iter049-check.png"
+      ],
+      "playbackStatus": {
+        "url": "https://displays.superpantalles.com/player/xlr/",
+        "isSetupPage": false,
+        "hasXlrContainer": true,
+        "bodyTextLength": 91,
+        "bodyPreview": "CMS: https://displays.superpantalles.com | Display: E2E-Test-XLR-Persistent\n1 layouts ready",
+        "pageTitle": "Xibo PWA Player (XLR)",
+        "xlrExists": true,
+        "xlrState": "legacy",
+        "isPlaying": true
+      },
+      "endTime": "2026-02-02T18:25:38.253Z"
+    },
+    {
+      "iteration": 50,
+      "startTime": "2026-02-02T18:25:48.254Z",
+      "success": true,
+      "error": null,
+      "screenshots": [
+        "iter050-check.png"
+      ],
+      "playbackStatus": {
+        "url": "https://displays.superpantalles.com/player/xlr/",
+        "isSetupPage": false,
+        "hasXlrContainer": true,
+        "bodyTextLength": 91,
+        "bodyPreview": "CMS: https://displays.superpantalles.com | Display: E2E-Test-XLR-Persistent\n1 layouts ready",
+        "pageTitle": "Xibo PWA Player (XLR)",
+        "xlrExists": true,
+        "xlrState": "legacy",
+        "isPlaying": true
+      },
+      "endTime": "2026-02-02T18:25:48.330Z"
+    }
+  ],
+  "summary": {
+    "total": 50,
+    "passed": 50,
+    "failed": 0,
+    "errors": []
+  },
+  "endTime": "2026-02-02T18:25:48.330Z"
+}

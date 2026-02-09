@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Force Service Worker Update</title>
+  <style>
+    body {
+      font-family: monospace;
+      padding: 20px;
+      background: #000;
+      color: #0f0;
+    }
+    button {
+      padding: 10px 20px;
+      font-size: 16px;
+      margin: 10px;
+      cursor: pointer;
+    }
+    #output {
+      margin-top: 20px;
+      white-space: pre-wrap;
+    }
+  </style>
+</head>
+<body>
+  <h1>Service Worker Force Update Tool</h1>
+  <button onclick="forceUpdate()">Force Update Service Worker</button>
+  <button onclick="unregisterAll()">Unregister All Service Workers</button>
+  <button onclick="clearCaches()">Clear All Caches</button>
+  <button onclick="goToPlayer()">Go to Player</button>
+
+  <div id="output"></div>
+
+  <script>
+    const log = (msg) => {
+      document.getElementById('output').textContent += msg + '\n';
+      console.log(msg);
+    };
+
+    async function forceUpdate() {
+      log('Forcing Service Worker update...');
+      const registrations = await navigator.serviceWorker.getRegistrations();
+
+      for (const registration of registrations) {
+        log(`Found SW: ${registration.scope}`);
+        await registration.update();
+        log('  → Update triggered');
+
+        if (registration.waiting) {
+          log('  → Activating waiting SW');
+          registration.waiting.postMessage({ type: 'SKIP_WAITING' });
+        }
+      }
+
+      log('Done! Reload the player to use new SW.');
+    }
+
+    async function unregisterAll() {
+      log('Unregistering all Service Workers...');
+      const registrations = await navigator.serviceWorker.getRegistrations();
+
+      for (const registration of registrations) {
+        log(`Unregistering: ${registration.scope}`);
+        await registration.unregister();
+        log('  → Unregistered');
+      }
+
+      log('Done! All SWs removed.');
+    }
+
+    async function clearCaches() {
+      log('Clearing all caches...');
+      const cacheNames = await caches.keys();
+
+      for (const name of cacheNames) {
+        log(`Deleting cache: ${name}`);
+        await caches.delete(name);
+      }
+
+      log(`Done! Cleared ${cacheNames.length} caches.`);
+    }
+
+    function goToPlayer() {
+      window.location.href = './index.html';
+    }
+
+    // Auto-run on load
+    window.onload = () => {
+      log('Service Worker Force Update Tool Ready');
+      log('Click buttons above to manage Service Workers and caches');
+      log('');
+      navigator.serviceWorker.getRegistrations().then(regs => {
+        log(`Currently registered SWs: ${regs.length}`);
+        regs.forEach(reg => log(`  - ${reg.scope}`));
+      });
+    };
+  </script>
+</body>
+</html>

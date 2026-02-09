@@ -1,0 +1,13 @@
+{
+  "name": "pwa-xlr-player-tests",
+  "version": "1.0.0",
+  "description": "Automated functionality tests for PWA-XLR player",
+  "scripts": {
+    "test": "playwright test",
+    "test:headed": "playwright test --headed",
+    "test:debug": "playwright test --debug"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.40.0"
+  }
+}

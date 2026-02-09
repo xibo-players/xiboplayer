@@ -1,0 +1,190 @@
+{
+  "description": "Example schedule demonstrating dayparting (recurring schedules) functionality",
+  "note": "This schedule shows realistic dayparting scenarios for a digital signage display",
+
+  "schedule": {
+    "default": "0",
+
+    "layouts": [
+      {
+        "description": "Main menu - Weekday business hours",
+        "file": "100",
+        "priority": 5,
+        "fromdt": "2025-01-30T09:00:00Z",
+        "todt": "2025-01-30T17:00:00Z",
+        "recurrenceType": "Week",
+        "recurrenceRepeatsOn": "1,2,3,4,5",
+        "comment": "Shows Monday-Friday, 9am-5pm. Base content during business hours."
+      },
+      {
+        "description": "Weekend menu",
+        "file": "101",
+        "priority": 5,
+        "fromdt": "2025-01-30T10:00:00Z",
+        "todt": "2025-01-30T18:00:00Z",
+        "recurrenceType": "Week",
+        "recurrenceRepeatsOn": "6,7",
+        "comment": "Shows Saturday-Sunday, 10am-6pm. Different hours on weekends."
+      },
+      {
+        "description": "Lunch specials - Mon/Wed/Fri only",
+        "file": "200",
+        "priority": 10,
+        "fromdt": "2025-01-30T12:00:00Z",
+        "todt": "2025-01-30T14:00:00Z",
+        "recurrenceType": "Week",
+        "recurrenceRepeatsOn": "1,3,5",
+        "comment": "Higher priority. Overrides main menu during lunch on Mon/Wed/Fri."
+      },
+      {
+        "description": "Night mode - After hours",
+        "file": "300",
+        "priority": 3,
+        "fromdt": "2025-01-30T18:00:00Z",
+        "todt": "2025-01-30T08:00:00Z",
+        "recurrenceType": "Week",
+        "recurrenceRepeatsOn": "1,2,3,4,5,6,7",
+        "comment": "Crosses midnight. Shows 6pm-8am daily. Lower priority than business hours."
+      },
+      {
+        "description": "Tuesday special promotion",
+        "file": "400",
+        "priority": 15,
+        "fromdt": "2025-01-30T09:00:00Z",
+        "todt": "2025-01-30T17:00:00Z",
+        "recurrenceType": "Week",
+        "recurrenceRepeatsOn": "2",
+        "comment": "Highest priority. Takes over entire Tuesday."
+      },
+      {
+        "description": "Year-end sale - Limited duration recurring",
+        "file": "500",
+        "priority": 12,
+        "fromdt": "2025-01-30T10:00:00Z",
+        "todt": "2025-01-30T20:00:00Z",
+        "recurrenceType": "Week",
+        "recurrenceRepeatsOn": "6,7",
+        "recurrenceRange": "2025-12-31T23:59:59Z",
+        "comment": "Recurring on weekends, but only until end of 2025."
+      }
+    ],
+
+    "campaigns": [
+      {
+        "description": "Morning news campaign - Weekday mornings",
+        "id": "1",
+        "priority": 8,
+        "fromdt": "2025-01-30T08:00:00Z",
+        "todt": "2025-01-30T10:00:00Z",
+        "recurrenceType": "Week",
+        "recurrenceRepeatsOn": "1,2,3,4,5",
+        "layouts": [
+          { "file": "600", "comment": "News headlines" },
+          { "file": "601", "comment": "Weather forecast" },
+          { "file": "602", "comment": "Traffic updates" }
+        ],
+        "comment": "Cycles through 3 layouts during morning hours on weekdays."
+      },
+      {
+        "description": "Happy hour campaign - Thurs-Fri evenings",
+        "id": "2",
+        "priority": 11,
+        "fromdt": "2025-01-30T17:00:00Z",
+        "todt": "2025-01-30T19:00:00Z",
+        "recurrenceType": "Week",
+        "recurrenceRepeatsOn": "4,5",
+        "layouts": [
+          { "file": "700", "comment": "Drink specials" },
+          { "file": "701", "comment": "Appetizer deals" }
+        ],
+        "comment": "Shows on Thursday and Friday evenings only."
+      }
+    ]
+  },
+
+  "scenarios": {
+    "monday_noon": {
+      "time": "Monday, 12:30 PM",
+      "active_schedules": [
+        "file 200 (Lunch specials - priority 10)"
+      ],
+      "explanation": "Lunch special has higher priority than main menu"
+    },
+
+    "monday_2pm": {
+      "time": "Monday, 2:00 PM",
+      "active_schedules": [
+        "file 100 (Main menu - priority 5)"
+      ],
+      "explanation": "After lunch hours, back to main menu"
+    },
+
+    "tuesday_10am": {
+      "time": "Tuesday, 10:00 AM",
+      "active_schedules": [
+        "file 400 (Tuesday special - priority 15)"
+      ],
+      "explanation": "Tuesday special has highest priority, takes over all day"
+    },
+
+    "wednesday_noon": {
+      "time": "Wednesday, 12:30 PM",
+      "active_schedules": [
+        "file 200 (Lunch specials - priority 10)"
+      ],
+      "explanation": "Lunch special active on Mon/Wed/Fri"
+    },
+
+    "thursday_5pm": {
+      "time": "Thursday, 5:30 PM",
+      "active_schedules": [
+        "campaign 2 (Happy hour - priority 11)",
+        "layouts: [700, 701]"
+      ],
+      "explanation": "Happy hour campaign active Thu-Fri evenings"
+    },
+
+    "friday_9am": {
+      "time": "Friday, 9:00 AM",
+      "active_schedules": [
+        "campaign 1 (Morning news - priority 8)"
+      ],
+      "explanation": "Morning news campaign during 8-10am on weekdays"
+    },
+
+    "saturday_2pm": {
+      "time": "Saturday, 2:00 PM",
+      "active_schedules": [
+        "file 500 (Year-end sale - priority 12)",
+        "file 101 (Weekend menu - priority 5)"
+      ],
+      "explanation": "Year-end sale wins (priority 12 > 5)"
+    },
+
+    "sunday_10pm": {
+      "time": "Sunday, 10:00 PM",
+      "active_schedules": [
+        "file 300 (Night mode - priority 3)"
+      ],
+      "explanation": "After weekend hours, shows night mode"
+    },
+
+    "monday_11pm": {
+      "time": "Monday, 11:00 PM",
+      "active_schedules": [
+        "file 300 (Night mode - priority 3)"
+      ],
+      "explanation": "Night mode handles midnight crossing (6pm-8am)"
+    }
+  },
+
+  "priority_notes": [
+    "Priority 15: Tuesday special (highest)",
+    "Priority 12: Year-end sale",
+    "Priority 11: Happy hour campaign",
+    "Priority 10: Lunch specials",
+    "Priority 8: Morning news campaign",
+    "Priority 5: Main/weekend menus",
+    "Priority 3: Night mode (lowest active)"
+  ]
+}

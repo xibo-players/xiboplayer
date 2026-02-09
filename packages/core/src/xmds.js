@@ -106,7 +106,7 @@ export class XmdsClient {
       serverKey: this.config.cmsKey,
       hardwareKey: this.config.hardwareKey,
       displayName: this.config.displayName,
-      clientType: 'linux',  // CRITICAL: bypass commercial license
+      clientType: 'chromeOS',  // PWA player (enables /pwa/ endpoints, no licensing restrictions)
       clientVersion: '0.1.0',
       clientCode: '1',
       operatingSystem: os,
@@ -137,11 +137,11 @@ export class XmdsClient {
       return { code, message, settings: null };
     }
 
-    // Parse settings
+    // Parse settings - CMS sends them directly as children of <display>, not wrapped in <settingsNodes>
     const settings = {};
-    const settingsNode = display.querySelector('settingsNodes');
-    if (settingsNode) {
-      for (const child of settingsNode.children) {
+    for (const child of display.children) {
+      // Skip known non-setting elements
+      if (!['commands', 'file'].includes(child.tagName.toLowerCase())) {
         settings[child.tagName] = child.textContent;
       }
     }
@@ -208,7 +208,8 @@ export class XmdsClient {
 
     const schedule = {
       default: null,
-      layouts: []
+      layouts: [],
+      campaigns: []
     };
 
     const defaultEl = doc.querySelector('default');
@@ -216,13 +217,42 @@ export class XmdsClient {
       schedule.default = defaultEl.getAttribute('file');
     }
 
-    for (const layoutEl of doc.querySelectorAll('layout')) {
+    // Parse campaigns (groups of layouts with shared priority)
+    for (const campaignEl of doc.querySelectorAll('campaign')) {
+      const campaign = {
+        id: campaignEl.getAttribute('id'),
+        priority: parseInt(campaignEl.getAttribute('priority') || '0'),
+        fromdt: campaignEl.getAttribute('fromdt'),
+        todt: campaignEl.getAttribute('todt'),
+        scheduleid: campaignEl.getAttribute('scheduleid'),
+        layouts: []
+      };
+
+      // Parse layouts within this campaign
+      for (const layoutEl of campaignEl.querySelectorAll('layout')) {
+        campaign.layouts.push({
+          file: layoutEl.getAttribute('file'),
+          // Layouts in campaigns inherit timing from campaign level
+          fromdt: layoutEl.getAttribute('fromdt') || campaign.fromdt,
+          todt: layoutEl.getAttribute('todt') || campaign.todt,
+          scheduleid: campaign.scheduleid,
+          priority: campaign.priority, // Priority at campaign level
+          campaignId: campaign.id
+        });
+      }
+
+      schedule.campaigns.push(campaign);
+    }
+
+    // Parse standalone layouts (not in campaigns)
+    for (const layoutEl of doc.querySelectorAll('schedule > layout')) {
       schedule.layouts.push({
         file: layoutEl.getAttribute('file'),
         fromdt: layoutEl.getAttribute('fromdt'),
         todt: layoutEl.getAttribute('todt'),
         scheduleid: layoutEl.getAttribute('scheduleid'),
-        priority: parseInt(layoutEl.getAttribute('priority') || '0')
+        priority: parseInt(layoutEl.getAttribute('priority') || '0'),
+        campaignId: null // Standalone layout
       });
     }
 

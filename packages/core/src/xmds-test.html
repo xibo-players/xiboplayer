@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>XMDS Campaign Parsing Tests</title>
+  <style>
+    body {
+      font-family: monospace;
+      padding: 20px;
+      background: #1e1e1e;
+      color: #d4d4d4;
+    }
+    .pass { color: #4ec9b0; }
+    .fail { color: #f48771; }
+    pre { background: #2d2d2d; padding: 10px; border-left: 3px solid #4ec9b0; }
+  </style>
+</head>
+<body>
+  <h1>XMDS Campaign Parsing Tests</h1>
+  <div id="output"></div>
+
+  <script type="module">
+    import { XmdsClient } from './xmds.js';
+
+    const output = document.getElementById('output');
+
+    function log(msg, isPass = true) {
+      const div = document.createElement('div');
+      div.className = isPass ? 'pass' : 'fail';
+      div.textContent = msg;
+      output.appendChild(div);
+    }
+
+    // Test XML with campaigns
+    const scheduleXmlWithCampaigns = `
+<schedule>
+  <default file="0"/>
+
+  <!-- Campaign with 3 layouts -->
+  <campaign id="5" priority="10" fromdt="2026-01-30 00:00:00" todt="2026-01-31 23:59:59" scheduleid="15">
+    <layout file="100"/>
+    <layout file="101"/>
+    <layout file="102"/>
+  </campaign>
+
+  <!-- Standalone layout -->
+  <layout file="200" priority="5" fromdt="2026-01-30 00:00:00" todt="2026-01-31 23:59:59" scheduleid="20"/>
+
+  <!-- Another campaign with 2 layouts -->
+  <campaign id="6" priority="8" fromdt="2026-01-30 00:00:00" todt="2026-01-31 23:59:59" scheduleid="25">
+    <layout file="300"/>
+    <layout file="301"/>
+  </campaign>
+</schedule>
+`;
+
+    // Test XML with only standalone layouts (backward compatibility)
+    const scheduleXmlStandalone = `
+<schedule>
+  <default file="0"/>
+  <layout file="100" priority="10" fromdt="2026-01-30 00:00:00" todt="2026-01-31 23:59:59" scheduleid="10"/>
+  <layout file="101" priority="5" fromdt="2026-01-30 00:00:00" todt="2026-01-31 23:59:59" scheduleid="11"/>
+</schedule>
+`;
+
+    function testParseScheduleWithCampaigns() {
+      const client = new XmdsClient({ cmsAddress: 'http://test', cmsKey: 'key', hardwareKey: 'hw' });
+      const schedule = client.parseScheduleResponse(scheduleXmlWithCampaigns);
+
+      console.log('Parsed schedule:', schedule);
+
+      console.assert(schedule.default === '0', 'Default should be 0');
+      console.assert(schedule.campaigns.length === 2, 'Should have 2 campaigns');
+
+      const campaign1 = schedule.campaigns[0];
+      console.assert(campaign1.id === '5', 'Campaign 1 ID should be 5');
+      console.assert(campaign1.priority === 10, 'Campaign 1 priority should be 10');
+      console.assert(campaign1.layouts.length === 3, 'Campaign 1 should have 3 layouts');
+      console.assert(campaign1.layouts[0].file === '100', 'Campaign 1 layout 1 file should be 100');
+
+      console.assert(schedule.layouts.length === 1, 'Should have 1 standalone layout');
+      console.assert(schedule.layouts[0].file === '200', 'Standalone layout file should be 200');
+
+      log('✓ Test 1 passed: Parse schedule with campaigns');
+    }
+
+    function testParseScheduleStandalone() {
+      const client = new XmdsClient({ cmsAddress: 'http://test', cmsKey: 'key', hardwareKey: 'hw' });
+      const schedule = client.parseScheduleResponse(scheduleXmlStandalone);
+
+      console.assert(schedule.campaigns.length === 0, 'Should have 0 campaigns');
+      console.assert(schedule.layouts.length === 2, 'Should have 2 standalone layouts');
+
+      log('✓ Test 2 passed: Parse schedule with standalone layouts (backward compatible)');
+    }
+
+    // Run tests
+    log('\n=== Running XMDS Campaign Parsing Tests ===\n');
+    try {
+      testParseScheduleWithCampaigns();
+      testParseScheduleStandalone();
+      log('\n=== All XMDS tests passed! ===\n');
+    } catch (e) {
+      log('✗ Test failed: ' + e.message, false);
+      console.error(e);
+    }
+  </script>
+</body>
+</html>

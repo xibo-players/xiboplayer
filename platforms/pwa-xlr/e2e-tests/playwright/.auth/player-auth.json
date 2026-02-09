@@ -1,0 +1,25 @@
+{
+  "cookies": [
+    {
+      "name": "PHPSESSID",
+      "value": "f2d0e7d23031c78b7acf8d5b8c49649a",
+      "domain": "displays.superpantalles.com",
+      "path": "/",
+      "expires": -1,
+      "httpOnly": true,
+      "secure": false,
+      "sameSite": "Lax"
+    }
+  ],
+  "origins": [
+    {
+      "origin": "https://displays.superpantalles.com",
+      "localStorage": [
+        {
+          "name": "xibo_config",
+          "value": "{\"cmsAddress\":\"https://displays.superpantalles.com\",\"cmsKey\":\"isiSdUCy\",\"displayName\":\"test_pwa\",\"hardwareKey\":\"000000000000000000000000093dc477\",\"xmrChannel\":\"794ef61c-f55e-4752-89a7-a3857db653db\"}"
+        }
+      ]
+    }
+  ]
+}

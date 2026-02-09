@@ -1,0 +1,28 @@
+{
+  "name": "@xibo-player/cms-testing",
+  "version": "1.0.0",
+  "description": "Automated testing for Xibo CMS integration with PWA player",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "test": "node src/run-tests.js",
+    "test:debug": "node src/debug-api.js",
+    "test:verify": "node src/verify-player.js",
+    "test:cleanup": "node src/cleanup-tests.js"
+  },
+  "dependencies": {
+    "node-fetch": "^3.3.2",
+    "dotenv": "^16.3.1"
+  },
+  "devDependencies": {
+    "playwright": "^1.40.0"
+  },
+  "keywords": [
+    "xibo",
+    "testing",
+    "cms",
+    "automation"
+  ],
+  "author": "Pau Aliagas <linuxnow@gmail.com>",
+  "license": "AGPL-3.0-or-later"
+}

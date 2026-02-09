@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Xibo PWA Player</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 20px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+    }
+    .container {
+      text-align: center;
+      max-width: 600px;
+    }
+    h1 {
+      font-size: 2.5rem;
+      margin-bottom: 1rem;
+    }
+    .loader {
+      width: 50px;
+      height: 50px;
+      border: 4px solid rgba(255,255,255,0.3);
+      border-top-color: white;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin: 2rem auto;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    .info {
+      opacity: 0.9;
+      margin-top: 2rem;
+    }
+    .variant {
+      background: rgba(255,255,255,0.2);
+      padding: 1rem;
+      border-radius: 8px;
+      margin-top: 1rem;
+    }
+  </style>
+  <script>
+    /**
+     * Smart Player Router
+     *
+     * Routing Logic:
+     * 1. Check URL param: ?variant=core|xlr
+     * 2. Check localStorage preference
+     * 3. Detect device capabilities
+     * 4. Default to XLR (best features)
+     */
+    (function() {
+      const params = new URLSearchParams(window.location.search);
+      const variant = params.get('variant');
+
+      // Store preference if explicitly chosen
+      if (variant) {
+        localStorage.setItem('player_variant', variant);
+      }
+
+      function getPlayerVariant() {
+        // 1. Explicit URL parameter
+        if (variant === 'core' || variant === 'xlr') {
+          return variant;
+        }
+
+        // 2. Stored preference
+        const stored = localStorage.getItem('player_variant');
+        if (stored === 'core' || stored === 'xlr') {
+          return stored;
+        }
+
+        // 3. Device capabilities detection
+        const ua = navigator.userAgent.toLowerCase();
+
+        // Use Core PWA for very old browsers or limited devices
+        if (isLimitedDevice(ua)) {
+          return 'core';
+        }
+
+        // 4. Default to XLR (best features)
+        return 'xlr';
+      }
+
+      function isLimitedDevice(ua) {
+        // Detect very old browsers or limited devices
+        // These might struggle with the larger XLR bundle
+
+        // Very old Android (< 5.0)
+        if (ua.includes('android') && /android [2-4]\./.test(ua)) {
+          return true;
+        }
+
+        // Very old iOS (< 11)
+        if (ua.includes('iphone') && /os [5-9]_/.test(ua)) {
+          return true;
+        }
+
+        // Low-end device indicators
+        if (ua.includes('nokia') || ua.includes('symbian')) {
+          return true;
+        }
+
+        // Check available memory if API exists
+        if (navigator.deviceMemory && navigator.deviceMemory < 2) {
+          return true;
+        }
+
+        return false;
+      }
+
+      function redirect() {
+        const chosen = getPlayerVariant();
+        const baseUrl = window.location.origin + '/player/' + chosen + '/';
+        const fullUrl = baseUrl + window.location.search;
+
+        console.log('[Player Router] Redirecting to:', chosen, fullUrl);
+
+        // Update UI before redirect
+        document.getElementById('variant').textContent = chosen.toUpperCase();
+        document.getElementById('reason').textContent = getRedirectReason(chosen);
+
+        // Redirect after brief delay
+        setTimeout(() => {
+          window.location.replace(fullUrl);
+        }, 500);
+      }
+
+      function getRedirectReason(variant) {
+        if (params.get('variant')) {
+          return 'Explicit selection via URL';
+        }
+        if (localStorage.getItem('player_variant')) {
+          return 'Your saved preference';
+        }
+        if (variant === 'core') {
+          return 'Optimized for your device';
+        }
+        return 'Best features (default)';
+      }
+
+      // Run on load
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', redirect);
+      } else {
+        redirect();
+      }
+    })();
+  </script>
+</head>
+<body>
+  <div class="container">
+    <h1>🎬 Xibo PWA Player</h1>
+    <div class="loader"></div>
+    <div class="info">
+      <p>Loading player variant...</p>
+      <div class="variant">
+        <strong>Variant:</strong> <span id="variant">Detecting...</span><br>
+        <strong>Reason:</strong> <span id="reason">Analyzing device...</span>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

@@ -1,0 +1,7 @@
+# Environment variables
+.env
+
+# Test outputs
+screenshots/
+test-results/
+*.log

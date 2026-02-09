@@ -1,0 +1,390 @@
+/**
+ * Schedule Manager Dayparting Tests
+ *
+ * Tests for dayparting (recurring schedule) support
+ */
+
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { ScheduleManager } from './schedule.js';
+
+// Helper to create date strings
+function dateStr(hoursOffset = 0) {
+  const d = new Date();
+  d.setHours(d.getHours() + hoursOffset);
+  return d.toISOString();
+}
+
+// Helper to create time string for today at specific hour
+function timeStr(hour, minute = 0) {
+  const d = new Date();
+  d.setHours(hour, minute, 0, 0);
+  return d.toISOString();
+}
+
+// Helper to get current ISO day of week (1=Monday, 7=Sunday)
+function getCurrentIsoDayOfWeek() {
+  const day = new Date().getDay();
+  return day === 0 ? 7 : day;
+}
+
+// Helper to get a different day than today
+function getDifferentDay() {
+  const today = getCurrentIsoDayOfWeek();
+  return today === 1 ? 2 : 1;
+}
+
+// Helper to mock Date at specific time
+function mockTimeAt(targetDate) {
+  const RealDate = Date;
+  vi.spyOn(global, 'Date').mockImplementation((...args) => {
+    if (args.length === 0) {
+      return new RealDate(targetDate);
+    }
+    return new RealDate(...args);
+  });
+}
+
+describe('ScheduleManager - Dayparting', () => {
+  let manager;
+  let originalDate;
+
+  beforeEach(() => {
+    manager = new ScheduleManager();
+    originalDate = global.Date;
+  });
+
+  afterEach(() => {
+    // Restore Date
+    if (vi.isMockFunction(global.Date)) {
+      global.Date = originalDate;
+    }
+  });
+
+  describe('Weekday Schedules', () => {
+    it('should activate weekday schedule during business hours on weekday', () => {
+      const currentDay = getCurrentIsoDayOfWeek();
+
+      if (currentDay > 5) {
+        // Skip on weekends
+        return;
+      }
+
+      manager.setSchedule({
+        default: '0',
+        layouts: [
+          {
+            file: '100',
+            priority: 10,
+            fromdt: timeStr(9, 0),
+            todt: timeStr(17, 0),
+            recurrenceType: 'Week',
+            recurrenceRepeatsOn: '1,2,3,4,5'
+          }
+        ],
+        campaigns: []
+      });
+
+      // Mock noon on weekday
+      const noon = new Date();
+      noon.setHours(12, 0, 0, 0);
+      mockTimeAt(noon);
+
+      const layouts = manager.getCurrentLayouts();
+
+      expect(layouts).toHaveLength(1);
+      expect(layouts[0]).toBe('100');
+    });
+
+    it('should not activate weekday schedule outside time window', () => {
+      const currentDay = getCurrentIsoDayOfWeek();
+
+      if (currentDay > 5) {
+        return; // Skip on weekends
+      }
+
+      manager.setSchedule({
+        default: '999',
+        layouts: [
+          {
+            file: '100',
+            priority: 10,
+            fromdt: timeStr(9, 0),
+            todt: timeStr(17, 0),
+            recurrenceType: 'Week',
+            recurrenceRepeatsOn: '1,2,3,4,5'
+          }
+        ],
+        campaigns: []
+      });
+
+      // Mock 8:00 AM (before schedule)
+      const earlyMorning = new Date();
+      earlyMorning.setHours(8, 0, 0, 0);
+      mockTimeAt(earlyMorning);
+
+      const layouts = manager.getCurrentLayouts();
+
+      expect(layouts).toHaveLength(1);
+      expect(layouts[0]).toBe('999');
+    });
+  });
+
+  describe('Weekend Schedules', () => {
+    it('should activate weekend schedule on weekend', () => {
+      const currentDay = getCurrentIsoDayOfWeek();
+
+      if (currentDay < 6) {
+        return; // Skip on weekdays
+      }
+
+      manager.setSchedule({
+        default: '0',
+        layouts: [
+          {
+            file: '200',
+            priority: 10,
+            fromdt: timeStr(10, 0),
+            todt: timeStr(18, 0),
+            recurrenceType: 'Week',
+            recurrenceRepeatsOn: '6,7'
+          }
+        ],
+        campaigns: []
+      });
+
+      // Mock 2:00 PM on weekend
+      const afternoon = new Date();
+      afternoon.setHours(14, 0, 0, 0);
+      mockTimeAt(afternoon);
+
+      const layouts = manager.getCurrentLayouts();
+
+      expect(layouts).toHaveLength(1);
+      expect(layouts[0]).toBe('200');
+    });
+  });
+
+  describe('Day of Week Filtering', () => {
+    it('should not activate schedule on wrong day of week', () => {
+      const differentDay = getDifferentDay();
+
+      manager.setSchedule({
+        default: '999',
+        layouts: [
+          {
+            file: '300',
+            priority: 10,
+            fromdt: timeStr(9, 0),
+            todt: timeStr(17, 0),
+            recurrenceType: 'Week',
+            recurrenceRepeatsOn: differentDay.toString()
+          }
+        ],
+        campaigns: []
+      });
+
+      const layouts = manager.getCurrentLayouts();
+
+      expect(layouts).toHaveLength(1);
+      expect(layouts[0]).toBe('999');
+    });
+  });
+
+  describe('Priority with Dayparting', () => {
+    it('should respect priority in overlapping daypart schedules', () => {
+      const currentDay = getCurrentIsoDayOfWeek();
+
+      manager.setSchedule({
+        default: '0',
+        layouts: [
+          {
+            file: '100',
+            priority: 5,
+            fromdt: timeStr(9, 0),
+            todt: timeStr(17, 0),
+            recurrenceType: 'Week',
+            recurrenceRepeatsOn: '1,2,3,4,5,6,7'
+          },
+          {
+            file: '200',
+            priority: 10,
+            fromdt: timeStr(12, 0),
+            todt: timeStr(14, 0),
+            recurrenceType: 'Week',
+            recurrenceRepeatsOn: currentDay.toString()
+          }
+        ],
+        campaigns: []
+      });
+
+      // Mock 1:00 PM (lunch time)
+      const lunchTime = new Date();
+      lunchTime.setHours(13, 0, 0, 0);
+      mockTimeAt(lunchTime);
+
+      const layouts = manager.getCurrentLayouts();
+
+      expect(layouts).toHaveLength(1);
+      expect(layouts[0]).toBe('200');
+    });
+  });
+
+  describe('Dayparting Campaigns', () => {
+    it('should support campaigns with dayparting', () => {
+      const currentDay = getCurrentIsoDayOfWeek();
+
+      manager.setSchedule({
+        default: '0',
+        layouts: [],
+        campaigns: [
+          {
+            id: '1',
+            priority: 10,
+            fromdt: timeStr(9, 0),
+            todt: timeStr(17, 0),
+            recurrenceType: 'Week',
+            recurrenceRepeatsOn: currentDay.toString(),
+            layouts: [
+              { file: '100' },
+              { file: '101' },
+              { file: '102' }
+            ]
+          }
+        ]
+      });
+
+      // Mock noon
+      const noon = new Date();
+      noon.setHours(12, 0, 0, 0);
+      mockTimeAt(noon);
+
+      const layouts = manager.getCurrentLayouts();
+
+      expect(layouts).toHaveLength(3);
+      expect(layouts[0]).toBe('100');
+      expect(layouts[1]).toBe('101');
+      expect(layouts[2]).toBe('102');
+    });
+  });
+
+  describe('Midnight Crossing', () => {
+    it('should handle schedules that cross midnight', () => {
+      const currentDay = getCurrentIsoDayOfWeek();
+
+      manager.setSchedule({
+        default: '999',
+        layouts: [
+          {
+            file: '400',
+            priority: 10,
+            fromdt: timeStr(22, 0),
+            todt: timeStr(2, 0),
+            recurrenceType: 'Week',
+            recurrenceRepeatsOn: currentDay.toString()
+          }
+        ],
+        campaigns: []
+      });
+
+      // Mock 11:00 PM
+      const lateNight = new Date();
+      lateNight.setHours(23, 0, 0, 0);
+      mockTimeAt(lateNight);
+
+      const layouts = manager.getCurrentLayouts();
+
+      expect(layouts).toHaveLength(1);
+      expect(layouts[0]).toBe('400');
+    });
+  });
+
+  describe('Backward Compatibility', () => {
+    it('should still support non-recurring schedules', () => {
+      manager.setSchedule({
+        default: '0',
+        layouts: [
+          {
+            file: '500',
+            priority: 10,
+            fromdt: dateStr(-1),
+            todt: dateStr(1)
+          }
+        ],
+        campaigns: []
+      });
+
+      const layouts = manager.getCurrentLayouts();
+
+      expect(layouts).toHaveLength(1);
+      expect(layouts[0]).toBe('500');
+    });
+  });
+
+  describe('Specific Days Schedule', () => {
+    it('should handle specific days (Mon, Wed, Fri)', () => {
+      const currentDay = getCurrentIsoDayOfWeek();
+      const scheduledDays = [1, 3, 5];
+      const isScheduledDay = scheduledDays.includes(currentDay);
+
+      manager.setSchedule({
+        default: '999',
+        layouts: [
+          {
+            file: '600',
+            priority: 10,
+            fromdt: timeStr(9, 0),
+            todt: timeStr(17, 0),
+            recurrenceType: 'Week',
+            recurrenceRepeatsOn: '1,3,5'
+          }
+        ],
+        campaigns: []
+      });
+
+      // Mock noon
+      const noon = new Date();
+      noon.setHours(12, 0, 0, 0);
+      mockTimeAt(noon);
+
+      const layouts = manager.getCurrentLayouts();
+
+      expect(layouts).toHaveLength(1);
+      if (isScheduledDay) {
+        expect(layouts[0]).toBe('600');
+      } else {
+        expect(layouts[0]).toBe('999');
+      }
+    });
+  });
+
+  describe('Recurrence Range', () => {
+    it('should respect recurrenceRange end date', () => {
+      const currentDay = getCurrentIsoDayOfWeek();
+
+      // Create recurrence that ended yesterday
+      const yesterday = new Date();
+      yesterday.setDate(yesterday.getDate() - 1);
+
+      manager.setSchedule({
+        default: '999',
+        layouts: [
+          {
+            file: '700',
+            priority: 10,
+            fromdt: timeStr(9, 0),
+            todt: timeStr(17, 0),
+            recurrenceType: 'Week',
+            recurrenceRepeatsOn: currentDay.toString(),
+            recurrenceRange: yesterday.toISOString()
+          }
+        ],
+        campaigns: []
+      });
+
+      const layouts = manager.getCurrentLayouts();
+
+      expect(layouts).toHaveLength(1);
+      expect(layouts[0]).toBe('999');
+    });
+  });
+});
