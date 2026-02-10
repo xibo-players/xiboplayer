@@ -121,8 +121,8 @@ export class PlayerCore extends EventEmitter {
       // Request downloads with priority order
       this.emit('download-request', prioritizedFiles);
 
-      // Get current layouts from schedule
-      const layoutFiles = this.schedule.getCurrentLayouts();
+      // Use same schedule result (avoid duplicate evaluation)
+      const layoutFiles = currentLayouts;
       console.log('[PlayerCore] Current layouts:', layoutFiles);
       this.emit('layouts-scheduled', layoutFiles);
 
