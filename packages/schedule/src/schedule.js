@@ -150,9 +150,10 @@ export class ScheduleManager {
           continue;
         }
 
-        // Check max plays per hour
+        // Check max plays per hour - but track that we filtered it
         if (!this.canPlayLayout(layout.id, layout.maxPlaysPerHour)) {
-          console.log('[Schedule] Skipping layout', layout.id, '- max plays per hour exceeded');
+          console.log('[Schedule] Layout', layout.id, 'filtered by maxPlaysPerHour (limit:', layout.maxPlaysPerHour, ')');
+          // Continue to check other layouts, but don't add this one
           continue;
         }
 
