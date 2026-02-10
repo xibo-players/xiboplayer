@@ -55,7 +55,7 @@
      * 1. Check URL param: ?variant=core|xlr
      * 2. Check localStorage preference
      * 3. Detect device capabilities
-     * 4. Default to XLR (best features)
+     * 4. Default to Core PWA (modern, modular)
      */
     (function() {
       const params = new URLSearchParams(window.location.search);
@@ -81,39 +81,26 @@
         // 3. Device capabilities detection
         const ua = navigator.userAgent.toLowerCase();
 
-        // Use Core PWA for very old browsers or limited devices
-        if (isLimitedDevice(ua)) {
-          return 'core';
+        // Use XLR for legacy compatibility if needed
+        if (isLegacyDevice(ua)) {
+          return 'xlr';
         }
 
-        // 4. Default to XLR (best features)
-        return 'xlr';
+        // 4. Default to Core PWA (modular, optimized)
+        return 'core';
       }
 
-      function isLimitedDevice(ua) {
-        // Detect very old browsers or limited devices
-        // These might struggle with the larger XLR bundle
+      function isLegacyDevice(ua) {
+        // Detect devices that need XLR for legacy compatibility
+        // Most devices should use the modern Core PWA
 
-        // Very old Android (< 5.0)
-        if (ua.includes('android') && /android [2-4]\./.test(ua)) {
-          return true;
-        }
+        // Only use XLR for specific legacy cases
+        // Most modern devices should use Core PWA (default)
 
-        // Very old iOS (< 11)
-        if (ua.includes('iphone') && /os [5-9]_/.test(ua)) {
-          return true;
-        }
+        // Explicitly request XLR via query param if needed
+        // Example: ?variant=xlr
 
-        // Low-end device indicators
-        if (ua.includes('nokia') || ua.includes('symbian')) {
-          return true;
-        }
-
-        // Check available memory if API exists
-        if (navigator.deviceMemory && navigator.deviceMemory < 2) {
-          return true;
-        }
-
+        // For now, default to Core PWA for all devices
         return false;
       }
 
@@ -141,10 +128,10 @@
         if (localStorage.getItem('player_variant')) {
           return 'Your saved preference';
         }
-        if (variant === 'core') {
-          return 'Optimized for your device';
+        if (variant === 'xlr') {
+          return 'Legacy compatibility mode';
         }
-        return 'Best features (default)';
+        return 'Modern PWA (default)';
       }
 
       // Run on load
