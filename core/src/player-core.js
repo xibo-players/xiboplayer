@@ -42,7 +42,7 @@
  *   await core.collect();
  */
 
-import { EventEmitter } from './event-emitter.js';
+import { EventEmitter } from '@xiboplayer/utils';
 
 export class PlayerCore extends EventEmitter {
   constructor(options) {

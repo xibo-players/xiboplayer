@@ -19,7 +19,7 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
-    "@xiboplayer/utils": "workspace:*",
+    "@xiboplayer/utils": "file:../utils",
     "@xibosignage/xibo-communication-framework": "^0.0.6",
     "nanoevents": "^9.1.0"
   },

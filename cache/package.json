@@ -16,7 +16,7 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
-    "@xiboplayer/utils": "workspace:*",
+    "@xiboplayer/utils": "file:../utils",
     "spark-md5": "^3.0.2"
   },
   "devDependencies": {

@@ -1,2 +1,2 @@
 // @xiboplayer/xmds - XMDS SOAP client
-export { default as XMDS } from './xmds.js';
+export { XmdsClient } from './xmds.js';
