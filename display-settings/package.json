@@ -1,0 +1,35 @@
+{
+  "name": "@xiboplayer/display-settings",
+  "version": "0.9.0",
+  "description": "CMS display settings management and application",
+  "type": "module",
+  "main": "./src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./manager": "./src/display-settings.js"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
+  },
+  "dependencies": {
+    "@xiboplayer/utils": "file:../utils"
+  },
+  "devDependencies": {
+    "vitest": "^2.0.0"
+  },
+  "keywords": [
+    "xibo",
+    "digital-signage",
+    "display-settings",
+    "configuration"
+  ],
+  "author": "Pau Aliagas <linuxnow@gmail.com>",
+  "license": "AGPL-3.0-or-later",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/xibo/xibo-players.git",
+    "directory": "packages/display-settings"
+  }
+}
