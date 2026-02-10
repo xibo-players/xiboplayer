@@ -209,7 +209,8 @@ export class XmdsClient {
     const schedule = {
       default: null,
       layouts: [],
-      campaigns: []
+      campaigns: [],
+      overlays: []
     };
 
     const defaultEl = doc.querySelector('default');
@@ -256,6 +257,25 @@ export class XmdsClient {
       });
     }
 
+    // Parse overlay layouts (appear on top of main layouts)
+    // Format: <overlays><overlay duration="60" file="123" fromdt="..." todt="..." priority="10" ... /></overlays>
+    const overlaysContainer = doc.querySelector('overlays');
+    if (overlaysContainer) {
+      for (const overlayEl of overlaysContainer.querySelectorAll('overlay')) {
+        schedule.overlays.push({
+          duration: parseInt(overlayEl.getAttribute('duration') || '60'),
+          file: overlayEl.getAttribute('file'),
+          fromDt: overlayEl.getAttribute('fromdt'),
+          toDt: overlayEl.getAttribute('todt'),
+          priority: parseInt(overlayEl.getAttribute('priority') || '0'),
+          scheduleId: overlayEl.getAttribute('scheduleid'),
+          isGeoAware: overlayEl.getAttribute('isGeoAware') === '1',
+          geoLocation: overlayEl.getAttribute('geoLocation') || ''
+          // TODO: Parse criteria elements if present
+        });
+      }
+    }
+
     return schedule;
   }
 
@@ -295,5 +315,59 @@ export class XmdsClient {
 
     // Response is just the HTML string
     return xml;
+  }
+
+  /**
+   * SubmitLog - submit player logs to CMS for remote debugging
+   * @param {string} logXml - XML string containing log entries
+   * @returns {Promise<boolean>} - true if logs were successfully submitted
+   */
+  async submitLog(logXml) {
+    const xml = await this.call('SubmitLog', {
+      serverKey: this.config.cmsKey,
+      hardwareKey: this.config.hardwareKey,
+      logXml: logXml
+    });
+
+    return xml === 'true';
+  }
+
+  /**
+   * SubmitScreenShot - submit screenshot to CMS for display verification
+   * @param {string} base64Image - Base64-encoded PNG image data
+   * @returns {Promise<boolean>} - true if screenshot was successfully submitted
+   */
+  async submitScreenShot(base64Image) {
+    const xml = await this.call('SubmitScreenShot', {
+      serverKey: this.config.cmsKey,
+      hardwareKey: this.config.hardwareKey,
+      screenShot: base64Image
+    });
+
+    return xml === 'true';
+  }
+
+  /**
+   * SubmitStats - submit proof of play statistics
+   * @param {string} statsXml - XML-encoded stats string (already SOAP-escaped: <records>&lt;stat.../&gt;</records>)
+   * @returns {Promise<boolean>} - true if stats were successfully submitted
+   */
+  async submitStats(statsXml) {
+    try {
+      const xml = await this.call('SubmitStats', {
+        serverKey: this.config.cmsKey,
+        hardwareKey: this.config.hardwareKey,
+        statXml: statsXml
+      });
+
+      // Parse success response - CMS returns 'true' or 'false'
+      const success = xml === 'true';
+      console.log(`[XMDS] SubmitStats result: ${success}`);
+
+      return success;
+    } catch (error) {
+      console.error('[XMDS] SubmitStats failed:', error);
+      throw error;
+    }
   }
 }
