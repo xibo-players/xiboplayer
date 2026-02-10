@@ -1,0 +1,39 @@
+{
+  "name": "@xiboplayer/renderer",
+  "version": "1.0.0",
+  "description": "RendererLite - Fast, efficient XLF layout rendering engine",
+  "type": "module",
+  "main": "./src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./renderer-lite": "./src/renderer-lite.js",
+    "./layout": "./src/layout.js"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
+  },
+  "dependencies": {
+    "@xiboplayer/utils": "workspace:*",
+    "pdfjs-dist": "^4.10.38"
+  },
+  "devDependencies": {
+    "vitest": "^2.0.0",
+    "jsdom": "^25.0.0"
+  },
+  "keywords": [
+    "xibo",
+    "digital-signage",
+    "renderer",
+    "xlf",
+    "layout"
+  ],
+  "author": "Pau Aliagas <linuxnow@gmail.com>",
+  "license": "AGPL-3.0-or-later",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/xibo/xibo-players.git",
+    "directory": "packages/renderer"
+  }
+}

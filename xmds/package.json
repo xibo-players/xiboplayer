@@ -1,0 +1,36 @@
+{
+  "name": "@xiboplayer/xmds",
+  "version": "1.0.0",
+  "description": "XMDS SOAP client for Xibo CMS communication",
+  "type": "module",
+  "main": "./src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./xmds": "./src/xmds.js"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
+  },
+  "dependencies": {
+    "@xiboplayer/utils": "workspace:*"
+  },
+  "devDependencies": {
+    "vitest": "^2.0.0"
+  },
+  "keywords": [
+    "xibo",
+    "digital-signage",
+    "xmds",
+    "soap",
+    "cms"
+  ],
+  "author": "Pau Aliagas <linuxnow@gmail.com>",
+  "license": "AGPL-3.0-or-later",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/xibo/xibo-players.git",
+    "directory": "packages/xmds"
+  }
+}
