@@ -28,8 +28,7 @@
  *   const isCached = await proxy.isCached('layout', '456');
  */
 
-import { EventEmitter } from './event-emitter.js';
-import { createLogger } from './logger.js';
+import { EventEmitter, createLogger } from '@xiboplayer/utils';
 
 const log = createLogger('CacheProxy');
 

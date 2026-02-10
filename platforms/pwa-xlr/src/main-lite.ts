@@ -10,7 +10,7 @@
  */
 
 // @ts-ignore - JavaScript module
-import { RendererLite } from '@core/renderer-lite.js';
+import { RendererLite } from '@xiboplayer/renderer';
 
 // Import core modules (will be loaded at runtime)
 let cacheManager: any;

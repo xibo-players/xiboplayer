@@ -2,11 +2,11 @@
  * Main player orchestrator
  */
 
-import { config } from './config.js';
-import { XmdsClient } from './xmds.js';
-import { cacheManager } from './cache.js';
-import { scheduleManager } from './schedule.js';
-import { LayoutTranslator } from './layout.js';
+import { config } from '@xiboplayer/utils';
+import { XmdsClient } from '@xiboplayer/xmds';
+import { cacheManager } from '@xiboplayer/cache';
+import { scheduleManager } from '@xiboplayer/schedule';
+import { LayoutTranslator } from '@xiboplayer/renderer';
 import { XmrWrapper } from './xmr-wrapper.js';
 
 class Player {

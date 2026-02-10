@@ -14,7 +14,7 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
-    "@xiboplayer/utils": "workspace:*"
+    "@xiboplayer/utils": "file:../utils"
   },
   "devDependencies": {
     "vitest": "^2.0.0"

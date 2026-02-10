@@ -40,7 +40,7 @@
  */
 
 import { createNanoEvents } from 'nanoevents';
-import { createLogger } from './logger.js';
+import { createLogger } from '@xiboplayer/utils';
 
 /**
  * Transition utilities for widget animations

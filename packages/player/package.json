@@ -11,14 +11,14 @@
     "test": "echo \"Meta package - no tests\""
   },
   "dependencies": {
-    "@xiboplayer/core": "workspace:*",
-    "@xiboplayer/renderer": "workspace:*",
-    "@xiboplayer/cache": "workspace:*",
-    "@xiboplayer/schedule": "workspace:*",
-    "@xiboplayer/xmds": "workspace:*",
-    "@xiboplayer/xmr": "workspace:*",
-    "@xiboplayer/sw": "workspace:*",
-    "@xiboplayer/utils": "workspace:*"
+    "@xiboplayer/core": "file:../core",
+    "@xiboplayer/renderer": "file:../renderer",
+    "@xiboplayer/cache": "file:../cache",
+    "@xiboplayer/schedule": "file:../schedule",
+    "@xiboplayer/xmds": "file:../xmds",
+    "@xiboplayer/xmr": "file:../xmr",
+    "@xiboplayer/sw": "file:../sw",
+    "@xiboplayer/utils": "file:../utils"
   },
   "keywords": [
     "xibo",

@@ -3,7 +3,7 @@
  */
 
 import SparkMD5 from 'spark-md5';
-import { config } from './config.js';
+import { config } from '@xiboplayer/utils';
 
 const CACHE_NAME = 'xibo-media-v1';
 const DB_NAME = 'xibo-player';
