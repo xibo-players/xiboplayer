@@ -128,11 +128,21 @@ export class PlayerCore extends EventEmitter {
         }
 
         // Request layout preparation (platform handles media checks, widget HTML)
+        console.log(`[PlayerCore] Switching to layout ${layoutId}${this.currentLayoutId ? ` (from ${this.currentLayoutId})` : ''}`);
         this.emit('layout-prepare-request', layoutId);
 
       } else {
-        console.log('[PlayerCore] No layouts scheduled');
+        console.log('[PlayerCore] No layouts scheduled, falling back to default');
         this.emit('no-layouts-scheduled');
+
+        // If we're currently playing a layout but schedule says no layouts (e.g., maxPlaysPerHour filtered it),
+        // force switch to default layout if available
+        if (this.currentLayoutId && this.schedule.schedule?.default) {
+          const defaultLayoutId = parseInt(this.schedule.schedule.default.replace('.xlf', ''), 10);
+          console.log(`[PlayerCore] Current layout filtered by schedule, switching to default layout ${defaultLayoutId}`);
+          this.currentLayoutId = null; // Clear to force switch
+          this.emit('layout-prepare-request', defaultLayoutId);
+        }
       }
 
       // Setup collection interval on first run
