@@ -3,9 +3,10 @@
  */
 
 export class ScheduleManager {
-  constructor() {
+  constructor(options = {}) {
     this.schedule = null;
     this.playHistory = new Map(); // Track plays per layout: layoutId -> [timestamps]
+    this.interruptScheduler = options.interruptScheduler || null; // Optional interrupt scheduler
   }
 
   /**
@@ -109,6 +110,12 @@ export class ScheduleManager {
    * - recurrenceRepeatsOn specifies days: "1,2,3,4,5" (Mon-Fri, ISO format)
    * - Time matching uses time-of-day for recurring schedules
    * - Non-recurring schedules use full date/time ranges
+   *
+   * Interrupt behavior (shareOfVoice):
+   * - Layouts with shareOfVoice > 0 are interrupts
+   * - They must play for a percentage of each hour
+   * - Normal layouts fill remaining time
+   * - Interrupts are interleaved with normal layouts
    */
   getCurrentLayouts() {
     if (!this.schedule) {
@@ -133,7 +140,7 @@ export class ScheduleManager {
         activeItems.push({
           type: 'campaign',
           priority: campaign.priority,
-          layouts: campaign.layouts.map(l => l.file),
+          layouts: campaign.layouts, // Keep full layout objects for interrupt processing
           campaignId: campaign.id
         });
       }
@@ -160,7 +167,7 @@ export class ScheduleManager {
         activeItems.push({
           type: 'layout',
           priority: layout.priority || 0,
-          layouts: [layout.file],
+          layouts: [layout], // Keep full layout object for interrupt processing
           layoutId: layout.id
         });
       }
@@ -176,17 +183,33 @@ export class ScheduleManager {
     console.log('[Schedule] Max priority:', maxPriority, 'from', activeItems.length, 'active items');
 
     // Collect all layouts from items with max priority
-    const result = [];
+    let allLayouts = [];
     for (const item of activeItems) {
       if (item.priority === maxPriority) {
-        console.log('[Schedule] Including priority', item.priority, 'layouts:', item.layouts);
+        console.log('[Schedule] Including priority', item.priority, 'layouts:', item.layouts.map(l => l.file));
         // Add all layouts from this campaign or standalone layout
-        result.push(...item.layouts);
+        allLayouts.push(...item.layouts);
       } else {
         console.log('[Schedule] Skipping priority', item.priority, '< max', maxPriority);
       }
     }
 
+    // Process interrupts if interrupt scheduler is available
+    if (this.interruptScheduler) {
+      const { normalLayouts, interruptLayouts } = this.interruptScheduler.separateLayouts(allLayouts);
+
+      if (interruptLayouts.length > 0) {
+        console.log('[Schedule] Found', interruptLayouts.length, 'interrupt layouts with shareOfVoice');
+        const processedLayouts = this.interruptScheduler.processInterrupts(normalLayouts, interruptLayouts);
+        // Extract file IDs from processed layouts
+        const result = processedLayouts.map(l => l.file);
+        console.log('[Schedule] Final layouts (with interrupts):', result);
+        return result;
+      }
+    }
+
+    // No interrupts, return layout files
+    const result = allLayouts.map(l => l.file);
     console.log('[Schedule] Final layouts:', result);
     return result;
   }

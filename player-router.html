@@ -106,7 +106,13 @@
 
       function redirect() {
         const chosen = getPlayerVariant();
-        const baseUrl = window.location.origin + '/player/' + chosen + '/';
+        // Map variant names to actual deployment paths
+        const pathMap = {
+          'core': 'pwa',   // Core PWA → /player/pwa/
+          'xlr': 'xlr'     // XLR → /player/xlr/
+        };
+        const path = pathMap[chosen] || 'pwa';
+        const baseUrl = window.location.origin + '/player/' + path + '/';
         const fullUrl = baseUrl + window.location.search;
 
         console.log('[Player Router] Redirecting to:', chosen, fullUrl);

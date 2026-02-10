@@ -206,6 +206,10 @@ export class RendererLite {
     this.mediaUrlCache = new Map(); // fileId => blob URL (for parallel pre-fetching)
     this.layoutBlobUrls = new Map(); // layoutId => Set<blobUrl> (for lifecycle tracking)
 
+    // Overlay state
+    this.overlayContainer = null;
+    this.activeOverlays = new Map(); // layoutId => { container, layout, timer, regions }
+
     // Setup container styles
     this.setupContainer();
 
@@ -220,6 +224,18 @@ export class RendererLite {
     this.container.style.width = '100%';
     this.container.style.height = '100vh'; // Use viewport height, not percentage
     this.container.style.overflow = 'hidden';
+
+    // Create overlay container for overlay layouts (higher z-index than main content)
+    this.overlayContainer = document.createElement('div');
+    this.overlayContainer.id = 'overlay-container';
+    this.overlayContainer.style.position = 'absolute';
+    this.overlayContainer.style.top = '0';
+    this.overlayContainer.style.left = '0';
+    this.overlayContainer.style.width = '100%';
+    this.overlayContainer.style.height = '100%';
+    this.overlayContainer.style.zIndex = '1000'; // Above main layout (z-index 0-999)
+    this.overlayContainer.style.pointerEvents = 'none'; // Don't block clicks on main layout
+    this.container.appendChild(this.overlayContainer);
   }
 
   /**
@@ -813,6 +829,8 @@ export class RendererLite {
       this.emit('widgetStart', {
         widgetId: widget.id,
         regionId,
+        layoutId: this.currentLayoutId,
+        mediaId: parseInt(widget.fileId || widget.id) || null,
         type: widget.type,
         duration: widget.duration
       });
@@ -873,6 +891,8 @@ export class RendererLite {
     this.emit('widgetEnd', {
       widgetId: widget.id,
       regionId,
+      layoutId: this.currentLayoutId,
+      mediaId: parseInt(widget.fileId || widget.id) || null,
       type: widget.type
     });
   }
@@ -1255,9 +1275,399 @@ export class RendererLite {
   }
 
   /**
+   * Render an overlay layout on top of the main layout
+   * @param {string} xlfXml - XLF XML content for overlay
+   * @param {number} layoutId - Overlay layout ID
+   * @param {number} priority - Overlay priority (higher = on top)
+   * @returns {Promise<void>}
+   */
+  async renderOverlay(xlfXml, layoutId, priority = 0) {
+    try {
+      this.log.info(`Rendering overlay ${layoutId} (priority ${priority})`);
+
+      // Check if this overlay is already active
+      if (this.activeOverlays.has(layoutId)) {
+        this.log.warn(`Overlay ${layoutId} already active, skipping`);
+        return;
+      }
+
+      // Parse XLF
+      const layout = this.parseXlf(xlfXml);
+
+      // Create overlay container
+      const overlayDiv = document.createElement('div');
+      overlayDiv.id = `overlay_${layoutId}`;
+      overlayDiv.className = 'renderer-lite-overlay';
+      overlayDiv.style.position = 'absolute';
+      overlayDiv.style.top = '0';
+      overlayDiv.style.left = '0';
+      overlayDiv.style.width = '100%';
+      overlayDiv.style.height = '100%';
+      overlayDiv.style.zIndex = String(1000 + priority); // Higher priority = higher z-index
+      overlayDiv.style.pointerEvents = 'auto'; // Enable clicks on overlay
+      overlayDiv.style.backgroundColor = layout.bgcolor;
+
+      // Pre-fetch all media URLs for overlay
+      if (this.options.getMediaUrl) {
+        const mediaPromises = [];
+        for (const region of layout.regions) {
+          for (const widget of region.widgets) {
+            if (widget.fileId) {
+              const fileId = parseInt(widget.fileId || widget.id);
+              if (!this.mediaUrlCache.has(fileId)) {
+                mediaPromises.push(
+                  this.options.getMediaUrl(fileId)
+                    .then(url => {
+                      this.mediaUrlCache.set(fileId, url);
+                    })
+                    .catch(err => {
+                      this.log.warn(`Failed to fetch overlay media ${fileId}:`, err);
+                    })
+                );
+              }
+            }
+          }
+        }
+
+        if (mediaPromises.length > 0) {
+          this.log.info(`Pre-fetching ${mediaPromises.length} overlay media URLs...`);
+          await Promise.all(mediaPromises);
+        }
+      }
+
+      // Create regions for overlay
+      const overlayRegions = new Map();
+      for (const regionConfig of layout.regions) {
+        const regionEl = document.createElement('div');
+        regionEl.id = `overlay_${layoutId}_region_${regionConfig.id}`;
+        regionEl.className = 'renderer-lite-region overlay-region';
+        regionEl.style.position = 'absolute';
+        regionEl.style.left = `${regionConfig.left}px`;
+        regionEl.style.top = `${regionConfig.top}px`;
+        regionEl.style.width = `${regionConfig.width}px`;
+        regionEl.style.height = `${regionConfig.height}px`;
+        regionEl.style.zIndex = String(regionConfig.zindex);
+        regionEl.style.overflow = 'hidden';
+
+        overlayDiv.appendChild(regionEl);
+
+        // Store region state
+        overlayRegions.set(regionConfig.id, {
+          element: regionEl,
+          config: regionConfig,
+          widgets: regionConfig.widgets,
+          currentIndex: 0,
+          timer: null,
+          width: regionConfig.width,
+          height: regionConfig.height,
+          complete: false,
+          widgetElements: new Map()
+        });
+      }
+
+      // Pre-create widget elements for overlay
+      for (const [regionId, region] of overlayRegions) {
+        for (const widget of region.widgets) {
+          widget.layoutId = layoutId;
+          widget.regionId = regionId;
+
+          try {
+            const element = await this.createWidgetElement(widget, region);
+            element.style.visibility = 'hidden';
+            element.style.opacity = '0';
+            region.element.appendChild(element);
+            region.widgetElements.set(widget.id, element);
+          } catch (error) {
+            this.log.error(`Failed to pre-create overlay widget ${widget.id}:`, error);
+          }
+        }
+      }
+
+      // Add overlay to container
+      this.overlayContainer.appendChild(overlayDiv);
+
+      // Store overlay state
+      this.activeOverlays.set(layoutId, {
+        container: overlayDiv,
+        layout: layout,
+        regions: overlayRegions,
+        timer: null,
+        priority: priority
+      });
+
+      // Emit overlay start event
+      this.emit('overlayStart', layoutId, layout);
+
+      // Start all overlay regions
+      for (const [regionId, region] of overlayRegions) {
+        this.startOverlayRegion(layoutId, regionId);
+      }
+
+      // Set overlay timer based on duration
+      if (layout.duration > 0) {
+        const durationMs = layout.duration * 1000;
+        const overlayState = this.activeOverlays.get(layoutId);
+        if (overlayState) {
+          overlayState.timer = setTimeout(() => {
+            this.log.info(`Overlay ${layoutId} duration expired (${layout.duration}s)`);
+            this.emit('overlayEnd', layoutId);
+          }, durationMs);
+        }
+      }
+
+      this.log.info(`Overlay ${layoutId} started`);
+
+    } catch (error) {
+      this.log.error('Error rendering overlay:', error);
+      this.emit('error', { type: 'overlayError', error, layoutId });
+      throw error;
+    }
+  }
+
+  /**
+   * Start playing an overlay region's widgets
+   * @param {number} overlayId - Overlay layout ID
+   * @param {string} regionId - Region ID
+   */
+  startOverlayRegion(overlayId, regionId) {
+    const overlayState = this.activeOverlays.get(overlayId);
+    if (!overlayState) return;
+
+    const region = overlayState.regions.get(regionId);
+    if (!region || region.widgets.length === 0) {
+      return;
+    }
+
+    // If only one widget, just render it (no cycling)
+    if (region.widgets.length === 1) {
+      this.renderOverlayWidget(overlayId, regionId, 0);
+      return;
+    }
+
+    // Multiple widgets - cycle through them
+    const playNext = () => {
+      const widgetIndex = region.currentIndex;
+      const widget = region.widgets[widgetIndex];
+
+      // Render widget
+      this.renderOverlayWidget(overlayId, regionId, widgetIndex);
+
+      // Schedule next widget
+      const duration = widget.duration * 1000;
+      region.timer = setTimeout(() => {
+        this.stopOverlayWidget(overlayId, regionId, widgetIndex);
+
+        // Move to next widget (wraps to 0 if at end)
+        const nextIndex = (region.currentIndex + 1) % region.widgets.length;
+
+        // Check if completing full cycle (wrapped back to 0)
+        if (nextIndex === 0 && !region.complete) {
+          region.complete = true;
+          this.log.info(`Overlay ${overlayId} region ${regionId} completed one full cycle`);
+        }
+
+        region.currentIndex = nextIndex;
+        playNext();
+      }, duration);
+    };
+
+    playNext();
+  }
+
+  /**
+   * Render a widget in an overlay region
+   * @param {number} overlayId - Overlay layout ID
+   * @param {string} regionId - Region ID
+   * @param {number} widgetIndex - Widget index in region
+   */
+  async renderOverlayWidget(overlayId, regionId, widgetIndex) {
+    const overlayState = this.activeOverlays.get(overlayId);
+    if (!overlayState) return;
+
+    const region = overlayState.regions.get(regionId);
+    if (!region) return;
+
+    const widget = region.widgets[widgetIndex];
+    if (!widget) return;
+
+    try {
+      this.log.info(`Showing overlay widget ${widget.type} (${widget.id}) in overlay ${overlayId} region ${regionId}`);
+
+      // Get existing element (pre-created)
+      let element = region.widgetElements.get(widget.id);
+
+      if (!element) {
+        this.log.warn(`Overlay widget ${widget.id} not pre-created, creating now`);
+        element = await this.createWidgetElement(widget, region);
+        region.widgetElements.set(widget.id, element);
+        region.element.appendChild(element);
+      }
+
+      // Hide all other widgets in region
+      for (const [widgetId, widgetEl] of region.widgetElements) {
+        if (widgetId !== widget.id) {
+          widgetEl.style.visibility = 'hidden';
+          widgetEl.style.opacity = '0';
+        }
+      }
+
+      // Update media element if needed (restart videos)
+      this.updateMediaElement(element, widget);
+
+      // Show this widget
+      element.style.visibility = 'visible';
+
+      // Apply in transition
+      if (widget.transitions.in) {
+        Transitions.apply(element, widget.transitions.in, true, region.width, region.height);
+      } else {
+        element.style.opacity = '1';
+      }
+
+      // Emit widget start event
+      this.emit('overlayWidgetStart', {
+        overlayId,
+        widgetId: widget.id,
+        regionId,
+        type: widget.type,
+        duration: widget.duration
+      });
+
+    } catch (error) {
+      this.log.error(`Error rendering overlay widget:`, error);
+      this.emit('error', { type: 'overlayWidgetError', error, widgetId: widget.id, regionId, overlayId });
+    }
+  }
+
+  /**
+   * Stop an overlay widget
+   * @param {number} overlayId - Overlay layout ID
+   * @param {string} regionId - Region ID
+   * @param {number} widgetIndex - Widget index
+   */
+  async stopOverlayWidget(overlayId, regionId, widgetIndex) {
+    const overlayState = this.activeOverlays.get(overlayId);
+    if (!overlayState) return;
+
+    const region = overlayState.regions.get(regionId);
+    if (!region) return;
+
+    const widget = region.widgets[widgetIndex];
+    if (!widget) return;
+
+    const widgetElement = region.widgetElements.get(widget.id);
+    if (!widgetElement) return;
+
+    // Apply out transition
+    if (widget.transitions.out) {
+      const animation = Transitions.apply(
+        widgetElement,
+        widget.transitions.out,
+        false,
+        region.width,
+        region.height
+      );
+
+      if (animation) {
+        await new Promise(resolve => {
+          animation.onfinish = resolve;
+        });
+      }
+    }
+
+    // Pause media elements
+    const videoEl = widgetElement.querySelector('video');
+    if (videoEl && widget.options.loop !== '1') {
+      videoEl.pause();
+    }
+
+    const audioEl = widgetElement.querySelector('audio');
+    if (audioEl && widget.options.loop !== '1') {
+      audioEl.pause();
+    }
+
+    // Emit widget end event
+    this.emit('overlayWidgetEnd', {
+      overlayId,
+      widgetId: widget.id,
+      regionId,
+      type: widget.type
+    });
+  }
+
+  /**
+   * Stop and remove an overlay layout
+   * @param {number} layoutId - Overlay layout ID
+   */
+  stopOverlay(layoutId) {
+    const overlayState = this.activeOverlays.get(layoutId);
+    if (!overlayState) {
+      this.log.warn(`Overlay ${layoutId} not active`);
+      return;
+    }
+
+    this.log.info(`Stopping overlay ${layoutId}`);
+
+    // Clear overlay timer
+    if (overlayState.timer) {
+      clearTimeout(overlayState.timer);
+      overlayState.timer = null;
+    }
+
+    // Stop all overlay regions
+    for (const [regionId, region] of overlayState.regions) {
+      if (region.timer) {
+        clearTimeout(region.timer);
+        region.timer = null;
+      }
+
+      // Stop current widget
+      if (region.widgets.length > 0) {
+        this.stopOverlayWidget(layoutId, regionId, region.currentIndex);
+      }
+    }
+
+    // Remove overlay container from DOM
+    if (overlayState.container) {
+      overlayState.container.remove();
+    }
+
+    // Revoke blob URLs for this overlay
+    this.revokeBlobUrlsForLayout(layoutId);
+
+    // Remove from active overlays
+    this.activeOverlays.delete(layoutId);
+
+    // Emit overlay end event
+    this.emit('overlayEnd', layoutId);
+
+    this.log.info(`Overlay ${layoutId} stopped`);
+  }
+
+  /**
+   * Stop all active overlays
+   */
+  stopAllOverlays() {
+    const overlayIds = Array.from(this.activeOverlays.keys());
+    for (const overlayId of overlayIds) {
+      this.stopOverlay(overlayId);
+    }
+    this.log.info('All overlays stopped');
+  }
+
+  /**
+   * Get active overlay IDs
+   * @returns {Array<number>}
+   */
+  getActiveOverlays() {
+    return Array.from(this.activeOverlays.keys());
+  }
+
+  /**
    * Cleanup renderer
    */
   cleanup() {
+    this.stopAllOverlays();
     this.stopCurrentLayout();
     this.container.innerHTML = '';
     this.log.info('Cleaned up');
