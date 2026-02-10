@@ -52,7 +52,7 @@
      * Smart Player Router
      *
      * Routing Logic:
-     * 1. Check URL param: ?variant=core|xlr
+     * 1. Check URL param: ?variant=pwa|xlr
      * 2. Check localStorage preference
      * 3. Detect device capabilities
      * 4. Default to Core PWA (modern, modular)
@@ -68,7 +68,7 @@
 
       function getPlayerVariant() {
         // 1. Explicit URL parameter
-        if (variant === 'core' || variant === 'xlr') {
+        if (variant === 'pwa' || variant === 'xlr') {
           return variant;
         }
 
@@ -86,8 +86,8 @@
           return 'xlr';
         }
 
-        // 4. Default to Core PWA (modular, optimized)
-        return 'core';
+        // 4. Default to PWA (modular, optimized)
+        return 'pwa';
       }
 
       function isLegacyDevice(ua) {
@@ -106,13 +106,8 @@
 
       function redirect() {
         const chosen = getPlayerVariant();
-        // Map variant names to actual deployment paths
-        const pathMap = {
-          'core': 'pwa',   // Core PWA → /player/pwa/
-          'xlr': 'xlr'     // XLR → /player/xlr/
-        };
-        const path = pathMap[chosen] || 'pwa';
-        const baseUrl = window.location.origin + '/player/' + path + '/';
+        // Variant name matches deployment path directly
+        const baseUrl = window.location.origin + '/player/' + chosen + '/';
         const fullUrl = baseUrl + window.location.search;
 
         console.log('[Player Router] Redirecting to:', chosen, fullUrl);
