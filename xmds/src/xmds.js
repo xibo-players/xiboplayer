@@ -106,7 +106,7 @@ export class XmdsClient {
       serverKey: this.config.cmsKey,
       hardwareKey: this.config.hardwareKey,
       displayName: this.config.displayName,
-      clientType: 'chromeOS',  // PWA player (enables /pwa/ endpoints, no licensing restrictions)
+      clientType: 'linux',  // CRITICAL: 'linux' bypasses commercial licensing (commercialLicence=3)
       clientVersion: '0.1.0',
       clientCode: '1',
       operatingSystem: os,
