@@ -1,0 +1,36 @@
+{
+  "name": "@xiboplayer/schedule",
+  "version": "1.0.0",
+  "description": "Campaign scheduling and dayparting for Xibo Player",
+  "type": "module",
+  "main": "./src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./schedule": "./src/schedule.js"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
+  },
+  "dependencies": {
+    "@xiboplayer/utils": "workspace:*"
+  },
+  "devDependencies": {
+    "vitest": "^2.0.0"
+  },
+  "keywords": [
+    "xibo",
+    "digital-signage",
+    "scheduling",
+    "dayparting",
+    "campaigns"
+  ],
+  "author": "Pau Aliagas <linuxnow@gmail.com>",
+  "license": "AGPL-3.0-or-later",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/xibo/xibo-players.git",
+    "directory": "packages/schedule"
+  }
+}

@@ -1,0 +1,41 @@
+{
+  "name": "@xiboplayer/cache",
+  "version": "1.0.0",
+  "description": "Offline caching and download management with parallel chunk downloads",
+  "type": "module",
+  "main": "./src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./cache": "./src/cache.js",
+    "./cache-proxy": "./src/cache-proxy.js",
+    "./download-manager": "./src/download-manager.js"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
+  },
+  "dependencies": {
+    "@xiboplayer/utils": "workspace:*",
+    "spark-md5": "^3.0.2"
+  },
+  "devDependencies": {
+    "vitest": "^2.0.0",
+    "jsdom": "^25.0.0"
+  },
+  "keywords": [
+    "xibo",
+    "digital-signage",
+    "cache",
+    "offline",
+    "download",
+    "indexeddb"
+  ],
+  "author": "Pau Aliagas <linuxnow@gmail.com>",
+  "license": "AGPL-3.0-or-later",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/xibo/xibo-players.git",
+    "directory": "packages/cache"
+  }
+}
