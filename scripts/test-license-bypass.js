@@ -48,7 +48,7 @@ function test(name, passed, details = '') {
  * Test xmds.js contains clientType: 'linux'
  */
 function testXmdsClientType() {
-  const xmdsPath = join(rootDir, 'packages/core/src/xmds.js');
+  const xmdsPath = join(rootDir, 'packages/xmds/src/xmds.js');
 
   if (!existsSync(xmdsPath)) {
     test('xmds.js exists', false, `File not found: ${xmdsPath}`);
@@ -100,7 +100,7 @@ function testXmdsClientType() {
  * Test that no other clientType values exist
  */
 function testNoOtherClientTypes() {
-  const xmdsPath = join(rootDir, 'packages/core/src/xmds.js');
+  const xmdsPath = join(rootDir, 'packages/xmds/src/xmds.js');
   const content = readFileSync(xmdsPath, 'utf8');
 
   // Check for other dangerous clientType values
