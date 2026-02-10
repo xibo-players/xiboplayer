@@ -17,6 +17,7 @@
     "@xiboplayer/utils": "file:../utils"
   },
   "devDependencies": {
+    "jsdom": "^25.0.1",
     "vitest": "^2.0.0"
   },
   "keywords": [

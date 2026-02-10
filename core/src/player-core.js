@@ -55,6 +55,8 @@ export class PlayerCore extends EventEmitter {
     this.schedule = options.schedule;
     this.renderer = options.renderer;
     this.XmrWrapper = options.xmrWrapper;
+    this.statsCollector = options.statsCollector; // Optional: proof of play tracking
+    this.displaySettings = options.displaySettings; // Optional: CMS display settings manager
 
     // State
     this.xmr = null;
@@ -84,6 +86,16 @@ export class PlayerCore extends EventEmitter {
       // Register display
       const regResult = await this.xmds.registerDisplay();
       console.log('[PlayerCore] Display registered:', regResult);
+
+      // Apply display settings if DisplaySettings manager is available
+      if (this.displaySettings && regResult.settings) {
+        const result = this.displaySettings.applySettings(regResult.settings);
+        if (result.changed.includes('collectInterval')) {
+          // Collection interval changed - update interval
+          this.updateCollectionInterval(result.settings.collectInterval);
+        }
+      }
+
       this.emit('register-complete', regResult);
 
       // Initialize XMR if available
@@ -145,6 +157,16 @@ export class PlayerCore extends EventEmitter {
         }
       }
 
+      // Submit stats if enabled and collector is available
+      if (regResult.settings?.statsEnabled === 'On' || regResult.settings?.statsEnabled === '1') {
+        if (this.statsCollector) {
+          console.log('[PlayerCore] Stats enabled, submitting proof of play');
+          this.emit('submit-stats-request');
+        } else {
+          console.warn('[PlayerCore] Stats enabled but no StatsCollector provided');
+        }
+      }
+
       // Setup collection interval on first run
       if (!this.collectionInterval && regResult.settings) {
         this.setupCollectionInterval(regResult.settings);
@@ -190,7 +212,11 @@ export class PlayerCore extends EventEmitter {
    * Setup collection interval
    */
   setupCollectionInterval(settings) {
-    const collectIntervalSeconds = parseInt(settings.collectInterval || '300', 10);
+    // Use DisplaySettings if available, otherwise fallback to raw settings
+    const collectIntervalSeconds = this.displaySettings
+      ? this.displaySettings.getCollectInterval()
+      : parseInt(settings.collectInterval || '300', 10);
+
     const collectIntervalMs = collectIntervalSeconds * 1000;
 
     console.log(`[PlayerCore] Setting up collection interval: ${collectIntervalSeconds}s`);
@@ -204,6 +230,29 @@ export class PlayerCore extends EventEmitter {
     }, collectIntervalMs);
 
     this.emit('collection-interval-set', collectIntervalSeconds);
+  }
+
+  /**
+   * Update collection interval dynamically
+   * Called when CMS changes the collection interval
+   */
+  updateCollectionInterval(newIntervalSeconds) {
+    if (this.collectionInterval) {
+      clearInterval(this.collectionInterval);
+      console.log(`[PlayerCore] Updating collection interval: ${newIntervalSeconds}s`);
+
+      const collectIntervalMs = newIntervalSeconds * 1000;
+
+      this.collectionInterval = setInterval(() => {
+        console.log('[PlayerCore] Running scheduled collection cycle...');
+        this.collect().catch(error => {
+          console.error('[PlayerCore] Collection error:', error);
+          this.emit('collection-error', error);
+        });
+      }, collectIntervalMs);
+
+      this.emit('collection-interval-updated', newIntervalSeconds);
+    }
   }
 
   /**
