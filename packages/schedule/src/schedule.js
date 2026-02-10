@@ -5,6 +5,7 @@
 export class ScheduleManager {
   constructor() {
     this.schedule = null;
+    this.playHistory = new Map(); // Track plays per layout: layoutId -> [timestamps]
   }
 
   /**
@@ -149,10 +150,17 @@ export class ScheduleManager {
           continue;
         }
 
+        // Check max plays per hour
+        if (!this.canPlayLayout(layout.id, layout.maxPlaysPerHour)) {
+          console.log('[Schedule] Skipping layout', layout.id, '- max plays per hour exceeded');
+          continue;
+        }
+
         activeItems.push({
           type: 'layout',
           priority: layout.priority || 0,
-          layouts: [layout.file]
+          layouts: [layout.file],
+          layoutId: layout.id
         });
       }
     }
@@ -189,6 +197,65 @@ export class ScheduleManager {
     if (!lastCheck) return true;
     const elapsed = Date.now() - lastCheck;
     return elapsed >= 60000; // 1 minute
+  }
+
+  /**
+   * Check if layout has exceeded max plays per hour
+   * @param {string} layoutId - Layout ID to check
+   * @param {number} maxPlaysPerHour - Maximum plays allowed per hour (0 = unlimited)
+   * @returns {boolean} True if layout can play, false if exceeded limit
+   */
+  canPlayLayout(layoutId, maxPlaysPerHour) {
+    // If maxPlaysPerHour is 0 or undefined, unlimited plays
+    if (!maxPlaysPerHour || maxPlaysPerHour === 0) {
+      return true;
+    }
+
+    const now = Date.now();
+    const oneHourAgo = now - (60 * 60 * 1000);
+
+    // Get play history for this layout
+    const history = this.playHistory.get(layoutId) || [];
+
+    // Filter to plays within the last hour
+    const playsInLastHour = history.filter(timestamp => timestamp > oneHourAgo);
+
+    // Check if under limit
+    const canPlay = playsInLastHour.length < maxPlaysPerHour;
+
+    if (!canPlay) {
+      console.log(`[Schedule] Layout ${layoutId} has reached max plays per hour (${playsInLastHour.length}/${maxPlaysPerHour})`);
+    }
+
+    return canPlay;
+  }
+
+  /**
+   * Record that a layout was played
+   * @param {string} layoutId - Layout ID that was played
+   */
+  recordPlay(layoutId) {
+    if (!this.playHistory.has(layoutId)) {
+      this.playHistory.set(layoutId, []);
+    }
+
+    const history = this.playHistory.get(layoutId);
+    history.push(Date.now());
+
+    // Clean up old entries (older than 1 hour)
+    const oneHourAgo = Date.now() - (60 * 60 * 1000);
+    const cleaned = history.filter(timestamp => timestamp > oneHourAgo);
+    this.playHistory.set(layoutId, cleaned);
+
+    console.log(`[Schedule] Recorded play for layout ${layoutId} (${cleaned.length} plays in last hour)`);
+  }
+
+  /**
+   * Clear play history (useful for testing or reset)
+   */
+  clearPlayHistory() {
+    this.playHistory.clear();
+    console.log('[Schedule] Play history cleared');
   }
 }
 
