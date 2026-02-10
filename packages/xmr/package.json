@@ -1,6 +1,6 @@
 {
   "name": "@xiboplayer/xmr",
-  "version": "1.0.0",
+  "version": "0.9.0",
   "description": "XMR WebSocket client for real-time Xibo CMS commands",
   "type": "module",
   "main": "./src/index.js",

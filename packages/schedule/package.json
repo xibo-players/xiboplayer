@@ -1,6 +1,6 @@
 {
   "name": "@xiboplayer/schedule",
-  "version": "1.0.0",
+  "version": "0.9.0",
   "description": "Campaign scheduling and dayparting for Xibo Player",
   "type": "module",
   "main": "./src/index.js",
