@@ -935,7 +935,9 @@ export class RendererLite {
     video.autoplay = true;
     video.muted = widget.options.mute === '1';
     video.loop = false; // Don't use native loop - we handle it manually to avoid black frames
-    video.controls = true; // Show controls for debugging
+    video.controls = false; // Hide controls and error overlays in kiosk mode
+    video.disablePictureInPicture = true; // Disable PiP
+    video.playsInline = true; // Prevent fullscreen on mobile
 
     // Handle video end - pause on last frame instead of showing black
     // Widget cycling will restart the video via updateMediaElement()
@@ -982,9 +984,21 @@ export class RendererLite {
     video.addEventListener('loadeddata', () => {
       this.log.info('Video loaded and ready:', fileId);
     });
+
+    // Handle video errors
     video.addEventListener('error', (e) => {
-      this.log.error('Video error:', fileId, e);
+      const error = video.error;
+      const errorCode = error?.code;
+      const errorMessage = error?.message || 'Unknown error';
+
+      // Log all video errors for debugging, but never show to users
+      // These are often transient codec warnings that don't prevent playback
+      this.log.warn(`Video error (non-fatal, logged only): ${fileId}, code: ${errorCode}, time: ${video.currentTime.toFixed(1)}s, message: ${errorMessage}`);
+
+      // Do NOT emit error events - video errors are logged but not surfaced to UI
+      // Video will either recover (transient decode error) or fail completely (handled elsewhere)
     });
+
     video.addEventListener('playing', () => {
       this.log.info('Video playing:', fileId);
     });
