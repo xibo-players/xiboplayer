@@ -1,7 +1,7 @@
-// @xiboplayer/display-settings - CMS display settings management
+// @xiboplayer/settings - CMS settings management
 
 /**
- * Display settings manager
- * @module @xiboplayer/display-settings/manager
+ * Settings manager for Xibo Player
+ * @module @xiboplayer/settings
  */
-export { DisplaySettings } from './display-settings.js';
+export { DisplaySettings } from './settings.js';

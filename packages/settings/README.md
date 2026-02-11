@@ -1,4 +1,4 @@
-# @xiboplayer/display-settings
+# @xiboplayer/settings
 
 CMS display settings management and application for Xibo players.
 
@@ -15,7 +15,7 @@ CMS display settings management and application for Xibo players.
 ## Installation
 
 ```bash
-npm install @xiboplayer/display-settings
+npm install @xiboplayer/settings
 ```
 
 ## Usage
@@ -23,7 +23,7 @@ npm install @xiboplayer/display-settings
 ### Basic Usage
 
 ```javascript
-import { DisplaySettings } from '@xiboplayer/display-settings';
+import { DisplaySettings } from '@xiboplayer/settings';
 
 const displaySettings = new DisplaySettings();
 
@@ -38,7 +38,7 @@ console.log('Collection interval:', result.settings.collectInterval);
 
 ```javascript
 import { PlayerCore } from '@xiboplayer/core';
-import { DisplaySettings } from '@xiboplayer/display-settings';
+import { DisplaySettings } from '@xiboplayer/settings';
 
 const displaySettings = new DisplaySettings();
 

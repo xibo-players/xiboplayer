@@ -4,10 +4,10 @@
  * Stats collector for proof of play tracking
  * @module @xiboplayer/stats/collector
  */
-export { StatsCollector } from './stats-collector.js';
+export { StatsCollector, formatStats } from './stats-collector.js';
 
 /**
  * Log reporter for CMS logging
  * @module @xiboplayer/stats/logger
  */
-export { LogReporter } from './log-reporter.js';
+export { LogReporter, formatLogs } from './log-reporter.js';
