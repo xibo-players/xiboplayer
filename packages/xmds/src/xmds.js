@@ -2,7 +2,7 @@
  * XMDS SOAP client
  * Protocol: https://github.com/linuxnow/xibo_players_docs
  */
-import { createLogger } from '@xiboplayer/utils';
+import { createLogger, fetchWithRetry } from '@xiboplayer/utils';
 
 const log = createLogger('XMDS');
 
@@ -10,6 +10,7 @@ export class XmdsClient {
   constructor(config) {
     this.config = config;
     this.schemaVersion = 5;
+    this.retryOptions = config.retryOptions || { maxRetries: 2, baseDelayMs: 2000 };
   }
 
   /**
@@ -73,13 +74,13 @@ export class XmdsClient {
     log.debug(`${method}`, params);
     log.debug(`URL: ${url}`);
 
-    const response = await fetch(url, {
+    const response = await fetchWithRetry(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'text/xml; charset=utf-8'
       },
       body
-    });
+    }, this.retryOptions);
 
     if (!response.ok) {
       throw new Error(`XMDS ${method} failed: ${response.status} ${response.statusText}`);
@@ -96,16 +97,29 @@ export class XmdsClient {
     const parser = new DOMParser();
     const doc = parser.parseFromString(xml, 'text/xml');
 
-    // Check for SOAP fault
-    const fault = doc.querySelector('Fault');
+    // Check for SOAP fault (handle namespace prefix like soap:Fault)
+    let fault = doc.querySelector('Fault');
+    if (!fault) {
+      fault = Array.from(doc.querySelectorAll('*')).find(
+        el => el.localName === 'Fault' || el.tagName.endsWith(':Fault')
+      );
+    }
     if (fault) {
-      const faultString = fault.querySelector('faultstring')?.textContent || 'Unknown SOAP fault';
+      const faultString = fault.querySelector('faultstring')?.textContent
+        || Array.from(fault.querySelectorAll('*')).find(el => el.localName === 'faultstring')?.textContent
+        || 'Unknown SOAP fault';
       throw new Error(`SOAP Fault: ${faultString}`);
     }
 
-    // Extract response element
+    // Extract response element (handle namespace prefixes like ns1:MethodResponse)
     const responseTag = `${method}Response`;
-    const responseEl = doc.querySelector(responseTag) || doc.querySelector(`*|${responseTag}`);
+    let responseEl = doc.querySelector(responseTag);
+    if (!responseEl) {
+      // Fallback: search by localName to handle ns1:MethodResponse etc.
+      responseEl = Array.from(doc.querySelectorAll('*')).find(
+        el => el.localName === responseTag || el.tagName.endsWith(':' + responseTag)
+      );
+    }
 
     if (!responseEl) {
       throw new Error(`No ${responseTag} element in SOAP response`);
@@ -170,7 +184,11 @@ export class XmdsClient {
       }
     }
 
-    return { code, message, settings };
+    // Extract CRC32 checksums for RequiredFiles and Schedule skip optimization
+    const checkRf = display.getAttribute('checkRf') || '';
+    const checkSchedule = display.getAttribute('checkSchedule') || '';
+
+    return { code, message, settings, checkRf, checkSchedule };
   }
 
   /**
@@ -234,7 +252,10 @@ export class XmdsClient {
       default: null,
       layouts: [],
       campaigns: [],
-      overlays: []
+      overlays: [],
+      actions: [],
+      commands: [],
+      dataConnectors: []
     };
 
     const defaultEl = doc.querySelector('default');
@@ -309,13 +330,67 @@ export class XmdsClient {
       }
     }
 
+    // Parse action events (scheduled triggers)
+    const actionsContainer = doc.querySelector('actions');
+    if (actionsContainer) {
+      for (const actionEl of actionsContainer.querySelectorAll('action')) {
+        schedule.actions.push({
+          actionType: actionEl.getAttribute('actionType') || '',
+          triggerCode: actionEl.getAttribute('triggerCode') || '',
+          layoutCode: actionEl.getAttribute('layoutCode') || '',
+          commandCode: actionEl.getAttribute('commandCode') || '',
+          duration: parseInt(actionEl.getAttribute('duration') || '0'),
+          fromDt: actionEl.getAttribute('fromdt'),
+          toDt: actionEl.getAttribute('todt'),
+          priority: parseInt(actionEl.getAttribute('priority') || '0'),
+          scheduleId: actionEl.getAttribute('scheduleid'),
+          isGeoAware: actionEl.getAttribute('isGeoAware') === '1',
+          geoLocation: actionEl.getAttribute('geoLocation') || ''
+        });
+      }
+    }
+
+    // Parse server commands (remote control)
+    for (const cmdEl of doc.querySelectorAll('schedule > command')) {
+      schedule.commands.push({
+        code: cmdEl.getAttribute('command') || '',
+        date: cmdEl.getAttribute('date') || ''
+      });
+    }
+
+    // Parse data connectors (real-time data sources for widgets)
+    for (const dcEl of doc.querySelectorAll('dataconnector')) {
+      schedule.dataConnectors.push({
+        id: dcEl.getAttribute('id') || '',
+        dataConnectorId: dcEl.getAttribute('dataConnectorId') || '',
+        dataKey: dcEl.getAttribute('dataKey') || '',
+        url: dcEl.getAttribute('url') || '',
+        updateInterval: parseInt(dcEl.getAttribute('updateInterval') || '300', 10)
+      });
+    }
+
     return schedule;
   }
 
   /**
    * NotifyStatus - report current status
+   * @param {Object} status - Status object with currentLayoutId, deviceName, etc.
    */
   async notifyStatus(status) {
+    // Enrich with storage estimate if available
+    if (navigator.storage?.estimate) {
+      try {
+        const estimate = await navigator.storage.estimate();
+        status.availableSpace = estimate.quota - estimate.usage;
+        status.totalSpace = estimate.quota;
+      } catch (_) { /* storage estimate not supported */ }
+    }
+
+    // Add timezone if not already provided
+    if (!status.timeZone) {
+      status.timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    }
+
     return await this.call('NotifyStatus', {
       serverKey: this.config.cmsKey,
       hardwareKey: this.config.hardwareKey,
@@ -332,6 +407,30 @@ export class XmdsClient {
       hardwareKey: this.config.hardwareKey,
       mediaInventory: inventoryXml
     });
+  }
+
+  /**
+   * BlackList - report broken media to CMS
+   * @param {string} mediaId - The media file ID
+   * @param {string} type - File type ('media' or 'layout')
+   * @param {string} reason - Reason for blacklisting
+   * @returns {Promise<boolean>}
+   */
+  async blackList(mediaId, type, reason) {
+    try {
+      const xml = await this.call('BlackList', {
+        serverKey: this.config.cmsKey,
+        hardwareKey: this.config.hardwareKey,
+        mediaId: String(mediaId),
+        type: type || 'media',
+        reason: reason || 'Failed to render'
+      });
+      log.info(`BlackListed ${type}/${mediaId}: ${reason}`);
+      return xml === 'true';
+    } catch (error) {
+      log.warn('BlackList failed:', error);
+      return false;
+    }
   }
 
   /**

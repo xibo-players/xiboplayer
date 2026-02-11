@@ -16,7 +16,7 @@
 
 import { createLogger } from '@xiboplayer/utils';
 
-const logger = createLogger('schedule-advanced:overlays');
+const logger = createLogger('schedule:overlays');
 
 /**
  * Overlay Scheduler

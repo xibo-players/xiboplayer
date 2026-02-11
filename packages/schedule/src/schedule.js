@@ -17,6 +17,14 @@ export class ScheduleManager {
   }
 
   /**
+   * Get data connectors from current schedule
+   * @returns {Array} Data connector configurations, or empty array
+   */
+  getDataConnectors() {
+    return this.schedule?.dataConnectors || [];
+  }
+
+  /**
    * Check if a schedule item is active based on recurrence rules
    * Supports weekly dayparting (recurring schedules on specific days/times)
    */
@@ -224,7 +232,17 @@ export class ScheduleManager {
   }
 
   /**
-   * Check if layout has exceeded max plays per hour
+   * Check if layout can play based on maxPlaysPerHour with even distribution.
+   *
+   * Instead of allowing bursts (3 plays back-to-back then nothing for 50 min),
+   * plays are distributed evenly across the hour:
+   *   maxPlaysPerHour=3 → minimum 20 min gap between plays
+   *   maxPlaysPerHour=6 → minimum 10 min gap between plays
+   *
+   * Two checks:
+   *   1. Total plays in sliding 1-hour window < maxPlaysPerHour
+   *   2. Time since last play >= (60 / maxPlaysPerHour) minutes
+   *
    * @param {string} layoutId - Layout ID to check
    * @param {number} maxPlaysPerHour - Maximum plays allowed per hour (0 = unlimited)
    * @returns {boolean} True if layout can play, false if exceeded limit
@@ -244,14 +262,27 @@ export class ScheduleManager {
     // Filter to plays within the last hour
     const playsInLastHour = history.filter(timestamp => timestamp > oneHourAgo);
 
-    // Check if under limit
-    const canPlay = playsInLastHour.length < maxPlaysPerHour;
-
-    if (!canPlay) {
+    // Check 1: Total plays in last hour must be under limit
+    if (playsInLastHour.length >= maxPlaysPerHour) {
       console.log(`[Schedule] Layout ${layoutId} has reached max plays per hour (${playsInLastHour.length}/${maxPlaysPerHour})`);
+      return false;
     }
 
-    return canPlay;
+    // Check 2: Minimum gap between plays for even distribution
+    // e.g., 3/hour → 1 every 20 min, 6/hour → 1 every 10 min
+    if (playsInLastHour.length > 0) {
+      const minGapMs = (60 * 60 * 1000) / maxPlaysPerHour;
+      const lastPlayTime = Math.max(...playsInLastHour);
+      const elapsed = now - lastPlayTime;
+
+      if (elapsed < minGapMs) {
+        const remainingMin = ((minGapMs - elapsed) / 60000).toFixed(1);
+        console.log(`[Schedule] Layout ${layoutId} spacing: next play in ${remainingMin} min (${playsInLastHour.length}/${maxPlaysPerHour} plays, ${Math.round(minGapMs/60000)} min gap)`);
+        return false;
+      }
+    }
+
+    return true;
   }
 
   /**
@@ -272,6 +303,35 @@ export class ScheduleManager {
     this.playHistory.set(layoutId, cleaned);
 
     console.log(`[Schedule] Recorded play for layout ${layoutId} (${cleaned.length} plays in last hour)`);
+  }
+
+  /**
+   * Get currently active actions (within their time window)
+   * @returns {Array} Active action objects
+   */
+  getActiveActions() {
+    if (!this.schedule?.actions) return [];
+
+    const now = new Date();
+    return this.schedule.actions.filter(action => this.isTimeActive(action, now));
+  }
+
+  /**
+   * Get scheduled commands
+   * @returns {Array} Command objects
+   */
+  getCommands() {
+    return this.schedule?.commands || [];
+  }
+
+  /**
+   * Find action by trigger code
+   * @param {string} triggerCode - The trigger code to match
+   * @returns {Object|null} Matching action or null
+   */
+  findActionByTrigger(triggerCode) {
+    const activeActions = this.getActiveActions();
+    return activeActions.find(a => a.triggerCode === triggerCode) || null;
   }
 
   /**

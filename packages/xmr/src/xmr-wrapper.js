@@ -9,6 +9,12 @@
  * - screenShot/screenshot: Capture and upload screenshot
  * - licenceCheck: No-op for Linux clients (always valid)
  * - changeLayout: Switch to a specific layout immediately
+ * - overlayLayout: Push overlay layout on top of current content
+ * - revertToSchedule: Return to normal scheduled content
+ * - purgeAll: Clear all cached files and re-download
+ * - commandAction: Execute a player command (HTTP only in browser)
+ * - triggerWebhook: Fire a webhook trigger action
+ * - dataUpdate: Force refresh of data connectors
  * - rekey: RSA key pair rotation (for XMR encryption)
  * - criteriaUpdate: Update display criteria and re-collect
  * - currentGeoLocation: Report current geo location to CMS
@@ -157,6 +163,72 @@ export class XmrWrapper {
         log.debug('changeLayout completed successfully');
       } catch (error) {
         log.error('changeLayout failed:', error);
+      }
+    });
+
+    // CMS command: Overlay Layout
+    this.xmr.on('overlayLayout', async (layoutId) => {
+      log.info('Received overlayLayout command:', layoutId);
+      try {
+        await this.player.overlayLayout(layoutId);
+        log.debug('overlayLayout completed successfully');
+      } catch (error) {
+        log.error('overlayLayout failed:', error);
+      }
+    });
+
+    // CMS command: Revert to Schedule
+    this.xmr.on('revertToSchedule', async () => {
+      log.info('Received revertToSchedule command');
+      try {
+        await this.player.revertToSchedule();
+        log.debug('revertToSchedule completed successfully');
+      } catch (error) {
+        log.error('revertToSchedule failed:', error);
+      }
+    });
+
+    // CMS command: Purge All
+    this.xmr.on('purgeAll', async () => {
+      log.info('Received purgeAll command');
+      try {
+        await this.player.purgeAll();
+        log.debug('purgeAll completed successfully');
+      } catch (error) {
+        log.error('purgeAll failed:', error);
+      }
+    });
+
+    // CMS command: Execute Command
+    this.xmr.on('commandAction', async (data) => {
+      log.info('Received commandAction command:', data);
+      try {
+        await this.player.executeCommand(data?.commandCode || data, data?.commands);
+        log.debug('commandAction completed successfully');
+      } catch (error) {
+        log.error('commandAction failed:', error);
+      }
+    });
+
+    // CMS command: Trigger Webhook
+    this.xmr.on('triggerWebhook', async (data) => {
+      log.info('Received triggerWebhook command:', data);
+      try {
+        this.player.triggerWebhook(data?.triggerCode || data);
+        log.debug('triggerWebhook completed successfully');
+      } catch (error) {
+        log.error('triggerWebhook failed:', error);
+      }
+    });
+
+    // CMS command: Data Update (force refresh data connectors)
+    this.xmr.on('dataUpdate', async () => {
+      log.info('Received dataUpdate command');
+      try {
+        this.player.refreshDataConnectors();
+        log.debug('dataUpdate completed successfully');
+      } catch (error) {
+        log.error('dataUpdate failed:', error);
       }
     });
 

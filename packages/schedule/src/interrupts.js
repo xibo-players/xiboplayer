@@ -15,7 +15,7 @@
 
 import { createLogger } from '@xiboplayer/utils';
 
-const logger = createLogger('schedule-advanced:interrupts');
+const logger = createLogger('schedule:interrupts');
 
 /**
  * Interrupt Scheduler

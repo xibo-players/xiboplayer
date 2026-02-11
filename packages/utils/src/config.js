@@ -3,10 +3,14 @@
  */
 
 const STORAGE_KEY = 'xibo_config';
+const HW_DB_NAME = 'xibo-hw-backup';
+const HW_DB_VERSION = 1;
 
 export class Config {
   constructor() {
     this.data = this.load();
+    // Async: try to restore hardware key from IndexedDB if localStorage lost it
+    this._restoreHardwareKeyFromBackup();
   }
 
   load() {
@@ -20,21 +24,16 @@ export class Config {
         // CRITICAL: Hardware key must persist
         if (!config.hardwareKey || config.hardwareKey.length < 10) {
           console.error('[Config] CRITICAL: Invalid/missing hardwareKey in localStorage!');
-          console.error('[Config] Stored config:', config);
-          console.error('[Config] Generating new hardware key (this should only happen once)');
-
           config.hardwareKey = this.generateStableHardwareKey();
           localStorage.setItem(STORAGE_KEY, JSON.stringify(config));
-          console.log('[Config] Saved new hardwareKey to localStorage');
+          this._backupHardwareKey(config.hardwareKey);
         } else {
-          // Hardware key exists and is valid
           console.log('[Config] ✓ Loaded existing hardwareKey:', config.hardwareKey);
         }
 
         return config;
       } catch (e) {
         console.error('[Config] Failed to parse config from localStorage:', e);
-        console.error('[Config] Stored JSON:', json);
         // Fall through to create new config
       }
     }
@@ -52,10 +51,80 @@ export class Config {
 
     // Save immediately
     localStorage.setItem(STORAGE_KEY, JSON.stringify(newConfig));
+    this._backupHardwareKey(newConfig.hardwareKey);
     console.log('[Config] ✓ Saved new config to localStorage');
     console.log('[Config] Hardware key will persist across reloads:', newConfig.hardwareKey);
 
     return newConfig;
+  }
+
+  /**
+   * Backup hardware key to IndexedDB (more persistent than localStorage).
+   * IndexedDB survives "Clear site data" in some browsers where localStorage doesn't.
+   */
+  _backupHardwareKey(key) {
+    try {
+      const req = indexedDB.open(HW_DB_NAME, HW_DB_VERSION);
+      req.onupgradeneeded = () => {
+        const db = req.result;
+        if (!db.objectStoreNames.contains('keys')) {
+          db.createObjectStore('keys');
+        }
+      };
+      req.onsuccess = () => {
+        const db = req.result;
+        const tx = db.transaction('keys', 'readwrite');
+        tx.objectStore('keys').put(key, 'hardwareKey');
+        tx.oncomplete = () => {
+          console.log('[Config] Hardware key backed up to IndexedDB');
+          db.close();
+        };
+      };
+    } catch (e) {
+      // IndexedDB not available — localStorage-only mode
+    }
+  }
+
+  /**
+   * Restore hardware key from IndexedDB if localStorage was cleared.
+   * Runs async after construction — if a backed-up key is found and
+   * differs from the current one, it restores the original key.
+   */
+  async _restoreHardwareKeyFromBackup() {
+    try {
+      const db = await new Promise((resolve, reject) => {
+        const req = indexedDB.open(HW_DB_NAME, HW_DB_VERSION);
+        req.onupgradeneeded = () => {
+          const db = req.result;
+          if (!db.objectStoreNames.contains('keys')) {
+            db.createObjectStore('keys');
+          }
+        };
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      });
+
+      const tx = db.transaction('keys', 'readonly');
+      const store = tx.objectStore('keys');
+      const backedUpKey = await new Promise((resolve) => {
+        const req = store.get('hardwareKey');
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => resolve(null);
+      });
+      db.close();
+
+      if (backedUpKey && backedUpKey !== this.data.hardwareKey) {
+        console.log('[Config] Restoring hardware key from IndexedDB backup:', backedUpKey);
+        console.log('[Config] (was:', this.data.hardwareKey, ')');
+        this.data.hardwareKey = backedUpKey;
+        this.save();
+      } else if (!backedUpKey && this.data.hardwareKey) {
+        // No backup yet — save current key as backup
+        this._backupHardwareKey(this.data.hardwareKey);
+      }
+    } catch (e) {
+      // IndexedDB not available — that's fine
+    }
   }
 
   save() {

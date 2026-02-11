@@ -21,6 +21,9 @@ const LOG_LEVELS = {
   NONE: 4
 };
 
+// Log sink system — external consumers (e.g., LogReporter) can intercept all log output
+const logSinks = [];
+
 class Logger {
   /**
    * @param {string} name - Logger name (shown in prefix)
@@ -52,24 +55,28 @@ class Logger {
     if (this.getEffectiveLevel() <= LOG_LEVELS.DEBUG) {
       console.log(`[${this.name}] DEBUG:`, ...args);
     }
+    _dispatchToSinks('debug', this.name, args);
   }
 
   info(...args) {
     if (this.getEffectiveLevel() <= LOG_LEVELS.INFO) {
       console.log(`[${this.name}]`, ...args);
     }
+    _dispatchToSinks('info', this.name, args);
   }
 
   warn(...args) {
     if (this.getEffectiveLevel() <= LOG_LEVELS.WARNING) {
       console.warn(`[${this.name}]`, ...args);
     }
+    _dispatchToSinks('warning', this.name, args);
   }
 
   error(...args) {
     if (this.getEffectiveLevel() <= LOG_LEVELS.ERROR) {
       console.error(`[${this.name}]`, ...args);
     }
+    _dispatchToSinks('error', this.name, args);
   }
 
   // Convenience method for conditional logging
@@ -192,6 +199,39 @@ export function mapCmsLogLevel(cmsLevel) {
     default:
       return 'INFO';
   }
+}
+
+/**
+ * Dispatch log entry to all registered sinks.
+ * Sinks receive { level, name, args } and should not throw.
+ * @private
+ */
+function _dispatchToSinks(level, name, args) {
+  if (logSinks.length === 0) return;
+  for (const fn of logSinks) {
+    try {
+      fn({ level, name, args });
+    } catch (_) {
+      // Sink errors must never break logging
+    }
+  }
+}
+
+/**
+ * Register a log sink — receives all log output regardless of level filtering.
+ * @param {function} fn - Callback: ({ level, name, args }) => void
+ */
+export function registerLogSink(fn) {
+  logSinks.push(fn);
+}
+
+/**
+ * Unregister a previously registered log sink.
+ * @param {function} fn - The same function reference passed to registerLogSink
+ */
+export function unregisterLogSink(fn) {
+  const idx = logSinks.indexOf(fn);
+  if (idx >= 0) logSinks.splice(idx, 1);
 }
 
 export { LOG_LEVELS };
