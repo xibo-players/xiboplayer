@@ -1,7 +1,7 @@
 # Feature Comparison: PWA Player vs Upstream Players
 
 **Generated:** 2026-02-11
-**Last Updated:** 2026-02-11 (post-implementation)
+**Last Updated:** 2026-02-12 (all planned features implemented)
 **Compared against:** XLR (electron-player), Arexibo (Rust), xibo-layout-renderer, xibo-communication-framework, xibo-interactive-control, xibo-xmr
 
 ---
@@ -12,14 +12,14 @@
 |------|-----------|-------|
 | **Schedule Management** | ~90% | Dayparting BETTER than XLR. Actions, data connectors, commands, dependants all implemented |
 | **XMDS Communication** | ~95% | All SOAP calls + CRC32 optimization + retry logic + purge list + BlackList + MediaInventory |
-| **File Management** | ~90% | Parallel chunks BETTER. Font CSS rewriting done. Widget HTML resource parsing in progress |
-| **Renderer** | ~65% | Performance BETTER. Layout scaling + IC server done. Missing: touch/keyboard actions |
+| **File Management** | ~95% | Parallel chunks BETTER. Font CSS rewriting + static resource caching done |
+| **Renderer** | ~85% | Performance BETTER. Layout scaling + IC + touch/keyboard actions + background images |
 | **XMR Push Messaging** | ~98% | All 13 command handlers registered, 11 fully functional |
 | **Stats/Logging** | ~95% | Log submission + fault reporting + stats aggregation all implemented |
 | **Config/Settings** | ~95% | Centralized state class + Wake Lock + offline mode |
-| **Interactive Control** | ~70% | IC server + triggers + duration control + data connectors. Missing: touch/keyboard bindings |
+| **Interactive Control** | ~90% | IC server + triggers + duration control + touch/keyboard actions + data connectors |
 
-**Overall: ~88% feature parity, with SIGNIFICANTLY better performance**
+**Overall: ~93% feature parity, with SIGNIFICANTLY better performance**
 
 ---
 
@@ -101,7 +101,7 @@
 | Commands | Yes | Yes | **Match** |
 | Dependants | Yes | Yes | **Match** |
 | Share of Voice | Yes | Yes | **Match** (full port) |
-| Cycle Playback | Yes | No | **GAP** |
+| Cycle Playback | Yes | Yes | **Match** |
 | Sync Events | Yes | No | **GAP** |
 
 ---
@@ -117,7 +117,7 @@
 | Parallel downloads | No | 4 concurrent chunks | **PWA BETTER** (4x faster) |
 | Bad cache detection | No | Yes (auto-delete) | **PWA BETTER** |
 | Font CSS URL rewriting | Yes | Yes | **Match** |
-| Widget HTML resource parsing | Yes | In progress | **GAP** (plan exists) |
+| Widget HTML resource parsing | Yes | Yes | **Match** (static cache populated from main thread) |
 | Storage | SQLite | Cache API + IndexedDB | Platform difference |
 | Offline support | SQLite tracks files | SW + Cache API + IndexedDB | **PWA BETTER** |
 
@@ -125,7 +125,7 @@
 
 ## 4. Layout Renderer (XLR library vs RendererLite)
 
-### Overall: ~65% parity, better performance
+### Overall: ~85% parity, better performance
 
 ### Layout Parsing
 
@@ -133,7 +133,7 @@
 |---------|-----|--------------|--------|
 | Layout dimensions | Yes | Yes | **Match** |
 | Background color | Yes | Yes | **Match** |
-| Background image | Yes (with scaling) | No | **GAP** |
+| Background image | Yes (with scaling) | Yes | **Match** |
 | Region extraction | Yes | Yes | **Match** |
 | Widget extraction | Yes | Yes | **Match** |
 | Layout scale factor | Yes (min(sw/xw, sh/xh)) | Yes | **Match** |
@@ -175,10 +175,10 @@
 | Webhook triggers | Yes | Yes | **Match** |
 | Duration control | Yes | Yes | **Match** |
 | Data connector realtime | Yes | Yes | **Match** |
-| Touch actions | Yes | No | **GAP** |
-| Keyboard actions | Yes | No | **GAP** |
-| Navigate to layout | Yes | Partial (via IC) | Partial |
-| Navigate to widget | Yes | No | **GAP** |
+| Touch actions | Yes | Yes | **Match** |
+| Keyboard actions | Yes | Yes | **Match** |
+| Navigate to layout | Yes | Yes | **Match** (via IC trigger + action handler) |
+| Navigate to widget | Yes | Yes | **Match** (via IC trigger) |
 | Previous/next widget | Yes | No | **GAP** |
 | Drawer regions | Yes | No | **GAP** |
 
@@ -330,21 +330,19 @@ The `xibo-interactive-control` library provides a widget-to-player communication
 
 ## Remaining Gaps
 
-### Medium Impact
-1. **Widget HTML static resource fetching** - bundle.min.js/fonts.css 404s (plan exists)
-2. **Touch/keyboard interactivity** - IC server exists but no DOM event bindings
-3. **Navigate to widget actions** - IC postMessage received but not wired
-4. **Service Worker offline caching** - SW registered but HTTP 202 issue unresolved
-5. **Schedule cycle playback** - Only plays first layout, no round-robin
-
 ### Low Impact
-6. **Background image in layout** - Layout `<bg>` element not rendered
-7. **RSA key pair for XMR encryption** - Plain WebSocket works fine
-8. **Geo-fencing enforcement** - Parsed but not filtered
-9. **Criteria enforcement** - Framework exists, enforcement TODO
-10. **HLS streaming** - Native `<video>` may handle some; no hls.js
-11. **BroadcastChannel stats** - Stats go direct, no cross-tab sync
-12. **Drawer regions** - XLR-specific UI feature
+1. **Previous/next widget navigation** - Touch swipe or arrow key to move between widgets
+2. **Drawer regions** - XLR-specific collapsible UI regions
+3. **RSA key pair for XMR encryption** - Plain WebSocket works fine for now
+4. **Geo-fencing enforcement** - Parsed but not filtered
+5. **Criteria enforcement** - Framework exists, enforcement TODO
+6. **HLS streaming** - Native `<video>` may handle some; no hls.js
+7. **BroadcastChannel stats** - Stats go direct, no cross-tab sync
+8. **Sync events** - Multi-display synchronization (rare use case)
+
+### Not Applicable (Browser Sandbox)
+- Shell commands (N/A)
+- RS232 serial port (N/A)
 
 ### Not Applicable (Browser Sandbox)
 - Shell commands (N/A)
