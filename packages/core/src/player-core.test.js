@@ -44,7 +44,9 @@ describe('PlayerCore', () => {
         layouts: [{ file: '100.xlf', priority: 10 }],
         campaigns: []
       })),
-      notifyStatus: vi.fn(() => Promise.resolve())
+      notifyStatus: vi.fn(() => Promise.resolve()),
+      mediaInventory: vi.fn(() => Promise.resolve()),
+      blackList: vi.fn(() => Promise.resolve(true))
     };
 
     mockCache = {
@@ -54,7 +56,9 @@ describe('PlayerCore', () => {
 
     mockSchedule = {
       setSchedule: vi.fn(),
-      getCurrentLayouts: vi.fn(() => ['100.xlf'])
+      getCurrentLayouts: vi.fn(() => ['100.xlf']),
+      getDataConnectors: vi.fn(() => []),
+      findActionByTrigger: vi.fn(() => null)
     };
 
     mockRenderer = {
@@ -79,6 +83,11 @@ describe('PlayerCore', () => {
       renderer: mockRenderer,
       xmrWrapper: mockXmrWrapper
     });
+
+    // Ensure offline cache is empty so error tests don't fall into offline fallback
+    // (IndexedDB from previous runs may contain stale data)
+    core._offlineCache = { schedule: null, settings: null, requiredFiles: null };
+    core._offlineDbReady = Promise.resolve();
   });
 
   afterEach(() => {
@@ -661,6 +670,178 @@ describe('PlayerCore', () => {
     });
   });
 
+  describe('Screenshot Capture', () => {
+    it('should emit screenshot-request when captureScreenshot is called', async () => {
+      const spy = createSpy();
+      core.on('screenshot-request', spy);
+
+      await core.captureScreenshot();
+
+      expect(spy).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('Change Layout', () => {
+    it('should emit layout-prepare-request with parsed layoutId', async () => {
+      const spy = createSpy();
+      core.on('layout-prepare-request', spy);
+
+      await core.changeLayout('456');
+
+      expect(spy).toHaveBeenCalledWith(456);
+    });
+
+    it('should clear currentLayoutId to force re-render', async () => {
+      core.setCurrentLayout(100);
+      expect(core.getCurrentLayoutId()).toBe(100);
+
+      await core.changeLayout('200');
+
+      expect(core.getCurrentLayoutId()).toBeNull();
+    });
+
+    it('should parse string layoutId to integer', async () => {
+      const spy = createSpy();
+      core.on('layout-prepare-request', spy);
+
+      await core.changeLayout('789');
+
+      expect(spy).toHaveBeenCalledWith(789);
+    });
+  });
+
+  describe('Handle Trigger', () => {
+    it('should call changeLayout when matching navLayout action found', () => {
+      const spy = createSpy();
+      core.on('layout-prepare-request', spy);
+
+      mockSchedule.findActionByTrigger = vi.fn((code) => {
+        if (code === 'trigger1') {
+          return { actionType: 'navLayout', triggerCode: 'trigger1', layoutCode: '42' };
+        }
+        return null;
+      });
+
+      core.handleTrigger('trigger1');
+
+      expect(mockSchedule.findActionByTrigger).toHaveBeenCalledWith('trigger1');
+      expect(spy).toHaveBeenCalledWith(42);
+    });
+
+    it('should handle navigateToLayout action type', () => {
+      const spy = createSpy();
+      core.on('layout-prepare-request', spy);
+
+      mockSchedule.findActionByTrigger = vi.fn(() => ({
+        actionType: 'navigateToLayout',
+        triggerCode: 'trigger1',
+        layoutCode: '99'
+      }));
+
+      core.handleTrigger('trigger1');
+
+      expect(spy).toHaveBeenCalledWith(99);
+    });
+
+    it('should do nothing when no matching action found', () => {
+      const layoutSpy = createSpy();
+      const widgetSpy = createSpy();
+      const commandSpy = createSpy();
+      core.on('layout-prepare-request', layoutSpy);
+      core.on('navigate-to-widget', widgetSpy);
+      core.on('execute-command', commandSpy);
+
+      mockSchedule.findActionByTrigger = vi.fn(() => null);
+
+      core.handleTrigger('nonexistent');
+
+      expect(mockSchedule.findActionByTrigger).toHaveBeenCalledWith('nonexistent');
+      expect(layoutSpy).not.toHaveBeenCalled();
+      expect(widgetSpy).not.toHaveBeenCalled();
+      expect(commandSpy).not.toHaveBeenCalled();
+    });
+
+    it('should emit navigate-to-widget for navWidget action', () => {
+      const spy = createSpy();
+      core.on('navigate-to-widget', spy);
+
+      const action = { actionType: 'navWidget', triggerCode: 'trigger1', layoutCode: '10' };
+      mockSchedule.findActionByTrigger = vi.fn(() => action);
+
+      core.handleTrigger('trigger1');
+
+      expect(spy).toHaveBeenCalledWith(action);
+    });
+
+    it('should emit execute-command for command action', () => {
+      const spy = createSpy();
+      core.on('execute-command', spy);
+
+      mockSchedule.findActionByTrigger = vi.fn(() => ({
+        actionType: 'command',
+        triggerCode: 'trigger1',
+        commandCode: 'restart'
+      }));
+
+      core.handleTrigger('trigger1');
+
+      expect(spy).toHaveBeenCalledWith('restart');
+    });
+  });
+
+  describe('Purge Request', () => {
+    it('should emit purge-request when RequiredFiles includes purge entries', async () => {
+      const spy = createSpy();
+      core.on('purge-request', spy);
+
+      mockXmds.requiredFiles.mockResolvedValue([
+        { id: '1', type: 'media', path: 'http://test.com/file1.mp4' },
+        { id: '2', type: 'layout', path: 'http://test.com/layout.xlf' },
+        { id: '3', type: 'purge', path: null },
+        { id: '4', type: 'purge', path: null }
+      ]);
+
+      await core.collect();
+
+      expect(spy).toHaveBeenCalledTimes(1);
+      expect(spy).toHaveBeenCalledWith([
+        expect.objectContaining({ id: '3', type: 'purge' }),
+        expect.objectContaining({ id: '4', type: 'purge' })
+      ]);
+    });
+
+    it('should not emit purge-request when no purge entries', async () => {
+      const spy = createSpy();
+      core.on('purge-request', spy);
+
+      mockXmds.requiredFiles.mockResolvedValue([
+        { id: '1', type: 'media', path: 'http://test.com/file1.mp4' }
+      ]);
+
+      await core.collect();
+
+      expect(spy).not.toHaveBeenCalled();
+    });
+
+    it('should separate purge entries from download-request', async () => {
+      const downloadSpy = createSpy();
+      core.on('download-request', downloadSpy);
+
+      mockXmds.requiredFiles.mockResolvedValue([
+        { id: '1', type: 'media', path: 'http://test.com/file1.mp4' },
+        { id: '2', type: 'purge', path: null }
+      ]);
+
+      await core.collect();
+
+      // download-request should only contain non-purge files
+      const downloadedFiles = downloadSpy.mock.calls[0][0];
+      expect(downloadedFiles.every(f => f.type !== 'purge')).toBe(true);
+      expect(downloadedFiles).toHaveLength(1);
+      expect(downloadedFiles[0].id).toBe('1');
+    });
+  });
+
   describe('State Consistency', () => {
     it('should maintain invariant: collecting flag matches execution state', async () => {
       expect(core.isCollecting()).toBe(false);
@@ -699,6 +880,917 @@ describe('PlayerCore', () => {
 
       core.setCurrentLayout(200);
       expect(core.getPendingLayouts()).toHaveLength(0); // All removed
+    });
+  });
+
+  describe('overlayLayout', () => {
+    it('should emit overlay-layout-request with parsed layoutId', async () => {
+      const spy = createSpy();
+      core.on('overlay-layout-request', spy);
+
+      await core.overlayLayout('555');
+
+      expect(spy).toHaveBeenCalledWith(555);
+    });
+
+    it('should set _layoutOverride with overlay type', async () => {
+      await core.overlayLayout('123');
+
+      expect(core._layoutOverride).toEqual({ layoutId: 123, type: 'overlay' });
+    });
+
+    it('should parse string layoutId to integer', async () => {
+      const spy = createSpy();
+      core.on('overlay-layout-request', spy);
+
+      await core.overlayLayout('007');
+
+      expect(spy).toHaveBeenCalledWith(7);
+    });
+
+    it('should overwrite previous layout override', async () => {
+      await core.overlayLayout('100');
+      expect(core._layoutOverride).toEqual({ layoutId: 100, type: 'overlay' });
+
+      await core.overlayLayout('200');
+      expect(core._layoutOverride).toEqual({ layoutId: 200, type: 'overlay' });
+    });
+  });
+
+  describe('revertToSchedule', () => {
+    it('should clear _layoutOverride', async () => {
+      core._layoutOverride = { layoutId: 42, type: 'change' };
+
+      await core.revertToSchedule();
+
+      expect(core._layoutOverride).toBeNull();
+    });
+
+    it('should clear currentLayoutId', async () => {
+      core.setCurrentLayout(100);
+      expect(core.getCurrentLayoutId()).toBe(100);
+
+      await core.revertToSchedule();
+
+      expect(core.getCurrentLayoutId()).toBeNull();
+    });
+
+    it('should emit revert-to-schedule event', async () => {
+      const spy = createSpy();
+      core.on('revert-to-schedule', spy);
+
+      await core.revertToSchedule();
+
+      expect(spy).toHaveBeenCalledTimes(1);
+    });
+
+    it('should emit layout-prepare-request when schedule has layouts', async () => {
+      const spy = createSpy();
+      core.on('layout-prepare-request', spy);
+
+      mockSchedule.getCurrentLayouts.mockReturnValue(['200.xlf']);
+
+      await core.revertToSchedule();
+
+      expect(spy).toHaveBeenCalledWith(200);
+    });
+
+    it('should emit no-layouts-scheduled when schedule is empty', async () => {
+      const spy = createSpy();
+      core.on('no-layouts-scheduled', spy);
+
+      mockSchedule.getCurrentLayouts.mockReturnValue([]);
+
+      await core.revertToSchedule();
+
+      expect(spy).toHaveBeenCalledTimes(1);
+    });
+
+    it('should re-evaluate schedule after clearing override', async () => {
+      core._layoutOverride = { layoutId: 999, type: 'overlay' };
+      core.setCurrentLayout(999);
+
+      const revertSpy = createSpy();
+      const layoutSpy = createSpy();
+      core.on('revert-to-schedule', revertSpy);
+      core.on('layout-prepare-request', layoutSpy);
+
+      mockSchedule.getCurrentLayouts.mockReturnValue(['100.xlf']);
+
+      await core.revertToSchedule();
+
+      expect(revertSpy).toHaveBeenCalledTimes(1);
+      expect(layoutSpy).toHaveBeenCalledWith(100);
+      expect(core._layoutOverride).toBeNull();
+    });
+  });
+
+  describe('purgeAll', () => {
+    it('should clear CRC checksums to force fresh collection', async () => {
+      core._lastCheckRf = 'abc123';
+      core._lastCheckSchedule = 'def456';
+
+      // purgeAll clears checksums then calls collectNow/collect which re-fetches
+      // After collect completes, checksums are set to new values from regResult
+      await core.purgeAll();
+
+      // The old CRC values should be gone (replaced by fresh values from regResult)
+      expect(core._lastCheckRf).not.toBe('abc123');
+      expect(core._lastCheckSchedule).not.toBe('def456');
+    });
+
+    it('should emit purge-all-request event', async () => {
+      const spy = createSpy();
+      core.on('purge-all-request', spy);
+
+      await core.purgeAll();
+
+      expect(spy).toHaveBeenCalledTimes(1);
+    });
+
+    it('should trigger a fresh collection cycle via collectNow', async () => {
+      const spy = createSpy();
+      core.on('collection-start', spy);
+
+      await core.purgeAll();
+
+      expect(spy).toHaveBeenCalledTimes(1);
+    });
+
+    it('should emit purge-all-request before collection-start', async () => {
+      const order = [];
+      core.on('purge-all-request', () => order.push('purge'));
+      core.on('collection-start', () => order.push('collect'));
+
+      await core.purgeAll();
+
+      expect(order[0]).toBe('purge');
+      expect(order[1]).toBe('collect');
+    });
+  });
+
+  describe('executeCommand', () => {
+    let originalFetch;
+
+    beforeEach(() => {
+      originalFetch = global.fetch;
+    });
+
+    afterEach(() => {
+      global.fetch = originalFetch;
+    });
+
+    it('should emit command-result with unknown command when code not in commands map', async () => {
+      const spy = createSpy();
+      core.on('command-result', spy);
+
+      await core.executeCommand('reboot', { restart: { commandString: 'http|http://test.com/restart' } });
+
+      expect(spy).toHaveBeenCalledWith({
+        code: 'reboot',
+        success: false,
+        reason: 'Unknown command'
+      });
+    });
+
+    it('should emit command-result with unknown command when commands is null', async () => {
+      const spy = createSpy();
+      core.on('command-result', spy);
+
+      await core.executeCommand('reboot', null);
+
+      expect(spy).toHaveBeenCalledWith({
+        code: 'reboot',
+        success: false,
+        reason: 'Unknown command'
+      });
+    });
+
+    it('should execute HTTP command and emit success result', async () => {
+      const spy = createSpy();
+      core.on('command-result', spy);
+
+      global.fetch = vi.fn(() => Promise.resolve({
+        ok: true,
+        status: 200
+      }));
+
+      const commands = {
+        restart: { commandString: 'http|http://test.com/restart|application/json' }
+      };
+
+      await core.executeCommand('restart', commands);
+
+      expect(global.fetch).toHaveBeenCalledWith('http://test.com/restart', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      expect(spy).toHaveBeenCalledWith({
+        code: 'restart',
+        success: true,
+        status: 200
+      });
+    });
+
+    it('should emit failure result when fetch throws', async () => {
+      const spy = createSpy();
+      core.on('command-result', spy);
+
+      global.fetch = vi.fn(() => Promise.reject(new Error('Network timeout')));
+
+      const commands = {
+        restart: { commandString: 'http|http://test.com/restart' }
+      };
+
+      await core.executeCommand('restart', commands);
+
+      expect(spy).toHaveBeenCalledWith({
+        code: 'restart',
+        success: false,
+        reason: 'Network timeout'
+      });
+    });
+
+    it('should emit failure for non-HTTP commands', async () => {
+      const spy = createSpy();
+      core.on('command-result', spy);
+
+      const commands = {
+        reboot: { commandString: 'shell|reboot' }
+      };
+
+      await core.executeCommand('reboot', commands);
+
+      expect(spy).toHaveBeenCalledWith({
+        code: 'reboot',
+        success: false,
+        reason: 'Only HTTP commands supported in browser'
+      });
+    });
+
+    it('should use value property as fallback when commandString is absent', async () => {
+      const spy = createSpy();
+      core.on('command-result', spy);
+
+      global.fetch = vi.fn(() => Promise.resolve({ ok: true, status: 200 }));
+
+      const commands = {
+        ping: { value: 'http|http://test.com/ping' }
+      };
+
+      await core.executeCommand('ping', commands);
+
+      expect(global.fetch).toHaveBeenCalledWith('http://test.com/ping', expect.any(Object));
+      expect(spy).toHaveBeenCalledWith(expect.objectContaining({ success: true }));
+    });
+
+    it('should default content-type to application/json when not specified', async () => {
+      global.fetch = vi.fn(() => Promise.resolve({ ok: true, status: 200 }));
+
+      const commands = {
+        action: { commandString: 'http|http://test.com/action' }
+      };
+
+      await core.executeCommand('action', commands);
+
+      expect(global.fetch).toHaveBeenCalledWith('http://test.com/action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+    });
+  });
+
+  describe('triggerWebhook', () => {
+    it('should delegate to handleTrigger', () => {
+      const spy = createSpy();
+      core.on('layout-prepare-request', spy);
+
+      mockSchedule.findActionByTrigger = vi.fn((code) => {
+        if (code === 'webhook1') {
+          return { actionType: 'navLayout', triggerCode: 'webhook1', layoutCode: '77' };
+        }
+        return null;
+      });
+
+      core.triggerWebhook('webhook1');
+
+      expect(mockSchedule.findActionByTrigger).toHaveBeenCalledWith('webhook1');
+      expect(spy).toHaveBeenCalledWith(77);
+    });
+
+    it('should do nothing when no matching action exists', () => {
+      const layoutSpy = createSpy();
+      const widgetSpy = createSpy();
+      core.on('layout-prepare-request', layoutSpy);
+      core.on('navigate-to-widget', widgetSpy);
+
+      mockSchedule.findActionByTrigger = vi.fn(() => null);
+
+      core.triggerWebhook('nonexistent');
+
+      expect(mockSchedule.findActionByTrigger).toHaveBeenCalledWith('nonexistent');
+      expect(layoutSpy).not.toHaveBeenCalled();
+      expect(widgetSpy).not.toHaveBeenCalled();
+    });
+
+    it('should handle command action type via webhook trigger', () => {
+      const spy = createSpy();
+      core.on('execute-command', spy);
+
+      mockSchedule.findActionByTrigger = vi.fn(() => ({
+        actionType: 'command',
+        triggerCode: 'webhook-cmd',
+        commandCode: 'restart'
+      }));
+
+      core.triggerWebhook('webhook-cmd');
+
+      expect(spy).toHaveBeenCalledWith('restart');
+    });
+  });
+
+  describe('refreshDataConnectors', () => {
+    beforeEach(() => {
+      // Stub refreshAll on the real DataConnectorManager instance
+      core.dataConnectorManager.refreshAll = vi.fn();
+    });
+
+    it('should call dataConnectorManager.refreshAll', () => {
+      core.refreshDataConnectors();
+
+      expect(core.dataConnectorManager.refreshAll).toHaveBeenCalledTimes(1);
+    });
+
+    it('should emit data-connectors-refreshed event', () => {
+      const spy = createSpy();
+      core.on('data-connectors-refreshed', spy);
+
+      core.refreshDataConnectors();
+
+      expect(spy).toHaveBeenCalledTimes(1);
+    });
+
+    it('should call refreshAll before emitting event', () => {
+      const order = [];
+      core.dataConnectorManager.refreshAll = vi.fn(() => order.push('refresh'));
+      core.on('data-connectors-refreshed', () => order.push('event'));
+
+      core.refreshDataConnectors();
+
+      expect(order).toEqual(['refresh', 'event']);
+    });
+  });
+
+  describe('submitMediaInventory', () => {
+    beforeEach(() => {
+      mockXmds.mediaInventory = vi.fn(() => Promise.resolve());
+    });
+
+    it('should build XML and call xmds.mediaInventory', async () => {
+      const files = [
+        { id: '10', type: 'media', md5: 'abc123' },
+        { id: '20', type: 'layout', md5: 'def456' }
+      ];
+
+      await core.submitMediaInventory(files);
+
+      expect(mockXmds.mediaInventory).toHaveBeenCalledTimes(1);
+      const xml = mockXmds.mediaInventory.mock.calls[0][0];
+      expect(xml).toContain('<files>');
+      expect(xml).toContain('type="media"');
+      expect(xml).toContain('id="10"');
+      expect(xml).toContain('md5="abc123"');
+      expect(xml).toContain('type="layout"');
+      expect(xml).toContain('id="20"');
+      expect(xml).toContain('md5="def456"');
+    });
+
+    it('should emit media-inventory-submitted with file count', async () => {
+      const spy = createSpy();
+      core.on('media-inventory-submitted', spy);
+
+      const files = [
+        { id: '1', type: 'media', md5: 'a' },
+        { id: '2', type: 'layout', md5: 'b' }
+      ];
+
+      await core.submitMediaInventory(files);
+
+      expect(spy).toHaveBeenCalledWith(2);
+    });
+
+    it('should do nothing when files array is empty', async () => {
+      const spy = createSpy();
+      core.on('media-inventory-submitted', spy);
+
+      await core.submitMediaInventory([]);
+
+      expect(mockXmds.mediaInventory).not.toHaveBeenCalled();
+      expect(spy).not.toHaveBeenCalled();
+    });
+
+    it('should do nothing when files is null', async () => {
+      const spy = createSpy();
+      core.on('media-inventory-submitted', spy);
+
+      await core.submitMediaInventory(null);
+
+      expect(mockXmds.mediaInventory).not.toHaveBeenCalled();
+      expect(spy).not.toHaveBeenCalled();
+    });
+
+    it('should filter out non-media/non-layout file types from XML', async () => {
+      const files = [
+        { id: '1', type: 'media', md5: 'a' },
+        { id: '2', type: 'resource', md5: 'b' },
+        { id: '3', type: 'layout', md5: 'c' }
+      ];
+
+      await core.submitMediaInventory(files);
+
+      const xml = mockXmds.mediaInventory.mock.calls[0][0];
+      expect(xml).toContain('id="1"');
+      expect(xml).toContain('id="3"');
+      expect(xml).not.toContain('id="2"');
+      expect(xml).not.toContain('type="resource"');
+    });
+
+    it('should not throw when xmds.mediaInventory fails', async () => {
+      mockXmds.mediaInventory.mockRejectedValue(new Error('Server error'));
+
+      const files = [{ id: '1', type: 'media', md5: 'a' }];
+
+      await expect(core.submitMediaInventory(files)).resolves.toBeUndefined();
+    });
+  });
+
+  describe('blackList', () => {
+    beforeEach(() => {
+      mockXmds.blackList = vi.fn(() => Promise.resolve(true));
+    });
+
+    it('should call xmds.blackList with correct arguments', async () => {
+      await core.blackList('42', 'media', 'Corrupted file');
+
+      expect(mockXmds.blackList).toHaveBeenCalledWith('42', 'media', 'Corrupted file');
+    });
+
+    it('should emit media-blacklisted with details', async () => {
+      const spy = createSpy();
+      core.on('media-blacklisted', spy);
+
+      await core.blackList('42', 'media', 'Corrupted file');
+
+      expect(spy).toHaveBeenCalledWith({
+        mediaId: '42',
+        type: 'media',
+        reason: 'Corrupted file'
+      });
+    });
+
+    it('should not throw when xmds.blackList fails', async () => {
+      mockXmds.blackList.mockRejectedValue(new Error('Server error'));
+
+      await expect(core.blackList('42', 'media', 'Bad file')).resolves.toBeUndefined();
+    });
+
+    it('should not emit media-blacklisted when xmds call fails', async () => {
+      const spy = createSpy();
+      core.on('media-blacklisted', spy);
+
+      mockXmds.blackList.mockRejectedValue(new Error('Server error'));
+
+      await core.blackList('42', 'media', 'Bad file');
+
+      expect(spy).not.toHaveBeenCalled();
+    });
+
+    it('should handle layout type blacklisting', async () => {
+      const spy = createSpy();
+      core.on('media-blacklisted', spy);
+
+      await core.blackList('99', 'layout', 'Invalid XLF');
+
+      expect(mockXmds.blackList).toHaveBeenCalledWith('99', 'layout', 'Invalid XLF');
+      expect(spy).toHaveBeenCalledWith({
+        mediaId: '99',
+        type: 'layout',
+        reason: 'Invalid XLF'
+      });
+    });
+  });
+
+  describe('isLayoutOverridden', () => {
+    it('should return false when no override is set', () => {
+      expect(core.isLayoutOverridden()).toBe(false);
+    });
+
+    it('should return true after changeLayout sets an override', async () => {
+      await core.changeLayout('123');
+
+      expect(core.isLayoutOverridden()).toBe(true);
+    });
+
+    it('should return true after overlayLayout sets an override', async () => {
+      await core.overlayLayout('456');
+
+      expect(core.isLayoutOverridden()).toBe(true);
+    });
+
+    it('should return false after revertToSchedule clears the override', async () => {
+      await core.changeLayout('123');
+      expect(core.isLayoutOverridden()).toBe(true);
+
+      await core.revertToSchedule();
+
+      expect(core.isLayoutOverridden()).toBe(false);
+    });
+  });
+
+  describe('Schedule Cycling (Round-Robin)', () => {
+    it('should initialize _currentLayoutIndex to 0', () => {
+      expect(core._currentLayoutIndex).toBe(0);
+    });
+
+    it('should reset _currentLayoutIndex to 0 on collect()', async () => {
+      core._currentLayoutIndex = 2;
+
+      await core.collect();
+
+      expect(core._currentLayoutIndex).toBe(0);
+    });
+
+    describe('getNextLayout', () => {
+      it('should return first layout when index is 0', () => {
+        mockSchedule.getCurrentLayouts.mockReturnValue(['100.xlf', '200.xlf', '300.xlf']);
+        core._currentLayoutIndex = 0;
+
+        const result = core.getNextLayout();
+
+        expect(result).toEqual({ layoutId: 100, layoutFile: '100.xlf' });
+      });
+
+      it('should return layout at current index', () => {
+        mockSchedule.getCurrentLayouts.mockReturnValue(['100.xlf', '200.xlf', '300.xlf']);
+        core._currentLayoutIndex = 1;
+
+        const result = core.getNextLayout();
+
+        expect(result).toEqual({ layoutId: 200, layoutFile: '200.xlf' });
+      });
+
+      it('should return null when no layouts scheduled', () => {
+        mockSchedule.getCurrentLayouts.mockReturnValue([]);
+
+        const result = core.getNextLayout();
+
+        expect(result).toBeNull();
+      });
+
+      it('should wrap index when schedule shrinks', () => {
+        mockSchedule.getCurrentLayouts.mockReturnValue(['100.xlf']);
+        core._currentLayoutIndex = 5; // Out of bounds
+
+        const result = core.getNextLayout();
+
+        expect(result).toEqual({ layoutId: 100, layoutFile: '100.xlf' });
+        expect(core._currentLayoutIndex).toBe(0);
+      });
+    });
+
+    describe('advanceToNextLayout', () => {
+      it('should advance index and emit layout-prepare-request', () => {
+        const spy = createSpy();
+        core.on('layout-prepare-request', spy);
+
+        mockSchedule.getCurrentLayouts.mockReturnValue(['100.xlf', '200.xlf', '300.xlf']);
+        core._currentLayoutIndex = 0;
+
+        core.advanceToNextLayout();
+
+        expect(core._currentLayoutIndex).toBe(1);
+        expect(spy).toHaveBeenCalledWith(200);
+      });
+
+      it('should wrap around to first layout after last', () => {
+        const spy = createSpy();
+        core.on('layout-prepare-request', spy);
+
+        mockSchedule.getCurrentLayouts.mockReturnValue(['100.xlf', '200.xlf', '300.xlf']);
+        core._currentLayoutIndex = 2;
+
+        core.advanceToNextLayout();
+
+        expect(core._currentLayoutIndex).toBe(0);
+        expect(spy).toHaveBeenCalledWith(100);
+      });
+
+      it('should trigger replay for single layout (wraps to same)', () => {
+        const spy = createSpy();
+        core.on('layout-prepare-request', spy);
+
+        mockSchedule.getCurrentLayouts.mockReturnValue(['100.xlf']);
+        core._currentLayoutIndex = 0;
+        core.currentLayoutId = 100;
+
+        core.advanceToNextLayout();
+
+        expect(core._currentLayoutIndex).toBe(0);
+        // currentLayoutId should be cleared (for replay)
+        expect(core.currentLayoutId).toBeNull();
+        expect(spy).toHaveBeenCalledWith(100);
+      });
+
+      it('should emit no-layouts-scheduled when schedule is empty', () => {
+        const spy = createSpy();
+        core.on('no-layouts-scheduled', spy);
+
+        mockSchedule.getCurrentLayouts.mockReturnValue([]);
+
+        core.advanceToNextLayout();
+
+        expect(spy).toHaveBeenCalledTimes(1);
+      });
+
+      it('should not advance when layout override is active', () => {
+        const spy = createSpy();
+        core.on('layout-prepare-request', spy);
+        core.on('no-layouts-scheduled', spy);
+
+        core._layoutOverride = { layoutId: 999, type: 'change' };
+        mockSchedule.getCurrentLayouts.mockReturnValue(['100.xlf', '200.xlf']);
+
+        core.advanceToNextLayout();
+
+        expect(spy).not.toHaveBeenCalled();
+        expect(core._currentLayoutIndex).toBe(0); // Unchanged
+      });
+
+      it('should cycle through all layouts in order', () => {
+        const emitted = [];
+        core.on('layout-prepare-request', (id) => emitted.push(id));
+
+        mockSchedule.getCurrentLayouts.mockReturnValue(['100.xlf', '200.xlf', '300.xlf']);
+        core._currentLayoutIndex = 0;
+
+        core.advanceToNextLayout(); // → 200 (index 1)
+        core.advanceToNextLayout(); // → 300 (index 2)
+        core.advanceToNextLayout(); // → 100 (index 0, wrap)
+
+        expect(emitted).toEqual([200, 300, 100]);
+        expect(core._currentLayoutIndex).toBe(0);
+      });
+    });
+  });
+
+  describe('Offline Mode', () => {
+    it('isOffline should return false when navigator.onLine is true', () => {
+      Object.defineProperty(navigator, 'onLine', { value: true, configurable: true });
+
+      expect(core.isOffline()).toBe(false);
+    });
+
+    it('isOffline should return true when navigator.onLine is false', () => {
+      Object.defineProperty(navigator, 'onLine', { value: false, configurable: true });
+
+      expect(core.isOffline()).toBe(false === navigator.onLine);
+      // Restore
+      Object.defineProperty(navigator, 'onLine', { value: true, configurable: true });
+    });
+
+    it('hasCachedData should return false when no schedule is cached', () => {
+      core._offlineCache = { schedule: null, settings: null, requiredFiles: null };
+
+      expect(core.hasCachedData()).toBe(false);
+    });
+
+    it('hasCachedData should return true when schedule is cached', () => {
+      core._offlineCache = { schedule: { default: '0', layouts: [] }, settings: null, requiredFiles: null };
+
+      expect(core.hasCachedData()).toBe(true);
+    });
+
+    it('collectOffline should set offlineMode to true and emit offline-mode', () => {
+      const spy = createSpy();
+      core.on('offline-mode', spy);
+
+      core._offlineCache = { schedule: { default: '0', layouts: [] }, settings: null, requiredFiles: null };
+
+      core.collectOffline();
+
+      expect(core.offlineMode).toBe(true);
+      expect(spy).toHaveBeenCalledWith(true);
+    });
+
+    it('collectOffline should apply cached schedule', () => {
+      const cachedSchedule = { default: '0', layouts: [{ file: '300.xlf' }] };
+      core._offlineCache = { schedule: cachedSchedule, settings: null, requiredFiles: null };
+
+      const scheduleSpy = createSpy();
+      core.on('schedule-received', scheduleSpy);
+
+      core.collectOffline();
+
+      expect(mockSchedule.setSchedule).toHaveBeenCalledWith(cachedSchedule);
+      expect(scheduleSpy).toHaveBeenCalledWith(cachedSchedule);
+    });
+
+    it('collectOffline should emit layout-prepare-request for first scheduled layout', () => {
+      const spy = createSpy();
+      core.on('layout-prepare-request', spy);
+
+      core._offlineCache = { schedule: { default: '0', layouts: [] }, settings: null, requiredFiles: null };
+      mockSchedule.getCurrentLayouts.mockReturnValue(['500.xlf']);
+
+      core.collectOffline();
+
+      expect(spy).toHaveBeenCalledWith(500);
+    });
+
+    it('collectOffline should emit no-layouts-scheduled when schedule empty', () => {
+      const spy = createSpy();
+      core.on('no-layouts-scheduled', spy);
+
+      core._offlineCache = { schedule: { default: '0', layouts: [] }, settings: null, requiredFiles: null };
+      mockSchedule.getCurrentLayouts.mockReturnValue([]);
+
+      core.collectOffline();
+
+      expect(spy).toHaveBeenCalledTimes(1);
+    });
+
+    it('collectOffline should skip reload if layout already playing', () => {
+      const alreadySpy = createSpy();
+      const prepareSpy = createSpy();
+      core.on('layout-already-playing', alreadySpy);
+      core.on('layout-prepare-request', prepareSpy);
+
+      core._offlineCache = { schedule: { default: '0', layouts: [] }, settings: null, requiredFiles: null };
+      mockSchedule.getCurrentLayouts.mockReturnValue(['100.xlf']);
+      core.setCurrentLayout(100);
+
+      core.collectOffline();
+
+      expect(alreadySpy).toHaveBeenCalledWith(100);
+      expect(prepareSpy).not.toHaveBeenCalled();
+    });
+
+    it('collectOffline should emit collection-complete', () => {
+      const spy = createSpy();
+      core.on('collection-complete', spy);
+
+      core._offlineCache = { schedule: { default: '0', layouts: [] }, settings: null, requiredFiles: null };
+      mockSchedule.getCurrentLayouts.mockReturnValue([]);
+
+      core.collectOffline();
+
+      expect(spy).toHaveBeenCalledTimes(1);
+    });
+
+    it('collectNow should clear CRC checksums and trigger collect', async () => {
+      core._lastCheckRf = 'old-crc';
+      core._lastCheckSchedule = 'old-sched';
+
+      const spy = createSpy();
+      core.on('collection-start', spy);
+
+      await core.collectNow();
+
+      // collectNow clears checksums then calls collect, which re-fetches and sets new values
+      expect(core._lastCheckRf).not.toBe('old-crc');
+      expect(core._lastCheckSchedule).not.toBe('old-sched');
+      expect(spy).toHaveBeenCalledTimes(1);
+    });
+
+    it('isInOfflineMode should reflect current offline mode state', () => {
+      expect(core.isInOfflineMode()).toBe(false);
+
+      core.offlineMode = true;
+      expect(core.isInOfflineMode()).toBe(true);
+
+      core.offlineMode = false;
+      expect(core.isInOfflineMode()).toBe(false);
+    });
+  });
+
+  // ============================================================================
+  // Download Priority / File Prioritization Tests
+  // ============================================================================
+
+  describe('prioritizeFilesByLayout()', () => {
+    it('should put current layout XLFs first (tier 0)', () => {
+      const files = [
+        { id: '100', type: 'media', size: 500 },
+        { id: '87', type: 'layout', size: 1000 },
+        { id: '78', type: 'layout', size: 800 }
+      ];
+      const currentLayouts = ['87.xlf'];
+
+      const result = core.prioritizeFilesByLayout(files, currentLayouts);
+
+      // Layout 87 is the current layout → tier 0 (first)
+      expect(result[0].id).toBe('87');
+      expect(result[0].type).toBe('layout');
+    });
+
+    it('should put other layout XLFs in tier 1 (after current)', () => {
+      const files = [
+        { id: '78', type: 'layout', size: 800 },
+        { id: '87', type: 'layout', size: 1000 },
+        { id: '81', type: 'layout', size: 900 }
+      ];
+      const currentLayouts = ['87.xlf'];
+
+      const result = core.prioritizeFilesByLayout(files, currentLayouts);
+
+      // Tier 0: layout 87 (current)
+      expect(result[0].id).toBe('87');
+      // Tier 1: other layouts (78, 81 sorted by size within tier)
+      expect(result[1].type).toBe('layout');
+      expect(result[2].type).toBe('layout');
+    });
+
+    it('should put resources (fonts, bundle) in tier 2', () => {
+      const files = [
+        { id: '100', type: 'media', size: 50000 },
+        { id: 'fonts', type: 'resource', code: 'fonts.css', size: 100 },
+        { id: '87', type: 'layout', size: 1000 }
+      ];
+      const currentLayouts = ['87.xlf'];
+
+      const result = core.prioritizeFilesByLayout(files, currentLayouts);
+
+      // Order: layout (tier 0) → resource (tier 2) → media (tier 3)
+      expect(result[0].type).toBe('layout');
+      expect(result[1].type).toBe('resource');
+      expect(result[2].type).toBe('media');
+    });
+
+    it('should put bundle.min.js in tier 2 (resource tier)', () => {
+      const files = [
+        { id: '100', type: 'media', size: 50000 },
+        { id: 'bundle', type: 'media', path: 'http://cms/xmds.php?file=bundle.min.js', size: 200 },
+        { id: '87', type: 'layout', size: 1000 }
+      ];
+      const currentLayouts = ['87.xlf'];
+
+      const result = core.prioritizeFilesByLayout(files, currentLayouts);
+
+      // bundle.min.js path match → tier 2 (before regular media)
+      expect(result[0].type).toBe('layout');
+      expect(result[1].path).toContain('bundle.min');
+      expect(result[2].type).toBe('media');
+    });
+
+    it('should sort media by ascending size within tier 3', () => {
+      const files = [
+        { id: '10', type: 'media', size: 272000000 }, // 272MB video
+        { id: '11', type: 'media', size: 1000 },      // 1KB image
+        { id: '12', type: 'media', size: 50000 }       // 50KB image
+      ];
+      const currentLayouts = [];
+
+      const result = core.prioritizeFilesByLayout(files, currentLayouts);
+
+      // All tier 3 → sorted by size ascending
+      expect(result[0].size).toBe(1000);
+      expect(result[1].size).toBe(50000);
+      expect(result[2].size).toBe(272000000);
+    });
+
+    it('should handle multiple current layouts', () => {
+      const files = [
+        { id: '78', type: 'layout', size: 800 },
+        { id: '87', type: 'layout', size: 1000 },
+        { id: '81', type: 'layout', size: 900 },
+        { id: '99', type: 'layout', size: 700 }
+      ];
+      const currentLayouts = ['87.xlf', '81.xlf', '78.xlf'];
+
+      const result = core.prioritizeFilesByLayout(files, currentLayouts);
+
+      // Tier 0: current layouts (87, 81, 78)
+      // Tier 1: other layouts (99)
+      const currentIds = result.slice(0, 3).map(f => f.id).sort();
+      expect(currentIds).toEqual(['78', '81', '87']);
+      expect(result[3].id).toBe('99');
+    });
+
+    it('should maintain complete file list (no files lost)', () => {
+      const files = [
+        { id: '1', type: 'media', size: 100 },
+        { id: '2', type: 'layout', size: 200 },
+        { id: '3', type: 'resource', code: 'fonts.css', size: 50 },
+        { id: '4', type: 'media', size: 300 },
+        { id: '5', type: 'layout', size: 150 }
+      ];
+      const currentLayouts = ['2.xlf'];
+
+      const result = core.prioritizeFilesByLayout(files, currentLayouts);
+
+      expect(result.length).toBe(files.length);
+      const resultIds = result.map(f => f.id).sort();
+      expect(resultIds).toEqual(['1', '2', '3', '4', '5']);
     });
   });
 });

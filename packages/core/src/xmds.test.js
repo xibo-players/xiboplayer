@@ -5,7 +5,7 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { XmdsClient } from './xmds.js';
+import { XmdsClient } from '../../xmds/src/xmds.js';
 
 describe('XmdsClient - Schedule Parsing', () => {
   let client;
@@ -184,6 +184,155 @@ describe('XmdsClient - Schedule Parsing', () => {
 
       expect(schedule.layouts[0].scheduleid).toBe('123');
       expect(schedule.campaigns[0].scheduleid).toBe('456');
+    });
+  });
+
+  describe('Action Parsing', () => {
+    it('should parse action elements from schedule', () => {
+      const xml = `
+        <schedule>
+          <default file="0"/>
+          <actions>
+            <action actionType="navLayout" triggerCode="tc1" layoutCode="42" fromdt="2026-01-01 00:00:00" todt="2030-12-31 23:59:59" priority="5" scheduleid="10"/>
+          </actions>
+        </schedule>
+      `;
+
+      const schedule = client.parseScheduleResponse(xml);
+
+      expect(schedule.actions).toHaveLength(1);
+      expect(schedule.actions[0].actionType).toBe('navLayout');
+      expect(schedule.actions[0].triggerCode).toBe('tc1');
+      expect(schedule.actions[0].layoutCode).toBe('42');
+      expect(schedule.actions[0].fromDt).toBe('2026-01-01 00:00:00');
+      expect(schedule.actions[0].toDt).toBe('2030-12-31 23:59:59');
+      expect(schedule.actions[0].priority).toBe(5);
+      expect(schedule.actions[0].scheduleId).toBe('10');
+    });
+
+    it('should parse multiple actions', () => {
+      const xml = `
+        <schedule>
+          <default file="0"/>
+          <actions>
+            <action actionType="navLayout" triggerCode="tc1" layoutCode="42" fromdt="2026-01-01 00:00:00" todt="2030-12-31 23:59:59" priority="1" scheduleid="1"/>
+            <action actionType="command" triggerCode="tc2" commandCode="restart" fromdt="2026-02-01 00:00:00" todt="2026-12-31 23:59:59" priority="10" scheduleid="2"/>
+            <action actionType="navigateToWidget" triggerCode="tc3" layoutCode="99" fromdt="2026-01-01 00:00:00" todt="2027-01-01 00:00:00" priority="3" scheduleid="3"/>
+          </actions>
+        </schedule>
+      `;
+
+      const schedule = client.parseScheduleResponse(xml);
+
+      expect(schedule.actions).toHaveLength(3);
+      expect(schedule.actions[0].triggerCode).toBe('tc1');
+      expect(schedule.actions[1].triggerCode).toBe('tc2');
+      expect(schedule.actions[1].commandCode).toBe('restart');
+      expect(schedule.actions[2].triggerCode).toBe('tc3');
+    });
+
+    it('should parse action with geoLocation attributes', () => {
+      const xml = `
+        <schedule>
+          <default file="0"/>
+          <actions>
+            <action actionType="navLayout" triggerCode="geo1" layoutCode="50" fromdt="2026-01-01 00:00:00" todt="2030-12-31 23:59:59" isGeoAware="1" geoLocation="41.3851,2.1734" scheduleid="5"/>
+          </actions>
+        </schedule>
+      `;
+
+      const schedule = client.parseScheduleResponse(xml);
+
+      expect(schedule.actions[0].isGeoAware).toBe(true);
+      expect(schedule.actions[0].geoLocation).toBe('41.3851,2.1734');
+    });
+
+    it('should initialize actions array as empty when no actions element', () => {
+      const xml = `
+        <schedule>
+          <default file="0"/>
+          <layout file="100" priority="10" fromdt="2026-01-30 00:00:00" todt="2026-01-31 23:59:59" scheduleid="1"/>
+        </schedule>
+      `;
+
+      const schedule = client.parseScheduleResponse(xml);
+
+      expect(schedule.actions).toEqual([]);
+    });
+  });
+
+  describe('Command Parsing', () => {
+    it('should parse command elements from schedule', () => {
+      const xml = `
+        <schedule>
+          <default file="0"/>
+          <command command="collectNow" date="2026-01-01"/>
+        </schedule>
+      `;
+
+      const schedule = client.parseScheduleResponse(xml);
+
+      expect(schedule.commands).toHaveLength(1);
+      expect(schedule.commands[0].code).toBe('collectNow');
+      expect(schedule.commands[0].date).toBe('2026-01-01');
+    });
+
+    it('should parse multiple commands', () => {
+      const xml = `
+        <schedule>
+          <default file="0"/>
+          <command command="collectNow" date="2026-02-11"/>
+          <command command="reboot" date="2026-02-12"/>
+        </schedule>
+      `;
+
+      const schedule = client.parseScheduleResponse(xml);
+
+      expect(schedule.commands).toHaveLength(2);
+      expect(schedule.commands[0].code).toBe('collectNow');
+      expect(schedule.commands[0].date).toBe('2026-02-11');
+      expect(schedule.commands[1].code).toBe('reboot');
+      expect(schedule.commands[1].date).toBe('2026-02-12');
+    });
+
+    it('should initialize commands array as empty when no command elements', () => {
+      const xml = `
+        <schedule>
+          <default file="0"/>
+        </schedule>
+      `;
+
+      const schedule = client.parseScheduleResponse(xml);
+
+      expect(schedule.commands).toEqual([]);
+    });
+  });
+
+  describe('Actions and Commands Together', () => {
+    it('should parse both actions and commands in same schedule', () => {
+      const xml = `
+        <schedule>
+          <default file="0"/>
+          <layout file="100" priority="5" fromdt="2026-01-30 00:00:00" todt="2026-01-31 23:59:59" scheduleid="1"/>
+          <campaign id="1" priority="10" fromdt="2026-01-30 00:00:00" todt="2026-01-31 23:59:59" scheduleid="2">
+            <layout file="200"/>
+          </campaign>
+          <actions>
+            <action actionType="navLayout" triggerCode="tc1" layoutCode="42" fromdt="2026-01-01 00:00:00" todt="2030-12-31 23:59:59" priority="1" scheduleid="10"/>
+          </actions>
+          <command command="collectNow" date="2026-02-11"/>
+        </schedule>
+      `;
+
+      const schedule = client.parseScheduleResponse(xml);
+
+      expect(schedule.default).toBe('0');
+      expect(schedule.layouts).toHaveLength(1);
+      expect(schedule.campaigns).toHaveLength(1);
+      expect(schedule.actions).toHaveLength(1);
+      expect(schedule.actions[0].triggerCode).toBe('tc1');
+      expect(schedule.commands).toHaveLength(1);
+      expect(schedule.commands[0].code).toBe('collectNow');
     });
   });
 });

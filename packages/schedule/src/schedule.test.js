@@ -195,3 +195,311 @@ describe('ScheduleManager - Campaigns', () => {
     });
   });
 });
+
+describe('ScheduleManager - Actions and Commands', () => {
+  let manager;
+
+  beforeEach(() => {
+    manager = new ScheduleManager();
+  });
+
+  describe('getActiveActions()', () => {
+    it('should return actions within time window', () => {
+      manager.setSchedule({
+        default: '0',
+        layouts: [],
+        campaigns: [],
+        actions: [
+          {
+            actionType: 'navLayout',
+            triggerCode: 'trigger1',
+            layoutCode: '123',
+            fromdt: dateStr(-1),
+            todt: dateStr(1),
+            priority: 1,
+            scheduleId: '1'
+          }
+        ],
+        commands: []
+      });
+
+      const actions = manager.getActiveActions();
+
+      expect(actions).toHaveLength(1);
+      expect(actions[0].triggerCode).toBe('trigger1');
+      expect(actions[0].actionType).toBe('navLayout');
+    });
+
+    it('should exclude actions outside time window', () => {
+      manager.setSchedule({
+        default: '0',
+        layouts: [],
+        campaigns: [],
+        actions: [
+          {
+            actionType: 'navLayout',
+            triggerCode: 'expired',
+            layoutCode: '123',
+            fromdt: dateStr(-10),
+            todt: dateStr(-5),
+            priority: 1,
+            scheduleId: '2'
+          }
+        ],
+        commands: []
+      });
+
+      const actions = manager.getActiveActions();
+
+      expect(actions).toHaveLength(0);
+    });
+
+    it('should return multiple active actions', () => {
+      manager.setSchedule({
+        default: '0',
+        layouts: [],
+        campaigns: [],
+        actions: [
+          {
+            actionType: 'navLayout',
+            triggerCode: 'trigger1',
+            layoutCode: '100',
+            fromdt: dateStr(-1),
+            todt: dateStr(1),
+            priority: 1,
+            scheduleId: '1'
+          },
+          {
+            actionType: 'command',
+            triggerCode: 'trigger2',
+            commandCode: 'restart',
+            fromdt: dateStr(-2),
+            todt: dateStr(2),
+            priority: 5,
+            scheduleId: '2'
+          }
+        ],
+        commands: []
+      });
+
+      const actions = manager.getActiveActions();
+
+      expect(actions).toHaveLength(2);
+    });
+
+    it('should return empty array when no actions exist', () => {
+      manager.setSchedule({
+        default: '0',
+        layouts: [],
+        campaigns: []
+      });
+
+      const actions = manager.getActiveActions();
+
+      expect(actions).toEqual([]);
+    });
+
+    it('should return empty array when schedule is null', () => {
+      const actions = manager.getActiveActions();
+
+      expect(actions).toEqual([]);
+    });
+
+    it('should filter mixed active and expired actions', () => {
+      manager.setSchedule({
+        default: '0',
+        layouts: [],
+        campaigns: [],
+        actions: [
+          {
+            actionType: 'navLayout',
+            triggerCode: 'active1',
+            layoutCode: '100',
+            fromdt: dateStr(-1),
+            todt: dateStr(1),
+            priority: 1,
+            scheduleId: '1'
+          },
+          {
+            actionType: 'navLayout',
+            triggerCode: 'expired1',
+            layoutCode: '200',
+            fromdt: dateStr(-10),
+            todt: dateStr(-5),
+            priority: 1,
+            scheduleId: '2'
+          },
+          {
+            actionType: 'command',
+            triggerCode: 'active2',
+            commandCode: 'collectNow',
+            fromdt: dateStr(-2),
+            todt: dateStr(2),
+            priority: 1,
+            scheduleId: '3'
+          }
+        ],
+        commands: []
+      });
+
+      const actions = manager.getActiveActions();
+
+      expect(actions).toHaveLength(2);
+      expect(actions.map(a => a.triggerCode)).toContain('active1');
+      expect(actions.map(a => a.triggerCode)).toContain('active2');
+      expect(actions.map(a => a.triggerCode)).not.toContain('expired1');
+    });
+  });
+
+  describe('findActionByTrigger()', () => {
+    it('should find matching action by trigger code', () => {
+      manager.setSchedule({
+        default: '0',
+        layouts: [],
+        campaigns: [],
+        actions: [
+          {
+            actionType: 'navLayout',
+            triggerCode: 'trigger1',
+            layoutCode: '123',
+            fromdt: dateStr(-1),
+            todt: dateStr(1),
+            priority: 1,
+            scheduleId: '1'
+          },
+          {
+            actionType: 'command',
+            triggerCode: 'trigger2',
+            commandCode: 'restart',
+            fromdt: dateStr(-1),
+            todt: dateStr(1),
+            priority: 2,
+            scheduleId: '2'
+          }
+        ],
+        commands: []
+      });
+
+      const action = manager.findActionByTrigger('trigger2');
+
+      expect(action).not.toBeNull();
+      expect(action.triggerCode).toBe('trigger2');
+      expect(action.actionType).toBe('command');
+    });
+
+    it('should return null when no matching action found', () => {
+      manager.setSchedule({
+        default: '0',
+        layouts: [],
+        campaigns: [],
+        actions: [
+          {
+            actionType: 'navLayout',
+            triggerCode: 'trigger1',
+            layoutCode: '123',
+            fromdt: dateStr(-1),
+            todt: dateStr(1),
+            priority: 1,
+            scheduleId: '1'
+          }
+        ],
+        commands: []
+      });
+
+      const action = manager.findActionByTrigger('nonexistent');
+
+      expect(action).toBeNull();
+    });
+
+    it('should not find expired action even if trigger matches', () => {
+      manager.setSchedule({
+        default: '0',
+        layouts: [],
+        campaigns: [],
+        actions: [
+          {
+            actionType: 'navLayout',
+            triggerCode: 'trigger1',
+            layoutCode: '123',
+            fromdt: dateStr(-10),
+            todt: dateStr(-5),
+            priority: 1,
+            scheduleId: '1'
+          }
+        ],
+        commands: []
+      });
+
+      const action = manager.findActionByTrigger('trigger1');
+
+      expect(action).toBeNull();
+    });
+
+    it('should return null when schedule has no actions', () => {
+      manager.setSchedule({
+        default: '0',
+        layouts: [],
+        campaigns: []
+      });
+
+      const action = manager.findActionByTrigger('trigger1');
+
+      expect(action).toBeNull();
+    });
+  });
+
+  describe('getCommands()', () => {
+    it('should return command list', () => {
+      manager.setSchedule({
+        default: '0',
+        layouts: [],
+        campaigns: [],
+        actions: [],
+        commands: [
+          { code: 'collectNow', date: '2026-02-11' },
+          { code: 'reboot', date: '2026-02-12' }
+        ]
+      });
+
+      const commands = manager.getCommands();
+
+      expect(commands).toHaveLength(2);
+      expect(commands[0].code).toBe('collectNow');
+      expect(commands[0].date).toBe('2026-02-11');
+      expect(commands[1].code).toBe('reboot');
+      expect(commands[1].date).toBe('2026-02-12');
+    });
+
+    it('should return empty array when no commands', () => {
+      manager.setSchedule({
+        default: '0',
+        layouts: [],
+        campaigns: [],
+        actions: [],
+        commands: []
+      });
+
+      const commands = manager.getCommands();
+
+      expect(commands).toEqual([]);
+    });
+
+    it('should return empty array when commands property is missing', () => {
+      manager.setSchedule({
+        default: '0',
+        layouts: [],
+        campaigns: []
+      });
+
+      const commands = manager.getCommands();
+
+      expect(commands).toEqual([]);
+    });
+
+    it('should return empty array when schedule is null', () => {
+      const commands = manager.getCommands();
+
+      expect(commands).toEqual([]);
+    });
+  });
+});
