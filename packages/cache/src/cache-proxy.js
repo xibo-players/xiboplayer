@@ -399,6 +399,37 @@ export class CacheProxy extends EventEmitter {
   }
 
   /**
+   * Delete files from cache (purge obsolete media)
+   * @param {Array<{type: string, id: string}>} files - Files to delete
+   * @returns {Promise<{deleted: number, total: number}>}
+   */
+  async deleteFiles(files) {
+    if (!this.backend) {
+      throw new Error('CacheProxy not initialized');
+    }
+
+    return new Promise((resolve, reject) => {
+      const channel = new MessageChannel();
+
+      channel.port1.onmessage = (event) => {
+        const { success, error, deleted, total } = event.data;
+        if (success) {
+          resolve({ deleted, total });
+        } else {
+          reject(new Error(error || 'Delete failed'));
+        }
+      };
+
+      navigator.serviceWorker.controller.postMessage(
+        { type: 'DELETE_FILES', data: { files } },
+        [channel.port2]
+      );
+
+      setTimeout(() => resolve({ deleted: 0, total: files.length }), 5000);
+    });
+  }
+
+  /**
    * Get download progress from Service Worker
    * @returns {Promise<Object>} Progress info for all active downloads
    */
