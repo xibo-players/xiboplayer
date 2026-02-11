@@ -202,13 +202,23 @@ export class RendererLite {
     this.currentLayoutId = null;
     this.regions = new Map(); // regionId => { element, widgets, currentIndex, timer }
     this.layoutTimer = null;
+    this.layoutEndEmitted = false; // Prevents double layoutEnd on stop after timer
     this.widgetTimers = new Map(); // widgetId => timer
     this.mediaUrlCache = new Map(); // fileId => blob URL (for parallel pre-fetching)
     this.layoutBlobUrls = new Map(); // layoutId => Set<blobUrl> (for lifecycle tracking)
 
+    // Scale state (for fitting layout to screen)
+    this.scaleFactor = 1;
+    this.offsetX = 0;
+    this.offsetY = 0;
+
     // Overlay state
     this.overlayContainer = null;
     this.activeOverlays = new Map(); // layoutId => { container, layout, timer, regions }
+
+    // Interactive action state
+    this._keydownHandler = null; // Document keydown listener (single, shared)
+    this._keyboardActions = []; // Active keyboard actions for current layout
 
     // Setup container styles
     this.setupContainer();
@@ -225,6 +235,14 @@ export class RendererLite {
     this.container.style.height = '100vh'; // Use viewport height, not percentage
     this.container.style.overflow = 'hidden';
 
+    // Watch for container resize to rescale layout
+    if (typeof ResizeObserver !== 'undefined') {
+      this.resizeObserver = new ResizeObserver(() => {
+        this.rescaleRegions();
+      });
+      this.resizeObserver.observe(this.container);
+    }
+
     // Create overlay container for overlay layouts (higher z-index than main content)
     this.overlayContainer = document.createElement('div');
     this.overlayContainer.id = 'overlay-container';
@@ -239,6 +257,65 @@ export class RendererLite {
   }
 
   /**
+   * Calculate scale factor to fit layout into container
+   * Centers the layout and scales regions proportionally.
+   * @param {Object} layout - Parsed layout with width/height
+   */
+  calculateScale(layout) {
+    const screenWidth = this.container.clientWidth;
+    const screenHeight = this.container.clientHeight;
+
+    if (!screenWidth || !screenHeight) return;
+
+    const scaleX = screenWidth / layout.width;
+    const scaleY = screenHeight / layout.height;
+    this.scaleFactor = Math.min(scaleX, scaleY);
+    this.offsetX = (screenWidth - layout.width * this.scaleFactor) / 2;
+    this.offsetY = (screenHeight - layout.height * this.scaleFactor) / 2;
+
+    this.log.info(`Scale: ${this.scaleFactor.toFixed(3)} (${layout.width}x${layout.height} → ${screenWidth}x${screenHeight}, offset ${Math.round(this.offsetX)},${Math.round(this.offsetY)})`);
+  }
+
+  /**
+   * Apply scale to a region element
+   * @param {HTMLElement} regionEl - Region DOM element
+   * @param {Object} regionConfig - Region config with left, top, width, height
+   */
+  applyRegionScale(regionEl, regionConfig) {
+    const sf = this.scaleFactor;
+    regionEl.style.left = `${regionConfig.left * sf + this.offsetX}px`;
+    regionEl.style.top = `${regionConfig.top * sf + this.offsetY}px`;
+    regionEl.style.width = `${regionConfig.width * sf}px`;
+    regionEl.style.height = `${regionConfig.height * sf}px`;
+  }
+
+  /**
+   * Reapply scale to all current regions (e.g., on window resize)
+   */
+  rescaleRegions() {
+    if (!this.currentLayout) return;
+
+    this.calculateScale(this.currentLayout);
+
+    for (const [regionId, region] of this.regions) {
+      this.applyRegionScale(region.element, region.config);
+      // Update region dimensions for transition calculations
+      region.width = region.config.width * this.scaleFactor;
+      region.height = region.config.height * this.scaleFactor;
+    }
+
+    // Rescale active overlays too
+    for (const [overlayId, overlay] of this.activeOverlays) {
+      this.calculateScale(overlay.layout);
+      for (const [regionId, region] of overlay.regions) {
+        this.applyRegionScale(region.element, region.config);
+        region.width = region.config.width * this.scaleFactor;
+        region.height = region.config.height * this.scaleFactor;
+      }
+    }
+  }
+
+  /**
    * Event emitter interface (like XMR wrapper)
    */
   on(event, callback) {
@@ -247,6 +324,27 @@ export class RendererLite {
 
   emit(event, ...args) {
     this.emitter.emit(event, ...args);
+  }
+
+  /**
+   * Parse action elements from an XLF parent element (region or media)
+   * @param {Element} parentEl - Parent XML element containing <action> children
+   * @returns {Array} Parsed actions
+   */
+  parseActions(parentEl) {
+    const actions = [];
+    for (const actionEl of parentEl.children) {
+      if (actionEl.tagName !== 'action') continue;
+      actions.push({
+        actionType: actionEl.getAttribute('actionType') || '',
+        triggerType: actionEl.getAttribute('triggerType') || '',
+        triggerCode: actionEl.getAttribute('triggerCode') || '',
+        layoutCode: actionEl.getAttribute('layoutCode') || '',
+        targetId: actionEl.getAttribute('targetId') || '',
+        commandCode: actionEl.getAttribute('commandCode') || ''
+      });
+    }
+    return actions;
   }
 
   /**
@@ -269,6 +367,7 @@ export class RendererLite {
       height: parseInt(layoutEl.getAttribute('height') || '1080'),
       duration: layoutDurationAttr ? parseInt(layoutDurationAttr) : 0, // 0 = calculate from widgets
       bgcolor: layoutEl.getAttribute('bgcolor') || '#000000',
+      background: layoutEl.getAttribute('background') || null, // Background image fileId
       regions: []
     };
 
@@ -287,6 +386,7 @@ export class RendererLite {
         top: parseInt(regionEl.getAttribute('top')),
         left: parseInt(regionEl.getAttribute('left')),
         zindex: parseInt(regionEl.getAttribute('zindex') || '0'),
+        actions: this.parseActions(regionEl),
         widgets: []
       };
 
@@ -376,6 +476,9 @@ export class RendererLite {
       };
     }
 
+    // Parse widget-level actions
+    const actions = this.parseActions(mediaEl);
+
     return {
       type,
       duration,
@@ -384,7 +487,8 @@ export class RendererLite {
       fileId, // Media library file ID for cache lookup
       options,
       raw,
-      transitions
+      transitions,
+      actions
     };
   }
 
@@ -455,6 +559,7 @@ export class RendererLite {
       this.layoutTimer = setTimeout(() => {
         this.log.info(`Layout ${this.currentLayoutId} duration expired (${this.currentLayout.duration}s)`);
         if (this.currentLayoutId) {
+          this.layoutEndEmitted = true;
           this.emit('layoutEnd', this.currentLayoutId);
         }
       }, layoutDurationMs);
@@ -462,6 +567,178 @@ export class RendererLite {
       this.log.info(`Layout timer reset to ${this.currentLayout.duration}s`);
     }
   }
+
+  // ── Interactive Actions ──────────────────────────────────────────────
+
+  /**
+   * Attach interactive action event listeners for a layout.
+   * Binds touch/click on region/widget elements and a single document keydown handler.
+   */
+  attachActionListeners(layout) {
+    const allKeyboardActions = [];
+    let touchActionCount = 0;
+
+    for (const regionConfig of layout.regions) {
+      const region = this.regions.get(regionConfig.id);
+      if (!region) continue;
+
+      // Region-level actions
+      for (const action of (regionConfig.actions || [])) {
+        if (action.triggerType === 'touch') {
+          this.attachTouchAction(region.element, action, regionConfig.id, null);
+          touchActionCount++;
+        } else if (action.triggerType.startsWith('keyboard:')) {
+          allKeyboardActions.push(action);
+        }
+      }
+
+      // Widget-level actions
+      for (const widget of regionConfig.widgets) {
+        if (!widget.actions || widget.actions.length === 0) continue;
+        const widgetEl = region.widgetElements.get(widget.id);
+        if (!widgetEl) continue;
+
+        for (const action of widget.actions) {
+          if (action.triggerType === 'touch') {
+            this.attachTouchAction(widgetEl, action, regionConfig.id, widget.id);
+            touchActionCount++;
+          } else if (action.triggerType.startsWith('keyboard:')) {
+            allKeyboardActions.push(action);
+          }
+        }
+      }
+    }
+
+    this.setupKeyboardListener(allKeyboardActions);
+
+    if (touchActionCount > 0 || allKeyboardActions.length > 0) {
+      this.log.info(`Actions attached: ${touchActionCount} touch, ${allKeyboardActions.length} keyboard`);
+    }
+  }
+
+  /**
+   * Attach a click listener to an element for a touch-triggered action.
+   */
+  attachTouchAction(element, action, regionId, widgetId) {
+    element.style.cursor = 'pointer';
+
+    const handler = (event) => {
+      event.stopPropagation();
+      const source = widgetId ? `widget ${widgetId}` : `region ${regionId}`;
+      this.log.info(`Touch action fired on ${source}: ${action.actionType}`);
+
+      this.emit('action-trigger', {
+        actionType: action.actionType,
+        triggerType: 'touch',
+        triggerCode: action.triggerCode,
+        layoutCode: action.layoutCode,
+        targetId: action.targetId,
+        commandCode: action.commandCode,
+        source: { regionId, widgetId }
+      });
+    };
+
+    element.addEventListener('click', handler);
+    if (!element._actionHandlers) element._actionHandlers = [];
+    element._actionHandlers.push(handler);
+  }
+
+  /**
+   * Setup document-level keyboard listener for keyboard-triggered actions.
+   */
+  setupKeyboardListener(keyboardActions) {
+    this.removeKeyboardListener();
+    this._keyboardActions = keyboardActions;
+    if (keyboardActions.length === 0) return;
+
+    this._keydownHandler = (event) => {
+      const pressedKey = event.key;
+      for (const action of this._keyboardActions) {
+        const keycode = action.triggerType.substring('keyboard:'.length);
+        if (pressedKey === keycode) {
+          this.log.info(`Keyboard action (key: ${pressedKey}): ${action.actionType}`);
+          this.emit('action-trigger', {
+            actionType: action.actionType,
+            triggerType: action.triggerType,
+            triggerCode: action.triggerCode,
+            layoutCode: action.layoutCode,
+            targetId: action.targetId,
+            commandCode: action.commandCode,
+            source: { key: pressedKey }
+          });
+          break;
+        }
+      }
+    };
+
+    document.addEventListener('keydown', this._keydownHandler);
+  }
+
+  /** Remove the document-level keyboard listener */
+  removeKeyboardListener() {
+    if (this._keydownHandler) {
+      document.removeEventListener('keydown', this._keydownHandler);
+      this._keydownHandler = null;
+    }
+    this._keyboardActions = [];
+  }
+
+  /** Remove all action listeners (touch + keyboard) */
+  removeActionListeners() {
+    for (const [, region] of this.regions) {
+      this._cleanElementActionHandlers(region.element);
+      for (const [, widgetEl] of region.widgetElements) {
+        this._cleanElementActionHandlers(widgetEl);
+      }
+    }
+    this.removeKeyboardListener();
+  }
+
+  _cleanElementActionHandlers(element) {
+    if (element._actionHandlers) {
+      for (const handler of element._actionHandlers) {
+        element.removeEventListener('click', handler);
+      }
+      delete element._actionHandlers;
+      element.style.cursor = '';
+    }
+  }
+
+  /**
+   * Navigate to a specific widget within a region (for navWidget actions)
+   */
+  navigateToWidget(targetWidgetId) {
+    for (const [regionId, region] of this.regions) {
+      const widgetIndex = region.widgets.findIndex(w => w.id === targetWidgetId);
+      if (widgetIndex === -1) continue;
+
+      this.log.info(`Navigating to widget ${targetWidgetId} in region ${regionId} (index ${widgetIndex})`);
+
+      if (region.timer) {
+        clearTimeout(region.timer);
+        region.timer = null;
+      }
+
+      this.stopWidget(regionId, region.currentIndex);
+      region.currentIndex = widgetIndex;
+      this.renderWidget(regionId, widgetIndex);
+
+      if (region.widgets.length > 1) {
+        const widget = region.widgets[widgetIndex];
+        const duration = widget.duration * 1000;
+        region.timer = setTimeout(() => {
+          this.stopWidget(regionId, widgetIndex);
+          const nextIndex = (widgetIndex + 1) % region.widgets.length;
+          region.currentIndex = nextIndex;
+          this.startRegion(regionId);
+        }, duration);
+      }
+      return;
+    }
+    this.log.warn(`Target widget ${targetWidgetId} not found in any region`);
+  }
+
+  // ── Layout Rendering ──────────────────────────────────────────────
 
   /**
    * Render a layout
@@ -495,6 +772,7 @@ export class RendererLite {
           clearTimeout(this.layoutTimer);
           this.layoutTimer = null;
         }
+        this.layoutEndEmitted = false;
 
         // DON'T call stopCurrentLayout() - keep elements alive!
         // DON'T clear mediaUrlCache - keep blob URLs alive!
@@ -516,6 +794,7 @@ export class RendererLite {
           this.layoutTimer = setTimeout(() => {
             this.log.info(`Layout ${layoutId} duration expired (${this.currentLayout.duration}s)`);
             if (this.currentLayoutId) {
+              this.layoutEndEmitted = true;
               this.emit('layoutEnd', this.currentLayoutId);
             }
           }, layoutDurationMs);
@@ -534,8 +813,28 @@ export class RendererLite {
       this.currentLayout = layout;
       this.currentLayoutId = layoutId;
 
+      // Calculate scale factor to fit layout into screen
+      this.calculateScale(layout);
+
       // Set container background
       this.container.style.backgroundColor = layout.bgcolor;
+      this.container.style.backgroundImage = ''; // Reset previous
+
+      // Apply background image if specified in XLF
+      if (layout.background && this.options.getMediaUrl) {
+        try {
+          const bgUrl = await this.options.getMediaUrl(parseInt(layout.background));
+          if (bgUrl) {
+            this.container.style.backgroundImage = `url(${bgUrl})`;
+            this.container.style.backgroundSize = 'cover';
+            this.container.style.backgroundPosition = 'center';
+            this.container.style.backgroundRepeat = 'no-repeat';
+            this.log.info(`Background image set: ${layout.background}`);
+          }
+        } catch (err) {
+          this.log.warn('Failed to load background image:', err);
+        }
+      }
 
       // PRE-FETCH: Get all media URLs in parallel (huge speedup!)
       if (this.options.getMediaUrl) {
@@ -594,6 +893,9 @@ export class RendererLite {
       }
       this.log.info('All widget elements pre-created');
 
+      // Attach interactive action listeners (touch/click and keyboard)
+      this.attachActionListeners(layout);
+
       // Emit layout start event
       this.emit('layoutStart', layoutId, layout);
 
@@ -611,6 +913,7 @@ export class RendererLite {
           this.log.info(`Layout ${layoutId} duration expired (${layout.duration}s)`);
           // Fire layoutEnd regardless of widget/region state
           if (this.currentLayoutId) {
+            this.layoutEndEmitted = true;
             this.emit('layoutEnd', this.currentLayoutId);
           }
         }, layoutDurationMs);
@@ -634,24 +937,24 @@ export class RendererLite {
     regionEl.id = `region_${regionConfig.id}`;
     regionEl.className = 'renderer-lite-region';
     regionEl.style.position = 'absolute';
-    regionEl.style.left = `${regionConfig.left}px`;
-    regionEl.style.top = `${regionConfig.top}px`;
-    regionEl.style.width = `${regionConfig.width}px`;
-    regionEl.style.height = `${regionConfig.height}px`;
     regionEl.style.zIndex = regionConfig.zindex;
     regionEl.style.overflow = 'hidden';
 
+    // Apply scaled positioning
+    this.applyRegionScale(regionEl, regionConfig);
+
     this.container.appendChild(regionEl);
 
-    // Store region state
+    // Store region state (dimensions use scaled values for transitions)
+    const sf = this.scaleFactor;
     this.regions.set(regionConfig.id, {
       element: regionEl,
       config: regionConfig,
       widgets: regionConfig.widgets,
       currentIndex: 0,
       timer: null,
-      width: regionConfig.width,
-      height: regionConfig.height,
+      width: regionConfig.width * sf,
+      height: regionConfig.height * sf,
       complete: false, // Track if region has played all widgets once
       widgetElements: new Map() // widgetId -> DOM element (for element reuse)
     });
@@ -1290,6 +1593,9 @@ export class RendererLite {
 
     this.log.info(`Stopping layout ${this.currentLayoutId}`);
 
+    // Remove interactive action listeners before teardown
+    this.removeActionListeners();
+
     // Clear layout timer
     if (this.layoutTimer) {
       clearTimeout(this.layoutTimer);
@@ -1328,11 +1634,16 @@ export class RendererLite {
     this.regions.clear();
     this.mediaUrlCache.clear();
 
-    // Emit layout end event
-    if (this.currentLayoutId) {
+    // Emit layout end event only if timer hasn't already emitted it.
+    // Timer-based layoutEnd (natural expiry) is authoritative — stopCurrentLayout
+    // is called afterwards during the switch to the next layout, so we skip the
+    // duplicate. But if the layout is forcibly stopped mid-playback (e.g., XMR
+    // schedule change), the timer hasn't fired yet, so we DO emit here.
+    if (this.currentLayoutId && !this.layoutEndEmitted) {
       this.emit('layoutEnd', this.currentLayoutId);
     }
 
+    this.layoutEndEmitted = false;
     this.currentLayout = null;
     this.currentLayoutId = null;
   }
@@ -1398,31 +1709,34 @@ export class RendererLite {
         }
       }
 
+      // Calculate scale for overlay layout
+      this.calculateScale(layout);
+
       // Create regions for overlay
       const overlayRegions = new Map();
+      const sf = this.scaleFactor;
       for (const regionConfig of layout.regions) {
         const regionEl = document.createElement('div');
         regionEl.id = `overlay_${layoutId}_region_${regionConfig.id}`;
         regionEl.className = 'renderer-lite-region overlay-region';
         regionEl.style.position = 'absolute';
-        regionEl.style.left = `${regionConfig.left}px`;
-        regionEl.style.top = `${regionConfig.top}px`;
-        regionEl.style.width = `${regionConfig.width}px`;
-        regionEl.style.height = `${regionConfig.height}px`;
         regionEl.style.zIndex = String(regionConfig.zindex);
         regionEl.style.overflow = 'hidden';
 
+        // Apply scaled positioning
+        this.applyRegionScale(regionEl, regionConfig);
+
         overlayDiv.appendChild(regionEl);
 
-        // Store region state
+        // Store region state (dimensions use scaled values)
         overlayRegions.set(regionConfig.id, {
           element: regionEl,
           config: regionConfig,
           widgets: regionConfig.widgets,
           currentIndex: 0,
           timer: null,
-          width: regionConfig.width,
-          height: regionConfig.height,
+          width: regionConfig.width * sf,
+          height: regionConfig.height * sf,
           complete: false,
           widgetElements: new Map()
         });
@@ -1732,6 +2046,12 @@ export class RendererLite {
   cleanup() {
     this.stopAllOverlays();
     this.stopCurrentLayout();
+
+    if (this.resizeObserver) {
+      this.resizeObserver.disconnect();
+      this.resizeObserver = null;
+    }
+
     this.container.innerHTML = '';
     this.log.info('Cleaned up');
   }

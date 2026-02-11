@@ -43,8 +43,29 @@
  */
 
 import { EventEmitter, createLogger, applyCmsLogLevel } from '@xiboplayer/utils';
+import { DataConnectorManager } from './data-connectors.js';
 
 const log = createLogger('PlayerCore');
+
+// IndexedDB database/store for offline cache
+const OFFLINE_DB_NAME = 'xibo-offline-cache';
+const OFFLINE_DB_VERSION = 1;
+const OFFLINE_STORE = 'cache';
+
+/** Open the offline cache IndexedDB (creates store on first use) */
+function openOfflineDb() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(OFFLINE_DB_NAME, OFFLINE_DB_VERSION);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains(OFFLINE_STORE)) {
+        db.createObjectStore(OFFLINE_STORE);
+      }
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
 
 export class PlayerCore extends EventEmitter {
   constructor(options) {
@@ -60,12 +81,155 @@ export class PlayerCore extends EventEmitter {
     this.statsCollector = options.statsCollector; // Optional: proof of play tracking
     this.displaySettings = options.displaySettings; // Optional: CMS display settings manager
 
+    // Data connectors manager (real-time data for widgets)
+    this.dataConnectorManager = new DataConnectorManager();
+
     // State
     this.xmr = null;
     this.currentLayoutId = null;
     this.collecting = false;
     this.collectionInterval = null;
     this.pendingLayouts = new Map(); // layoutId -> required media IDs
+    this.offlineMode = false; // Track whether we're currently in offline mode
+
+    // CRC32 checksums for skip optimization (avoid redundant XMDS calls)
+    this._lastCheckRf = null;
+    this._lastCheckSchedule = null;
+
+    // Layout override state (for changeLayout/overlayLayout via XMR → revertToSchedule)
+    this._layoutOverride = null; // { layoutId, type: 'change'|'overlay' }
+    this._lastRequiredFiles = []; // Track files for MediaInventory
+
+    // Schedule cycle state (round-robin through multiple layouts)
+    this._currentLayoutIndex = 0;
+
+    // In-memory offline cache (populated from IndexedDB on first load)
+    this._offlineCache = { schedule: null, settings: null, requiredFiles: null };
+    this._offlineDbReady = this._initOfflineCache();
+  }
+
+  // ── Offline Cache (IndexedDB) ──────────────────────────────────────
+
+  /** Load offline cache from IndexedDB into memory on startup */
+  async _initOfflineCache() {
+    try {
+      const db = await openOfflineDb();
+      const tx = db.transaction(OFFLINE_STORE, 'readonly');
+      const store = tx.objectStore(OFFLINE_STORE);
+
+      const [schedule, settings, requiredFiles] = await Promise.all([
+        new Promise(r => { const req = store.get('schedule'); req.onsuccess = () => r(req.result ?? null); req.onerror = () => r(null); }),
+        new Promise(r => { const req = store.get('settings'); req.onsuccess = () => r(req.result ?? null); req.onerror = () => r(null); }),
+        new Promise(r => { const req = store.get('requiredFiles'); req.onsuccess = () => r(req.result ?? null); req.onerror = () => r(null); }),
+      ]);
+
+      this._offlineCache = { schedule, settings, requiredFiles };
+      db.close();
+      console.log('[PlayerCore] Offline cache loaded from IndexedDB',
+        schedule ? '(has schedule)' : '(empty)');
+    } catch (e) {
+      console.warn('[PlayerCore] Failed to load offline cache from IndexedDB:', e);
+    }
+  }
+
+  /** Save a key to both in-memory cache and IndexedDB (fire-and-forget) */
+  async _offlineSave(key, data) {
+    this._offlineCache[key] = data;
+    try {
+      const db = await openOfflineDb();
+      const tx = db.transaction(OFFLINE_STORE, 'readwrite');
+      tx.objectStore(OFFLINE_STORE).put(data, key);
+      await new Promise((resolve, reject) => {
+        tx.oncomplete = resolve;
+        tx.onerror = () => reject(tx.error);
+      });
+      db.close();
+    } catch (e) {
+      console.warn('[PlayerCore] Failed to save offline cache:', key, e);
+    }
+  }
+
+  /** Check if we have any cached data to fall back on */
+  hasCachedData() {
+    return this._offlineCache.schedule !== null;
+  }
+
+  /** Check if the browser reports being offline */
+  isOffline() {
+    return typeof navigator !== 'undefined' && navigator.onLine === false;
+  }
+
+  /** Check if currently in offline mode */
+  isInOfflineMode() {
+    return this.offlineMode;
+  }
+
+  /**
+   * Run an offline collection cycle using cached data.
+   * Evaluates the cached schedule and continues playback.
+   */
+  collectOffline() {
+    console.warn('[PlayerCore] Offline mode — using cached schedule');
+
+    if (!this.offlineMode) {
+      this.offlineMode = true;
+      this.emit('offline-mode', true);
+    }
+
+    // Load cached settings for collection interval (first run only)
+    if (!this.collectionInterval) {
+      const cachedReg = this._offlineCache.settings;
+      if (cachedReg?.settings) {
+        this.setupCollectionInterval(cachedReg.settings);
+      }
+    }
+
+    // Load cached schedule and apply it
+    const cachedSchedule = this._offlineCache.schedule;
+    if (cachedSchedule) {
+      this.schedule.setSchedule(cachedSchedule);
+      this.emit('schedule-received', cachedSchedule);
+    }
+
+    // Evaluate current schedule (same logic as online path)
+    const layoutFiles = this.schedule.getCurrentLayouts();
+    log.info('Offline layouts:', layoutFiles);
+    this.emit('layouts-scheduled', layoutFiles);
+
+    // Reset layout cycling index on collect (schedule may have changed)
+    this._currentLayoutIndex = 0;
+
+    if (layoutFiles.length > 0) {
+      const next = this.getNextLayout();
+      if (!next) {
+        log.warn('getNextLayout returned null despite layouts available (offline)');
+        return;
+      }
+      const { layoutId } = next;
+
+      if (this.currentLayoutId === layoutId) {
+        log.debug(`Layout ${layoutId} already playing (offline), skipping reload`);
+        this.emit('layout-already-playing', layoutId);
+        return;
+      }
+
+      log.info(`Offline: switching to layout ${layoutId}`);
+      this.emit('layout-prepare-request', layoutId);
+    } else {
+      log.info('Offline: no layouts in cached schedule');
+      this.emit('no-layouts-scheduled');
+    }
+
+    this.emit('collection-complete');
+  }
+
+  /**
+   * Force an immediate collection (used by platform layer on 'online' event)
+   */
+  async collectNow() {
+    this._lastCheckRf = null;
+    this._lastCheckSchedule = null;
+    return this.collect();
   }
 
   /**
@@ -82,12 +246,33 @@ export class PlayerCore extends EventEmitter {
     this.collecting = true;
 
     try {
+      // Ensure offline cache is loaded from IndexedDB before checking
+      await this._offlineDbReady;
+
       log.info('Starting collection cycle...');
       this.emit('collection-start');
+
+      // Check if browser reports offline
+      if (this.isOffline()) {
+        if (this.hasCachedData()) {
+          return this.collectOffline();
+        }
+        throw new Error('Offline with no cached data — cannot start playback');
+      }
 
       // Register display
       const regResult = await this.xmds.registerDisplay();
       log.info('Display registered:', regResult);
+
+      // Cache settings for offline use
+      this._offlineSave('settings', regResult);
+
+      // Exit offline mode if we were in it
+      if (this.offlineMode) {
+        this.offlineMode = false;
+        console.log('[PlayerCore] Back online — resuming normal collection');
+        this.emit('offline-mode', false);
+      }
 
       // Apply display settings if DisplaySettings manager is available
       if (this.displaySettings && regResult.settings) {
@@ -112,36 +297,78 @@ export class PlayerCore extends EventEmitter {
       // Initialize XMR if available
       await this.initializeXmr(regResult);
 
-      // Get required files
-      const files = await this.xmds.requiredFiles();
-      log.info('Required files:', files.length);
-      this.emit('files-received', files);
+      // CRC32 skip optimization: only fetch RequiredFiles/Schedule when CMS data changed
+      const checkRf = regResult.checkRf || '';
+      const checkSchedule = regResult.checkSchedule || '';
 
-      // Get schedule FIRST to determine priority
-      const schedule = await this.xmds.schedule();
-      log.info('Schedule received');
-      this.emit('schedule-received', schedule);
+      // Get required files (skip if CRC unchanged)
+      if (!this._lastCheckRf || this._lastCheckRf !== checkRf) {
+        const allFiles = await this.xmds.requiredFiles();
+        // Separate purge entries from download entries
+        const purgeFiles = allFiles.filter(f => f.type === 'purge');
+        const files = allFiles.filter(f => f.type !== 'purge');
+        log.info('Required files:', files.length, purgeFiles.length > 0 ? `(+ ${purgeFiles.length} purge)` : '');
+        this._lastCheckRf = checkRf;
+        this.emit('files-received', files);
 
-      // Update schedule manager
-      this.schedule.setSchedule(schedule);
+        // Cache required files for offline use
+        this._offlineSave('requiredFiles', allFiles);
 
-      // Prioritize downloads by layout priority (highest first)
-      const currentLayouts = this.schedule.getCurrentLayouts();
-      const prioritizedFiles = this.prioritizeFilesByLayout(files, currentLayouts);
+        if (purgeFiles.length > 0) {
+          this.emit('purge-request', purgeFiles);
+        }
 
-      // Request downloads with priority order
-      this.emit('download-request', prioritizedFiles);
+        // Get schedule (skip if CRC unchanged)
+        if (!this._lastCheckSchedule || this._lastCheckSchedule !== checkSchedule) {
+          const schedule = await this.xmds.schedule();
+          log.info('Schedule received');
+          this._lastCheckSchedule = checkSchedule;
+          this.emit('schedule-received', schedule);
+          this.schedule.setSchedule(schedule);
+          this.updateDataConnectors();
+          this._offlineSave('schedule', schedule);
+        }
 
-      // Use same schedule result (avoid duplicate evaluation)
-      const layoutFiles = currentLayouts;
+        // Prioritize downloads by layout priority (highest first)
+        const currentLayouts = this.schedule.getCurrentLayouts();
+        const prioritizedFiles = this.prioritizeFilesByLayout(files, currentLayouts);
+        this._lastRequiredFiles = files;
+        this.emit('download-request', prioritizedFiles);
+
+        // Submit media inventory to CMS (reports cached files)
+        this.submitMediaInventory(files);
+      } else {
+        if (checkRf) {
+          log.info('RequiredFiles CRC unchanged, skipping download check');
+        }
+        if (this._lastCheckSchedule !== checkSchedule) {
+          const schedule = await this.xmds.schedule();
+          log.info('Schedule received (RF unchanged but schedule changed)');
+          this._lastCheckSchedule = checkSchedule;
+          this.emit('schedule-received', schedule);
+          this.schedule.setSchedule(schedule);
+          this.updateDataConnectors();
+          this._offlineSave('schedule', schedule);
+        } else if (checkSchedule) {
+          log.info('Schedule CRC unchanged, skipping');
+        }
+      }
+
+      // Evaluate current schedule
+      const layoutFiles = this.schedule.getCurrentLayouts();
       log.info('Current layouts:', layoutFiles);
       this.emit('layouts-scheduled', layoutFiles);
 
+      // Reset layout cycling index on collect (schedule may have changed)
+      this._currentLayoutIndex = 0;
+
       if (layoutFiles.length > 0) {
-        // For now, play the first layout
-        // TODO: Implement full schedule cycling
-        const layoutFile = layoutFiles[0];
-        const layoutId = parseInt(layoutFile.replace('.xlf', ''), 10);
+        const next = this.getNextLayout();
+        if (!next) {
+          log.warn('getNextLayout returned null despite layouts available');
+          return;
+        }
+        const { layoutId } = next;
 
         // Skip if already playing this layout
         if (this.currentLayoutId === layoutId) {
@@ -178,6 +405,9 @@ export class PlayerCore extends EventEmitter {
         }
       }
 
+      // Submit logs to CMS (always, regardless of stats setting)
+      this.emit('submit-logs-request');
+
       // Setup collection interval on first run
       if (!this.collectionInterval && regResult.settings) {
         this.setupCollectionInterval(regResult.settings);
@@ -186,6 +416,13 @@ export class PlayerCore extends EventEmitter {
       this.emit('collection-complete');
 
     } catch (error) {
+      // Offline fallback: if network failed but we have cached data, use it
+      if (this.hasCachedData()) {
+        console.warn('[PlayerCore] Collection failed, falling back to cached data:', error?.message || error);
+        this.emit('collection-error', error);
+        return this.collectOffline();
+      }
+
       log.error('Collection error:', error);
       this.emit('collection-error', error);
       throw error;
@@ -308,6 +545,64 @@ export class PlayerCore extends EventEmitter {
   }
 
   /**
+   * Get the next layout from the schedule using round-robin cycling.
+   * Returns { layoutId, layoutFile } or null if no layouts are scheduled.
+   */
+  getNextLayout() {
+    const layoutFiles = this.schedule.getCurrentLayouts();
+    if (layoutFiles.length === 0) {
+      return null;
+    }
+
+    // Wrap index in case schedule shrank
+    if (this._currentLayoutIndex >= layoutFiles.length) {
+      this._currentLayoutIndex = 0;
+    }
+
+    const layoutFile = layoutFiles[this._currentLayoutIndex];
+    const layoutId = parseInt(layoutFile.replace('.xlf', ''), 10);
+    return { layoutId, layoutFile };
+  }
+
+  /**
+   * Advance to the next layout in the schedule (round-robin).
+   * Called by platform layer when a layout finishes (layoutEnd event).
+   * Increments the index and emits layout-prepare-request for the next layout,
+   * or triggers replay if only one layout is scheduled.
+   */
+  advanceToNextLayout() {
+    // Don't cycle if we're in a layout override (XMR changeLayout/overlayLayout)
+    if (this._layoutOverride) {
+      log.info('Layout override active, not advancing schedule');
+      return;
+    }
+
+    const layoutFiles = this.schedule.getCurrentLayouts();
+    log.info(`Advancing schedule: ${layoutFiles.length} layout(s) available, current index ${this._currentLayoutIndex}`);
+
+    if (layoutFiles.length === 0) {
+      log.info('No layouts scheduled during advance');
+      this.emit('no-layouts-scheduled');
+      return;
+    }
+
+    // Advance index (wraps around)
+    this._currentLayoutIndex = (this._currentLayoutIndex + 1) % layoutFiles.length;
+
+    const layoutFile = layoutFiles[this._currentLayoutIndex];
+    const layoutId = parseInt(layoutFile.replace('.xlf', ''), 10);
+
+    if (layoutId === this.currentLayoutId) {
+      // Same layout (single layout schedule or wrapped back) — trigger replay
+      log.info(`Next layout ${layoutId} is same as current, triggering replay`);
+      this.currentLayoutId = null; // Clear to allow re-render
+    }
+
+    log.info(`Advancing to layout ${layoutId} (index ${this._currentLayoutIndex}/${layoutFiles.length})`);
+    this.emit('layout-prepare-request', layoutId);
+  }
+
+  /**
    * Notify that a file is ready (called by platform for both layout and media files)
    * Checks if any pending layouts can now be rendered
    */
@@ -343,6 +638,235 @@ export class PlayerCore extends EventEmitter {
   }
 
   /**
+   * Capture screenshot (called by XMR wrapper)
+   * Emits event for platform layer to handle
+   */
+  async captureScreenshot() {
+    log.info('Screenshot requested');
+    this.emit('screenshot-request');
+  }
+
+  /**
+   * Change to a specific layout (called by XMR wrapper)
+   * Tracks override state so revertToSchedule() can undo it.
+   */
+  async changeLayout(layoutId) {
+    log.info('Layout change requested via XMR:', layoutId);
+    this._layoutOverride = { layoutId: parseInt(layoutId, 10), type: 'change' };
+    this.currentLayoutId = null; // Force re-render
+    this.emit('layout-prepare-request', parseInt(layoutId, 10));
+  }
+
+  /**
+   * Push an overlay layout on top of current content (called by XMR wrapper)
+   * @param {number|string} layoutId - Layout to overlay
+   */
+  async overlayLayout(layoutId) {
+    log.info('Overlay layout requested via XMR:', layoutId);
+    this._layoutOverride = { layoutId: parseInt(layoutId, 10), type: 'overlay' };
+    this.emit('overlay-layout-request', parseInt(layoutId, 10));
+  }
+
+  /**
+   * Revert to scheduled content after changeLayout/overlayLayout override
+   */
+  async revertToSchedule() {
+    log.info('Reverting to scheduled content');
+    this._layoutOverride = null;
+    this.currentLayoutId = null;
+    this.emit('revert-to-schedule');
+
+    // Re-evaluate schedule to get the right layout
+    const layoutFiles = this.schedule.getCurrentLayouts();
+    if (layoutFiles.length > 0) {
+      const layoutFile = layoutFiles[0];
+      const layoutId = parseInt(layoutFile.replace('.xlf', ''), 10);
+      this.emit('layout-prepare-request', layoutId);
+    } else {
+      this.emit('no-layouts-scheduled');
+    }
+  }
+
+  /**
+   * Purge all cached content and re-download (called by XMR wrapper)
+   */
+  async purgeAll() {
+    log.info('Purge all cache requested via XMR');
+    this._lastCheckRf = null;
+    this._lastCheckSchedule = null;
+    this.emit('purge-all-request');
+    // Trigger immediate re-collection after purge
+    return this.collectNow();
+  }
+
+  /**
+   * Execute a command (HTTP only in browser context)
+   * @param {string} commandCode - The command code from CMS
+   * @param {Object} commands - Commands map from display settings
+   */
+  async executeCommand(commandCode, commands) {
+    log.info('Execute command requested:', commandCode);
+
+    if (!commands || !commands[commandCode]) {
+      log.warn('Unknown command code:', commandCode);
+      this.emit('command-result', { code: commandCode, success: false, reason: 'Unknown command' });
+      return;
+    }
+
+    const command = commands[commandCode];
+    const commandString = command.commandString || command.value || '';
+
+    // Only HTTP commands are possible in a browser
+    if (commandString.startsWith('http|')) {
+      const parts = commandString.split('|');
+      const url = parts[1];
+      const contentType = parts[2] || 'application/json';
+
+      try {
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': contentType }
+        });
+        const success = response.ok;
+        log.info(`HTTP command ${commandCode} result: ${response.status}`);
+        this.emit('command-result', { code: commandCode, success, status: response.status });
+      } catch (error) {
+        log.error(`HTTP command ${commandCode} failed:`, error);
+        this.emit('command-result', { code: commandCode, success: false, reason: error.message });
+      }
+    } else {
+      log.warn('Non-HTTP commands not supported in browser:', commandCode);
+      this.emit('command-result', { code: commandCode, success: false, reason: 'Only HTTP commands supported in browser' });
+    }
+  }
+
+  /**
+   * Trigger a webhook action (called by XMR wrapper)
+   * @param {string} triggerCode - The trigger code to fire
+   */
+  triggerWebhook(triggerCode) {
+    log.info('Webhook trigger from XMR:', triggerCode);
+    this.handleTrigger(triggerCode);
+  }
+
+  /**
+   * Force refresh of data connectors (called by XMR wrapper)
+   */
+  refreshDataConnectors() {
+    log.info('Data connector refresh requested via XMR');
+    this.dataConnectorManager.refreshAll();
+    this.emit('data-connectors-refreshed');
+  }
+
+  /**
+   * Submit media inventory to CMS
+   * Reports which files are cached and complete.
+   * @param {Array} files - List of files from RequiredFiles
+   */
+  async submitMediaInventory(files) {
+    if (!files || files.length === 0) return;
+
+    try {
+      // Build inventory XML: <files><file type="media" id="1" complete="1" md5="abc" lastChecked="123"/></files>
+      const now = Math.floor(Date.now() / 1000);
+      const fileEntries = files
+        .filter(f => f.type === 'media' || f.type === 'layout')
+        .map(f => `<file type="${f.type}" id="${f.id}" complete="1" md5="${f.md5 || ''}" lastChecked="${now}"/>`)
+        .join('');
+      const inventoryXml = `<files>${fileEntries}</files>`;
+
+      await this.xmds.mediaInventory(inventoryXml);
+      log.info(`Media inventory submitted: ${files.length} files`);
+      this.emit('media-inventory-submitted', files.length);
+    } catch (error) {
+      log.warn('MediaInventory submission failed:', error);
+    }
+  }
+
+  /**
+   * BlackList a media file (report broken media to CMS)
+   * @param {string|number} mediaId - The media ID
+   * @param {string} type - File type ('media' or 'layout')
+   * @param {string} reason - Reason for blacklisting
+   */
+  async blackList(mediaId, type, reason) {
+    try {
+      await this.xmds.blackList(mediaId, type, reason);
+      this.emit('media-blacklisted', { mediaId, type, reason });
+    } catch (error) {
+      log.warn('BlackList failed:', error);
+    }
+  }
+
+  /**
+   * Check if currently in a layout override (from XMR changeLayout/overlayLayout)
+   */
+  isLayoutOverridden() {
+    return this._layoutOverride !== null;
+  }
+
+  /**
+   * Handle interactive trigger (from IC or touch events)
+   * Looks up matching action in schedule and executes it
+   * @param {string} triggerCode - The trigger code from the IC request
+   */
+  handleTrigger(triggerCode) {
+    const action = this.schedule.findActionByTrigger(triggerCode);
+    if (!action) {
+      log.debug('No scheduled action matches trigger:', triggerCode);
+      return;
+    }
+
+    log.info(`Action triggered: ${action.actionType} (trigger: ${triggerCode})`);
+
+    switch (action.actionType) {
+      case 'navLayout':
+      case 'navigateToLayout':
+        if (action.layoutCode) {
+          this.changeLayout(action.layoutCode);
+        }
+        break;
+      case 'navWidget':
+      case 'navigateToWidget':
+        this.emit('navigate-to-widget', action);
+        break;
+      case 'command':
+        this.emit('execute-command', action.commandCode);
+        break;
+      default:
+        log.warn('Unknown action type:', action.actionType);
+    }
+  }
+
+  /**
+   * Update data connectors from current schedule
+   * Reconfigures and restarts polling when schedule changes.
+   */
+  updateDataConnectors() {
+    const connectors = this.schedule.getDataConnectors();
+
+    if (connectors.length > 0) {
+      log.info(`Configuring ${connectors.length} data connector(s)`);
+    }
+
+    this.dataConnectorManager.setConnectors(connectors);
+
+    if (connectors.length > 0) {
+      this.dataConnectorManager.startPolling();
+      this.emit('data-connectors-started', connectors.length);
+    }
+  }
+
+  /**
+   * Get the DataConnectorManager instance
+   * Used by platform layer to serve data to widgets via IC /realtime
+   * @returns {DataConnectorManager}
+   */
+  getDataConnectorManager() {
+    return this.dataConnectorManager;
+  }
+
+  /**
    * Cleanup
    */
   cleanup() {
@@ -355,6 +879,9 @@ export class PlayerCore extends EventEmitter {
       this.xmr.stop();
       this.xmr = null;
     }
+
+    // Stop data connector polling
+    this.dataConnectorManager.cleanup();
 
     // Emit cleanup-complete before removing listeners
     this.emit('cleanup-complete');
@@ -383,22 +910,42 @@ export class PlayerCore extends EventEmitter {
   }
 
   /**
-   * Prioritize file downloads by layout priority
-   * Files for highest-priority layout download first
+   * Prioritize file downloads for fastest playback start:
+   *   1. Layout XLFs for currently scheduled layouts (tiny, needed for parsing)
+   *   2. Other layout XLFs (also tiny)
+   *   3. Resource files (fonts, bundle.min.js — small, needed by widgets)
+   *   4. Media files sorted by ascending size (small files complete faster)
+   *
+   * This ensures layouts are parseable ASAP so prepareAndRenderLayout() can
+   * call prioritizeDownload() for the specific media the current layout needs.
    */
   prioritizeFilesByLayout(files, currentLayouts) {
-    const layoutPriority = new Map();
-    currentLayouts.forEach((layoutFile, index) => {
-      const layoutId = parseInt(layoutFile.replace('.xlf', ''), 10);
-      layoutPriority.set(layoutId, index);
+    const currentLayoutIds = new Set();
+    currentLayouts.forEach((layoutFile) => {
+      currentLayoutIds.add(parseInt(String(layoutFile).replace('.xlf', ''), 10));
     });
 
-    return [...files].sort((a, b) => {
-      const layoutIdA = a.type === 'layout' ? parseInt(a.id) : parseInt(a.layoutId || a.id);
-      const layoutIdB = b.type === 'layout' ? parseInt(b.id) : parseInt(b.layoutId || b.id);
-      const priorityA = layoutPriority.get(layoutIdA) ?? 999;
-      const priorityB = layoutPriority.get(layoutIdB) ?? 999;
-      return priorityA - priorityB;
+    // Assign priority tiers
+    const tiered = files.map(f => {
+      let tier;
+      if (f.type === 'layout') {
+        const layoutId = parseInt(f.id);
+        tier = currentLayoutIds.has(layoutId) ? 0 : 1; // Current layouts first
+      } else if (f.type === 'resource' || f.code === 'fonts.css' ||
+                 (f.path && (f.path.includes('bundle.min') || f.path.includes('fonts')))) {
+        tier = 2; // Resources (fonts, bundle.min.js)
+      } else {
+        tier = 3; // Media
+      }
+      return { file: f, tier };
     });
+
+    // Sort by tier, then by ascending size within each tier
+    tiered.sort((a, b) => {
+      if (a.tier !== b.tier) return a.tier - b.tier;
+      return (a.file.size || 0) - (b.file.size || 0);
+    });
+
+    return tiered.map(t => t.file);
   }
 }
