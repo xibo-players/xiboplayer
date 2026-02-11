@@ -198,6 +198,25 @@ class ServiceWorkerBackend extends EventEmitter {
   }
 
   /**
+   * Tell SW to prioritize downloading a specific file
+   * Moves it to the front of the download queue if still queued
+   * @param {string} fileType - 'media' or 'layout'
+   * @param {string} fileId - File ID
+   */
+  async prioritizeDownload(fileType, fileId) {
+    if (!this.controller) return;
+
+    return new Promise((resolve) => {
+      const messageChannel = new MessageChannel();
+      messageChannel.port1.onmessage = (event) => resolve(event.data);
+      this.controller.postMessage(
+        { type: 'PRIORITIZE_DOWNLOAD', data: { fileType, fileId } },
+        [messageChannel.port2]
+      );
+    });
+  }
+
+  /**
    * Check if file is cached
    * @param {string} type - 'media', 'layout', 'widget'
    * @param {string} id - File ID
@@ -338,6 +357,16 @@ export class CacheProxy extends EventEmitter {
       throw new Error('CacheProxy not initialized');
     }
     return await this.backend.requestDownload(files);
+  }
+
+  /**
+   * Prioritize downloading a specific file (move to front of queue)
+   * @param {string} fileType - 'media' or 'layout'
+   * @param {string} fileId - File ID
+   */
+  async prioritizeDownload(fileType, fileId) {
+    if (!this.backend?.prioritizeDownload) return;
+    return await this.backend.prioritizeDownload(fileType, fileId);
   }
 
   /**

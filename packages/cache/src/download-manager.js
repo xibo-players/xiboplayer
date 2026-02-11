@@ -296,6 +296,41 @@ export class DownloadQueue {
   }
 
   /**
+   * Move a file to the front of the queue (if still queued, not yet started)
+   * @param {string} fileType - 'media' or 'layout'
+   * @param {string} fileId - File ID
+   * @returns {boolean} true if file was found (queued or active)
+   */
+  prioritize(fileType, fileId) {
+    const idx = this.queue.findIndex(task =>
+      task.fileInfo.type === fileType && String(task.fileInfo.id) === String(fileId)
+    );
+
+    if (idx > 0) {
+      const [task] = this.queue.splice(idx, 1);
+      this.queue.unshift(task);
+      console.log('[DownloadQueue] Prioritized:', `${fileType}/${fileId}`, '(moved to front of queue)');
+      return true;
+    }
+
+    if (idx === 0) {
+      console.log('[DownloadQueue] Already at front:', `${fileType}/${fileId}`);
+      return true;
+    }
+
+    // Check if already downloading
+    for (const [, task] of this.active) {
+      if (task.fileInfo.type === fileType && String(task.fileInfo.id) === String(fileId)) {
+        console.log('[DownloadQueue] Already downloading:', `${fileType}/${fileId}`);
+        return true;
+      }
+    }
+
+    console.log('[DownloadQueue] Not found in queue:', `${fileType}/${fileId}`);
+    return false;
+  }
+
+  /**
    * Get task by URL (returns null if not downloading)
    */
   getTask(url) {
