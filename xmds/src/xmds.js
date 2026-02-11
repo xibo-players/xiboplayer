@@ -2,6 +2,9 @@
  * XMDS SOAP client
  * Protocol: https://github.com/linuxnow/xibo_players_docs
  */
+import { createLogger } from '@xiboplayer/utils';
+
+const log = createLogger('XMDS');
 
 export class XmdsClient {
   constructor(config) {
@@ -41,13 +44,34 @@ export class XmdsClient {
   }
 
   /**
+   * Rewrite XMDS URL for Electron proxy
+   * If running in Electron (localhost), use local proxy to avoid CORS
+   */
+  rewriteXmdsUrl(cmsUrl) {
+    // Detect Electron environment (running on localhost)
+    if (typeof window !== 'undefined' &&
+        window.location.hostname === 'localhost' &&
+        window.location.port === '8765') {
+
+      // Use local proxy endpoint and pass CMS URL as query parameter
+      const encodedCmsUrl = encodeURIComponent(cmsUrl);
+      return `/xmds-proxy?cms=${encodedCmsUrl}`;
+    }
+
+    // Running in browser - use direct CMS URL
+    return `${cmsUrl}/xmds.php`;
+  }
+
+  /**
    * Call XMDS method
    */
   async call(method, params = {}) {
-    const url = `${this.config.cmsAddress}/xmds.php?v=${this.schemaVersion}`;
+    const xmdsUrl = this.rewriteXmdsUrl(this.config.cmsAddress);
+    const url = `${xmdsUrl}${xmdsUrl.includes('?') ? '&' : '?'}v=${this.schemaVersion}`;
     const body = this.buildEnvelope(method, params);
 
-    console.log(`[XMDS] ${method}`, params);
+    log.debug(`${method}`, params);
+    log.debug(`URL: ${url}`);
 
     const response = await fetch(url, {
       method: 'POST',
@@ -231,14 +255,17 @@ export class XmdsClient {
 
       // Parse layouts within this campaign
       for (const layoutEl of campaignEl.querySelectorAll('layout')) {
+        const fileId = layoutEl.getAttribute('file');
         campaign.layouts.push({
-          file: layoutEl.getAttribute('file'),
+          id: String(fileId), // Normalized string ID for consistent type usage
+          file: fileId,
           // Layouts in campaigns inherit timing from campaign level
           fromdt: layoutEl.getAttribute('fromdt') || campaign.fromdt,
           todt: layoutEl.getAttribute('todt') || campaign.todt,
           scheduleid: campaign.scheduleid,
           priority: campaign.priority, // Priority at campaign level
-          campaignId: campaign.id
+          campaignId: campaign.id,
+          maxPlaysPerHour: parseInt(layoutEl.getAttribute('maxPlaysPerHour') || '0')
         });
       }
 
@@ -247,13 +274,16 @@ export class XmdsClient {
 
     // Parse standalone layouts (not in campaigns)
     for (const layoutEl of doc.querySelectorAll('schedule > layout')) {
+      const fileId = layoutEl.getAttribute('file');
       schedule.layouts.push({
-        file: layoutEl.getAttribute('file'),
+        id: String(fileId), // Normalized string ID for consistent type usage
+        file: fileId,
         fromdt: layoutEl.getAttribute('fromdt'),
         todt: layoutEl.getAttribute('todt'),
         scheduleid: layoutEl.getAttribute('scheduleid'),
         priority: parseInt(layoutEl.getAttribute('priority') || '0'),
-        campaignId: null // Standalone layout
+        campaignId: null, // Standalone layout
+        maxPlaysPerHour: parseInt(layoutEl.getAttribute('maxPlaysPerHour') || '0')
       });
     }
 
@@ -262,15 +292,18 @@ export class XmdsClient {
     const overlaysContainer = doc.querySelector('overlays');
     if (overlaysContainer) {
       for (const overlayEl of overlaysContainer.querySelectorAll('overlay')) {
+        const fileId = overlayEl.getAttribute('file');
         schedule.overlays.push({
+          id: String(fileId), // Normalized string ID for consistent type usage
           duration: parseInt(overlayEl.getAttribute('duration') || '60'),
-          file: overlayEl.getAttribute('file'),
+          file: fileId,
           fromDt: overlayEl.getAttribute('fromdt'),
           toDt: overlayEl.getAttribute('todt'),
           priority: parseInt(overlayEl.getAttribute('priority') || '0'),
           scheduleId: overlayEl.getAttribute('scheduleid'),
           isGeoAware: overlayEl.getAttribute('isGeoAware') === '1',
-          geoLocation: overlayEl.getAttribute('geoLocation') || ''
+          geoLocation: overlayEl.getAttribute('geoLocation') || '',
+          maxPlaysPerHour: parseInt(overlayEl.getAttribute('maxPlaysPerHour') || '0')
           // TODO: Parse criteria elements if present
         });
       }
@@ -362,11 +395,11 @@ export class XmdsClient {
 
       // Parse success response - CMS returns 'true' or 'false'
       const success = xml === 'true';
-      console.log(`[XMDS] SubmitStats result: ${success}`);
+      log.info(`SubmitStats result: ${success}`);
 
       return success;
     } catch (error) {
-      console.error('[XMDS] SubmitStats failed:', error);
+      log.error('SubmitStats failed:', error);
       throw error;
     }
   }

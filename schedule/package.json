@@ -1,12 +1,14 @@
 {
   "name": "@xiboplayer/schedule",
   "version": "0.9.0",
-  "description": "Campaign scheduling and dayparting for Xibo Player",
+  "description": "Complete scheduling solution: campaigns, dayparting, interrupts, and overlays",
   "type": "module",
   "main": "./src/index.js",
   "exports": {
     ".": "./src/index.js",
-    "./schedule": "./src/schedule.js"
+    "./schedule": "./src/schedule.js",
+    "./interrupts": "./src/interrupts.js",
+    "./overlays": "./src/overlays.js"
   },
   "scripts": {
     "test": "vitest run",
@@ -24,7 +26,10 @@
     "digital-signage",
     "scheduling",
     "dayparting",
-    "campaigns"
+    "campaigns",
+    "interrupts",
+    "overlays",
+    "shareOfVoice"
   ],
   "author": "Pau Aliagas <linuxnow@gmail.com>",
   "license": "AGPL-3.0-or-later",

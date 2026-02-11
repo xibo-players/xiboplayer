@@ -239,11 +239,12 @@ describe('RendererLite', () => {
       expect(element.tagName).toBe('VIDEO');
       expect(element.autoplay).toBe(true);
       expect(element.muted).toBe(true);
-      expect(element.loop).toBe(true);
+      // loop is intentionally false - handled manually via 'ended' event to avoid black frames
+      expect(element.loop).toBe(false);
       expect(mockGetMediaUrl).toHaveBeenCalledWith(5);
     });
 
-    it('should create text widget with iframe', async () => {
+    it('should create text widget with iframe (blob fallback)', async () => {
       const widget = {
         type: 'text',
         id: 'm3',
@@ -261,6 +262,53 @@ describe('RendererLite', () => {
       expect(element.tagName).toBe('IFRAME');
       expect(element.src).toContain('blob:');
       expect(mockGetWidgetHtml).toHaveBeenCalledWith(widget);
+    });
+
+    it('should use cache URL when getWidgetHtml returns { url }', async () => {
+      // Override mock to return { url } object (cache path)
+      mockGetWidgetHtml.mockResolvedValueOnce({ url: '/player/pwa/cache/widget/1/r1/m4' });
+
+      const widget = {
+        type: 'text',
+        id: 'm4',
+        layoutId: 1,
+        regionId: 'r1',
+        options: {},
+        raw: '<h1>Test</h1>',
+        duration: 15,
+        transitions: { in: null, out: null }
+      };
+
+      const region = { width: 1920, height: 1080 };
+      const element = await renderer.renderTextWidget(widget, region);
+
+      expect(element.tagName).toBe('IFRAME');
+      // Should use cache URL directly, NOT blob URL
+      expect(element.src).toContain('/player/pwa/cache/widget/1/r1/m4');
+      expect(element.src).not.toContain('blob:');
+      expect(mockGetWidgetHtml).toHaveBeenCalledWith(widget);
+    });
+
+    it('should use cache URL for generic widget when getWidgetHtml returns { url }', async () => {
+      mockGetWidgetHtml.mockResolvedValueOnce({ url: '/player/pwa/cache/widget/1/r1/m5' });
+
+      const widget = {
+        type: 'clock',
+        id: 'm5',
+        layoutId: 1,
+        regionId: 'r1',
+        options: {},
+        raw: '<div>Clock</div>',
+        duration: 10,
+        transitions: { in: null, out: null }
+      };
+
+      const region = { width: 1920, height: 1080 };
+      const element = await renderer.renderGenericWidget(widget, region);
+
+      expect(element.tagName).toBe('IFRAME');
+      expect(element.src).toContain('/player/pwa/cache/widget/1/r1/m5');
+      expect(element.src).not.toContain('blob:');
     });
   });
 

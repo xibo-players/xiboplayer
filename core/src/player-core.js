@@ -42,7 +42,9 @@
  *   await core.collect();
  */
 
-import { EventEmitter } from '@xiboplayer/utils';
+import { EventEmitter, createLogger, applyCmsLogLevel } from '@xiboplayer/utils';
+
+const log = createLogger('PlayerCore');
 
 export class PlayerCore extends EventEmitter {
   constructor(options) {
@@ -73,19 +75,19 @@ export class PlayerCore extends EventEmitter {
   async collect() {
     // Prevent concurrent collections
     if (this.collecting) {
-      console.log('[PlayerCore] Collection already in progress, skipping');
+      log.debug('Collection already in progress, skipping');
       return;
     }
 
     this.collecting = true;
 
     try {
-      console.log('[PlayerCore] Starting collection cycle...');
+      log.info('Starting collection cycle...');
       this.emit('collection-start');
 
       // Register display
       const regResult = await this.xmds.registerDisplay();
-      console.log('[PlayerCore] Display registered:', regResult);
+      log.info('Display registered:', regResult);
 
       // Apply display settings if DisplaySettings manager is available
       if (this.displaySettings && regResult.settings) {
@@ -93,6 +95,15 @@ export class PlayerCore extends EventEmitter {
         if (result.changed.includes('collectInterval')) {
           // Collection interval changed - update interval
           this.updateCollectionInterval(result.settings.collectInterval);
+        }
+
+        // Apply CMS logLevel (respects local overrides)
+        if (regResult.settings.logLevel) {
+          const applied = applyCmsLogLevel(regResult.settings.logLevel);
+          if (applied) {
+            log.info('Log level updated from CMS:', regResult.settings.logLevel);
+            this.emit('log-level-changed', regResult.settings.logLevel);
+          }
         }
       }
 
@@ -103,12 +114,12 @@ export class PlayerCore extends EventEmitter {
 
       // Get required files
       const files = await this.xmds.requiredFiles();
-      console.log('[PlayerCore] Required files:', files.length);
+      log.info('Required files:', files.length);
       this.emit('files-received', files);
 
       // Get schedule FIRST to determine priority
       const schedule = await this.xmds.schedule();
-      console.log('[PlayerCore] Schedule received');
+      log.info('Schedule received');
       this.emit('schedule-received', schedule);
 
       // Update schedule manager
@@ -123,7 +134,7 @@ export class PlayerCore extends EventEmitter {
 
       // Use same schedule result (avoid duplicate evaluation)
       const layoutFiles = currentLayouts;
-      console.log('[PlayerCore] Current layouts:', layoutFiles);
+      log.info('Current layouts:', layoutFiles);
       this.emit('layouts-scheduled', layoutFiles);
 
       if (layoutFiles.length > 0) {
@@ -134,24 +145,24 @@ export class PlayerCore extends EventEmitter {
 
         // Skip if already playing this layout
         if (this.currentLayoutId === layoutId) {
-          console.log(`[PlayerCore] Layout ${layoutId} already playing, skipping reload`);
+          log.debug(`Layout ${layoutId} already playing, skipping reload`);
           this.emit('layout-already-playing', layoutId);
           return;
         }
 
         // Request layout preparation (platform handles media checks, widget HTML)
-        console.log(`[PlayerCore] Switching to layout ${layoutId}${this.currentLayoutId ? ` (from ${this.currentLayoutId})` : ''}`);
+        log.info(`Switching to layout ${layoutId}${this.currentLayoutId ? ` (from ${this.currentLayoutId})` : ''}`);
         this.emit('layout-prepare-request', layoutId);
 
       } else {
-        console.log('[PlayerCore] No layouts scheduled, falling back to default');
+        log.info('No layouts scheduled, falling back to default');
         this.emit('no-layouts-scheduled');
 
         // If we're currently playing a layout but schedule says no layouts (e.g., maxPlaysPerHour filtered it),
         // force switch to default layout if available
         if (this.currentLayoutId && this.schedule.schedule?.default) {
           const defaultLayoutId = parseInt(this.schedule.schedule.default.replace('.xlf', ''), 10);
-          console.log(`[PlayerCore] Current layout filtered by schedule, switching to default layout ${defaultLayoutId}`);
+          log.info(`Current layout filtered by schedule, switching to default layout ${defaultLayoutId}`);
           this.currentLayoutId = null; // Clear to force switch
           this.emit('layout-prepare-request', defaultLayoutId);
         }
@@ -160,10 +171,10 @@ export class PlayerCore extends EventEmitter {
       // Submit stats if enabled and collector is available
       if (regResult.settings?.statsEnabled === 'On' || regResult.settings?.statsEnabled === '1') {
         if (this.statsCollector) {
-          console.log('[PlayerCore] Stats enabled, submitting proof of play');
+          log.info('Stats enabled, submitting proof of play');
           this.emit('submit-stats-request');
         } else {
-          console.warn('[PlayerCore] Stats enabled but no StatsCollector provided');
+          log.warn('Stats enabled but no StatsCollector provided');
         }
       }
 
@@ -175,7 +186,7 @@ export class PlayerCore extends EventEmitter {
       this.emit('collection-complete');
 
     } catch (error) {
-      console.error('[PlayerCore] Collection error:', error);
+      log.error('Collection error:', error);
       this.emit('collection-error', error);
       throw error;
     } finally {
@@ -191,20 +202,20 @@ export class PlayerCore extends EventEmitter {
     if (!xmrUrl) return;
 
     const xmrCmsKey = regResult.settings?.xmrCmsKey || regResult.settings?.serverKey || this.config.serverKey;
-    console.log('[PlayerCore] XMR CMS Key:', xmrCmsKey ? 'present' : 'missing');
+    log.debug('XMR CMS Key:', xmrCmsKey ? 'present' : 'missing');
 
     if (!this.xmr) {
-      console.log('[PlayerCore] Initializing XMR WebSocket:', xmrUrl);
+      log.info('Initializing XMR WebSocket:', xmrUrl);
       this.xmr = new this.XmrWrapper(this.config, this);
       await this.xmr.start(xmrUrl, xmrCmsKey);
       this.emit('xmr-connected', xmrUrl);
     } else if (!this.xmr.isConnected()) {
-      console.log('[PlayerCore] XMR disconnected, attempting to reconnect...');
+      log.info('XMR disconnected, attempting to reconnect...');
       this.xmr.reconnectAttempts = 0;
       await this.xmr.start(xmrUrl, xmrCmsKey);
       this.emit('xmr-reconnected', xmrUrl);
     } else {
-      console.log('[PlayerCore] XMR already connected');
+      log.debug('XMR already connected');
     }
   }
 
@@ -219,12 +230,12 @@ export class PlayerCore extends EventEmitter {
 
     const collectIntervalMs = collectIntervalSeconds * 1000;
 
-    console.log(`[PlayerCore] Setting up collection interval: ${collectIntervalSeconds}s`);
+    log.info(`Setting up collection interval: ${collectIntervalSeconds}s`);
 
     this.collectionInterval = setInterval(() => {
-      console.log('[PlayerCore] Running scheduled collection cycle...');
+      log.debug('Running scheduled collection cycle...');
       this.collect().catch(error => {
-        console.error('[PlayerCore] Collection error:', error);
+        log.error('Collection error:', error);
         this.emit('collection-error', error);
       });
     }, collectIntervalMs);
@@ -239,14 +250,14 @@ export class PlayerCore extends EventEmitter {
   updateCollectionInterval(newIntervalSeconds) {
     if (this.collectionInterval) {
       clearInterval(this.collectionInterval);
-      console.log(`[PlayerCore] Updating collection interval: ${newIntervalSeconds}s`);
+      log.info(`Updating collection interval: ${newIntervalSeconds}s`);
 
       const collectIntervalMs = newIntervalSeconds * 1000;
 
       this.collectionInterval = setInterval(() => {
-        console.log('[PlayerCore] Running scheduled collection cycle...');
+        log.debug('Running scheduled collection cycle...');
         this.collect().catch(error => {
-          console.error('[PlayerCore] Collection error:', error);
+          log.error('Collection error:', error);
           this.emit('collection-error', error);
         });
       }, collectIntervalMs);
@@ -260,7 +271,7 @@ export class PlayerCore extends EventEmitter {
    * Pure orchestration - emits events for platform to handle
    */
   async requestLayoutChange(layoutId) {
-    console.log(`[PlayerCore] Layout change requested: ${layoutId}`);
+    log.info(`Layout change requested: ${layoutId}`);
 
     // Clear current layout tracking so it will switch
     this.currentLayoutId = null;
@@ -301,7 +312,7 @@ export class PlayerCore extends EventEmitter {
    * Checks if any pending layouts can now be rendered
    */
   notifyMediaReady(fileId, fileType = 'media') {
-    console.log(`[PlayerCore] File ${fileId} ready (${fileType})`);
+    log.debug(`File ${fileId} ready (${fileType})`);
 
     // Check if any pending layouts are now complete
     for (const [layoutId, requiredFiles] of this.pendingLayouts.entries()) {
@@ -312,7 +323,7 @@ export class PlayerCore extends EventEmitter {
       const isRequiredMedia = fileType === 'media' && requiredFiles.includes(parseInt(fileId));
 
       if (isLayoutFile || isRequiredMedia) {
-        console.log(`[PlayerCore] ${fileType} ${fileId} was needed by pending layout ${layoutId}, checking if ready...`);
+        log.debug(`${fileType} ${fileId} was needed by pending layout ${layoutId}, checking if ready...`);
         this.emit('check-pending-layout', layoutId, requiredFiles);
       }
     }
@@ -326,7 +337,7 @@ export class PlayerCore extends EventEmitter {
       await this.xmds.notifyStatus({ currentLayoutId: layoutId });
       this.emit('status-notified', layoutId);
     } catch (error) {
-      console.warn('[PlayerCore] Failed to notify status:', error);
+      log.warn('Failed to notify status:', error);
       this.emit('status-notify-failed', layoutId, error);
     }
   }

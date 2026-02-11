@@ -397,7 +397,19 @@ export class CacheManager {
       modifiedHtml = baseTag + html;
     }
 
-    console.log(`[Cache] Injected base tag into widget HTML`);
+    // Rewrite absolute CMS signed URLs to local cache paths
+    // Matches: https://cms/xmds.php?file=bundle.min.js&...&X-Amz-Signature=...
+    // These absolute URLs bypass the <base> tag entirely, causing slow CMS fetches
+    const cmsUrlRegex = /https?:\/\/[^"'\s)]+xmds\.php\?[^"'\s)]*file=([^&"'\s)]+)[^"'\s)]*/g;
+    const staticResources = [];
+    modifiedHtml = modifiedHtml.replace(cmsUrlRegex, (match, filename) => {
+      const localPath = `/player/pwa/cache/static/${filename}`;
+      staticResources.push({ filename, originalUrl: match });
+      console.log(`[Cache] Rewrote widget URL: ${filename} → ${localPath}`);
+      return localPath;
+    });
+
+    console.log(`[Cache] Injected base tag and rewrote CMS URLs in widget HTML`);
 
     // Construct full URL for cache storage
     const cacheUrl = new URL(cacheKey, window.location.origin);
@@ -411,6 +423,45 @@ export class CacheManager {
 
     await cache.put(cacheUrl, response);
     console.log(`[Cache] Stored widget HTML at ${cacheKey} (${modifiedHtml.length} bytes)`);
+
+    // Fetch and cache static resources (shared Cache API - accessible from main thread and SW)
+    if (staticResources.length > 0) {
+      const STATIC_CACHE_NAME = 'xibo-static-v1';
+      const staticCache = await caches.open(STATIC_CACHE_NAME);
+
+      await Promise.all(staticResources.map(async ({ filename, originalUrl }) => {
+        const staticKey = `/player/pwa/cache/static/${filename}`;
+        const existing = await staticCache.match(staticKey);
+        if (existing) return; // Already cached
+
+        try {
+          const resp = await fetch(originalUrl);
+          if (!resp.ok) {
+            console.warn(`[Cache] Failed to fetch static resource: ${filename} (HTTP ${resp.status})`);
+            return;
+          }
+
+          const blob = await resp.blob();
+          const ext = filename.split('.').pop().toLowerCase();
+          const contentType = {
+            'js': 'application/javascript',
+            'css': 'text/css',
+            'otf': 'font/otf', 'ttf': 'font/ttf',
+            'woff': 'font/woff', 'woff2': 'font/woff2',
+            'eot': 'application/vnd.ms-fontobject',
+            'svg': 'image/svg+xml'
+          }[ext] || 'application/octet-stream';
+
+          await staticCache.put(staticKey, new Response(blob, {
+            headers: { 'Content-Type': contentType }
+          }));
+
+          console.log(`[Cache] Cached static resource: ${filename} (${contentType}, ${blob.size} bytes)`);
+        } catch (error) {
+          console.warn(`[Cache] Failed to cache static resource: ${filename}`, error);
+        }
+      }));
+    }
 
     return cacheKey;
   }

@@ -40,7 +40,7 @@
  */
 
 import { createNanoEvents } from 'nanoevents';
-import { createLogger } from '@xiboplayer/utils';
+import { createLogger, isDebug } from '@xiboplayer/utils';
 
 /**
  * Transition utilities for widget animations
@@ -935,8 +935,7 @@ export class RendererLite {
     video.autoplay = true;
     video.muted = widget.options.mute === '1';
     video.loop = false; // Don't use native loop - we handle it manually to avoid black frames
-    video.controls = false; // Hide controls and error overlays in kiosk mode
-    video.disablePictureInPicture = true; // Disable PiP
+    video.controls = isDebug(); // Show controls only in debug mode
     video.playsInline = true; // Prevent fullscreen on mobile
 
     // Handle video end - pause on last frame instead of showing black
@@ -1078,13 +1077,38 @@ export class RendererLite {
     iframe.style.border = 'none';
     iframe.style.opacity = '0';
 
-    // Get widget HTML
+    // Get widget HTML (may return { url } for cache-path loading or string for blob)
     let html = widget.raw;
     if (this.options.getWidgetHtml) {
-      html = await this.options.getWidgetHtml(widget);
+      const result = await this.options.getWidgetHtml(widget);
+      if (result && typeof result === 'object' && result.url) {
+        // Use cache URL — SW serves HTML and intercepts sub-resources
+        iframe.src = result.url;
+
+        // On hard reload (Ctrl+Shift+R), iframe navigation bypasses SW → server 404
+        // Detect and fall back to blob URL with original CMS signed URLs
+        if (result.fallback) {
+          const self = this;
+          iframe.addEventListener('load', function() {
+            try {
+              // Our cached widget HTML has a <base> tag; server 404 page doesn't
+              if (!iframe.contentDocument?.querySelector('base')) {
+                console.warn('[RendererLite] Cache URL failed (hard reload?), using original CMS URLs');
+                const blob = new Blob([result.fallback], { type: 'text/html' });
+                const blobUrl = URL.createObjectURL(blob);
+                self.trackBlobUrl(blobUrl);
+                iframe.src = blobUrl;
+              }
+            } catch (e) { /* cross-origin — should not happen */ }
+          }, { once: true });
+        }
+
+        return iframe;
+      }
+      html = result;
     }
 
-    // Create blob URL for iframe
+    // Fallback: Create blob URL for iframe
     const blob = new Blob([html], { type: 'text/html' });
     const blobUrl = URL.createObjectURL(blob);
     iframe.src = blobUrl;
@@ -1190,10 +1214,35 @@ export class RendererLite {
     iframe.style.border = 'none';
     iframe.style.opacity = '0';
 
-    // Get widget HTML
+    // Get widget HTML (may return { url } for cache-path loading or string for blob)
     let html = widget.raw;
     if (this.options.getWidgetHtml) {
-      html = await this.options.getWidgetHtml(widget);
+      const result = await this.options.getWidgetHtml(widget);
+      if (result && typeof result === 'object' && result.url) {
+        // Use cache URL — SW serves HTML and intercepts sub-resources
+        iframe.src = result.url;
+
+        // On hard reload (Ctrl+Shift+R), iframe navigation bypasses SW → server 404
+        // Detect and fall back to blob URL with original CMS signed URLs
+        if (result.fallback) {
+          const self = this;
+          iframe.addEventListener('load', function() {
+            try {
+              // Our cached widget HTML has a <base> tag; server 404 page doesn't
+              if (!iframe.contentDocument?.querySelector('base')) {
+                console.warn('[RendererLite] Cache URL failed (hard reload?), using original CMS URLs');
+                const blob = new Blob([result.fallback], { type: 'text/html' });
+                const blobUrl = URL.createObjectURL(blob);
+                self.trackBlobUrl(blobUrl);
+                iframe.src = blobUrl;
+              }
+            } catch (e) { /* cross-origin — should not happen */ }
+          }, { once: true });
+        }
+
+        return iframe;
+      }
+      html = result;
     }
 
     if (html) {

@@ -4,7 +4,7 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { DisplaySettings } from './display-settings.js';
+import { DisplaySettings } from './settings.js';
 
 describe('DisplaySettings', () => {
   let settings;

@@ -1,9 +1,16 @@
 /**
  * Configurable Logger for Xibo Players
  *
- * Supports log levels: DEBUG, INFO, WARNING, ERROR
- * Production: Only WARNING and ERROR
- * Development: All levels
+ * Supports log levels: DEBUG, INFO, WARNING, ERROR, NONE
+ *
+ * Level precedence (highest wins):
+ *   1. URL param ?logLevel=DEBUG
+ *   2. localStorage xibo_log_level
+ *   3. CMS setting via RegisterDisplay (call applyCmsLogLevel())
+ *   4. Default: DEBUG on localhost, INFO in production
+ *
+ * Loggers created without an explicit level are REACTIVE — they follow
+ * the global level at call time, so setLogLevel() affects all of them.
  */
 
 const LOG_LEVELS = {
@@ -15,12 +22,20 @@ const LOG_LEVELS = {
 };
 
 class Logger {
-  constructor(name, level = 'INFO') {
+  /**
+   * @param {string} name - Logger name (shown in prefix)
+   * @param {string|null} level - Explicit level string, or null to follow global
+   */
+  constructor(name, level = null) {
     this.name = name;
-    this.setLevel(level);
+    this.useGlobal = (level === null);
+    if (!this.useGlobal) {
+      this.setLevel(level);
+    }
   }
 
   setLevel(level) {
+    this.useGlobal = false;
     if (typeof level === 'string') {
       this.level = LOG_LEVELS[level.toUpperCase()] ?? LOG_LEVELS.INFO;
     } else {
@@ -28,26 +43,31 @@ class Logger {
     }
   }
 
+  /** Effective level: own override or global */
+  getEffectiveLevel() {
+    return this.useGlobal ? globalConfig.level : this.level;
+  }
+
   debug(...args) {
-    if (this.level <= LOG_LEVELS.DEBUG) {
+    if (this.getEffectiveLevel() <= LOG_LEVELS.DEBUG) {
       console.log(`[${this.name}] DEBUG:`, ...args);
     }
   }
 
   info(...args) {
-    if (this.level <= LOG_LEVELS.INFO) {
+    if (this.getEffectiveLevel() <= LOG_LEVELS.INFO) {
       console.log(`[${this.name}]`, ...args);
     }
   }
 
   warn(...args) {
-    if (this.level <= LOG_LEVELS.WARNING) {
+    if (this.getEffectiveLevel() <= LOG_LEVELS.WARNING) {
       console.warn(`[${this.name}]`, ...args);
     }
   }
 
   error(...args) {
-    if (this.level <= LOG_LEVELS.ERROR) {
+    if (this.getEffectiveLevel() <= LOG_LEVELS.ERROR) {
       console.error(`[${this.name}]`, ...args);
     }
   }
@@ -83,6 +103,9 @@ const globalConfig = {
   }
 };
 
+// Track whether the level was set by a local override (URL param / localStorage)
+let hasLocalOverride = false;
+
 // Set global level from environment or localStorage
 if (typeof window !== 'undefined') {
   const urlParams = new URLSearchParams(window.location.search);
@@ -91,24 +114,25 @@ if (typeof window !== 'undefined') {
 
   if (urlLevel) {
     globalConfig.setGlobalLevel(urlLevel);
+    hasLocalOverride = true;
   } else if (storageLevel) {
     globalConfig.setGlobalLevel(storageLevel);
+    hasLocalOverride = true;
   } else if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
     // Development mode - debug logging
     globalConfig.setGlobalLevel('DEBUG');
   } else {
-    // Production mode - warnings and errors only
-    globalConfig.setGlobalLevel('WARNING');
+    // Production mode - INFO by default (CMS can override later)
+    globalConfig.setGlobalLevel('INFO');
   }
 }
 
-// Factory function
+// Factory function — loggers follow global level by default (reactive)
 export function createLogger(name, level = null) {
-  const logger = new Logger(name, level ?? globalConfig.getLevelName(globalConfig.level));
-  return logger;
+  return new Logger(name, level);
 }
 
-// Set global log level
+// Set global log level (and persist to localStorage)
 export function setLogLevel(level) {
   globalConfig.setGlobalLevel(level);
 
@@ -118,9 +142,56 @@ export function setLogLevel(level) {
   }
 }
 
-// Get current log level
+// Get current log level name
 export function getLogLevel() {
   return globalConfig.getLevelName(globalConfig.level);
+}
+
+/**
+ * Returns true when the effective global level is DEBUG.
+ * Use this for conditional debug features (video controls, overlays, etc.)
+ */
+export function isDebug() {
+  return globalConfig.level <= LOG_LEVELS.DEBUG;
+}
+
+/**
+ * Apply CMS logLevel setting — only if no local override (URL/localStorage) exists.
+ * @param {string} cmsLevel - CMS level string: 'error', 'audit', 'info', 'debug'
+ * @returns {boolean} true if the level was applied
+ */
+export function applyCmsLogLevel(cmsLevel) {
+  if (hasLocalOverride) return false;
+  if (!cmsLevel) return false;
+
+  const mapped = mapCmsLogLevel(cmsLevel);
+  globalConfig.setGlobalLevel(mapped);
+  return true;
+}
+
+/**
+ * Map CMS logLevel strings to internal level names.
+ * CMS uses: 'emergency','alert','critical','error','warning','notice','info','debug','audit'
+ * We collapse them to our 4 levels.
+ */
+export function mapCmsLogLevel(cmsLevel) {
+  switch ((cmsLevel || '').toLowerCase()) {
+    case 'debug':
+      return 'DEBUG';
+    case 'info':
+    case 'notice':
+    case 'audit':
+      return 'INFO';
+    case 'warning':
+      return 'WARNING';
+    case 'error':
+    case 'critical':
+    case 'alert':
+    case 'emergency':
+      return 'ERROR';
+    default:
+      return 'INFO';
+  }
 }
 
 export { LOG_LEVELS };
