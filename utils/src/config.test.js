@@ -1,0 +1,462 @@
+/**
+ * Config Tests
+ *
+ * Tests for configuration management with localStorage persistence
+ */
+
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { Config } from './config.js';
+
+describe('Config', () => {
+  let config;
+  let mockLocalStorage;
+
+  beforeEach(() => {
+    // Mock localStorage
+    mockLocalStorage = {
+      data: {},
+      getItem(key) {
+        return this.data[key] || null;
+      },
+      setItem(key, value) {
+        this.data[key] = value;
+      },
+      removeItem(key) {
+        delete this.data[key];
+      },
+      clear() {
+        this.data = {};
+      }
+    };
+
+    global.localStorage = mockLocalStorage;
+
+    // Mock crypto.randomUUID
+    global.crypto = {
+      randomUUID: vi.fn(() => '12345678-1234-4567-8901-234567890abc')
+    };
+  });
+
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  describe('Initialization', () => {
+    it('should create new config when localStorage is empty', () => {
+      config = new Config();
+
+      expect(config.data).toBeDefined();
+      expect(config.data.cmsAddress).toBe('');
+      expect(config.data.cmsKey).toBe('');
+      expect(config.data.displayName).toBe('');
+      expect(config.data.hardwareKey).toMatch(/^pwa-/);
+      expect(config.data.xmrChannel).toMatch(/^[0-9a-f-]{36}$/);
+    });
+
+    it('should generate stable hardware key on first load', () => {
+      config = new Config();
+
+      const hwKey = config.data.hardwareKey;
+      expect(hwKey).toMatch(/^pwa-[0-9a-f]{28}$/);
+      expect(hwKey).toBe('pwa-1234567812344567890123456789');
+    });
+
+    it('should save config to localStorage on creation', () => {
+      config = new Config();
+
+      const stored = JSON.parse(mockLocalStorage.getItem('xibo_config'));
+      expect(stored).toEqual(config.data);
+    });
+
+    it('should load existing config from localStorage', () => {
+      const existingConfig = {
+        cmsAddress: 'https://test.cms.com',
+        cmsKey: 'test-key',
+        displayName: 'Test Display',
+        hardwareKey: 'pwa-existinghardwarekey1234567',
+        xmrChannel: '12345678-1234-4567-8901-234567890abc'
+      };
+
+      mockLocalStorage.setItem('xibo_config', JSON.stringify(existingConfig));
+
+      config = new Config();
+
+      expect(config.data).toEqual(existingConfig);
+    });
+
+    it('should regenerate hardware key if invalid in stored config', () => {
+      const invalidConfig = {
+        cmsAddress: 'https://test.cms.com',
+        cmsKey: 'test-key',
+        displayName: 'Test Display',
+        hardwareKey: 'short', // Invalid: too short
+        xmrChannel: '12345678-1234-4567-8901-234567890abc'
+      };
+
+      mockLocalStorage.setItem('xibo_config', JSON.stringify(invalidConfig));
+
+      config = new Config();
+
+      expect(config.data.hardwareKey).not.toBe('short');
+      expect(config.data.hardwareKey).toMatch(/^pwa-[0-9a-f]{28}$/);
+    });
+
+    it('should handle corrupted JSON in localStorage', () => {
+      mockLocalStorage.setItem('xibo_config', 'invalid-json{');
+
+      config = new Config();
+
+      // Should create new config
+      expect(config.data.hardwareKey).toMatch(/^pwa-/);
+      expect(config.isConfigured()).toBe(false);
+    });
+  });
+
+  describe('Hardware Key Generation', () => {
+    beforeEach(() => {
+      config = new Config();
+    });
+
+    it('should generate UUID-based hardware key when crypto.randomUUID available', () => {
+      const hwKey = config.generateStableHardwareKey();
+
+      expect(hwKey).toBe('pwa-1234567812344567890123456789');
+      expect(global.crypto.randomUUID).toHaveBeenCalled();
+    });
+
+    it('should fallback to random hex when crypto.randomUUID unavailable', () => {
+      delete global.crypto.randomUUID;
+      global.Math.random = vi.fn(() => 0.5);
+
+      const hwKey = config.generateStableHardwareKey();
+
+      expect(hwKey).toMatch(/^pwa-[0-9a-f]{28}$/);
+      expect(hwKey.length).toBe(32); // 'pwa-' + 28 chars
+    });
+
+    it('should ensure hardware key never becomes undefined', () => {
+      config.data.hardwareKey = undefined;
+
+      const hwKey = config.hardwareKey; // Getter auto-repairs
+
+      expect(hwKey).toMatch(/^pwa-/);
+      expect(config.data.hardwareKey).toBe(hwKey);
+    });
+  });
+
+  describe('XMR Channel Generation', () => {
+    beforeEach(() => {
+      config = new Config();
+    });
+
+    it('should generate valid UUID v4', () => {
+      const channel = config.generateXmrChannel();
+
+      expect(channel).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    });
+
+    it('should generate different UUIDs each time', () => {
+      const channel1 = config.generateXmrChannel();
+      const channel2 = config.generateXmrChannel();
+
+      expect(channel1).not.toBe(channel2);
+    });
+  });
+
+  describe('Hash Function (FNV-1a)', () => {
+    beforeEach(() => {
+      config = new Config();
+    });
+
+    it('should generate 32-character hex hash', () => {
+      const hash = config.hash('test string');
+
+      expect(hash).toMatch(/^[0-9a-f]{32}$/);
+    });
+
+    it('should be deterministic for same input', () => {
+      const hash1 = config.hash('test');
+      const hash2 = config.hash('test');
+
+      expect(hash1).toBe(hash2);
+    });
+
+    it('should produce different hashes for different inputs', () => {
+      const hash1 = config.hash('test1');
+      const hash2 = config.hash('test2');
+
+      expect(hash1).not.toBe(hash2);
+    });
+
+    it('should handle empty string', () => {
+      const hash = config.hash('');
+
+      expect(hash).toMatch(/^[0-9a-f]{32}$/);
+    });
+
+    it('should produce good entropy for similar inputs', () => {
+      const hash1 = config.hash('a');
+      const hash2 = config.hash('b');
+
+      // Hashes should be completely different (not just 1 character difference)
+      let differences = 0;
+      for (let i = 0; i < hash1.length; i++) {
+        if (hash1[i] !== hash2[i]) differences++;
+      }
+
+      expect(differences).toBeGreaterThan(15); // At least half different
+    });
+  });
+
+  describe('Canvas Fingerprint', () => {
+    beforeEach(() => {
+      config = new Config();
+
+      // Mock canvas
+      const mockCanvas = {
+        getContext: vi.fn(() => ({
+          textBaseline: '',
+          font: '',
+          fillStyle: '',
+          fillRect: vi.fn(),
+          fillText: vi.fn()
+        })),
+        toDataURL: vi.fn(() => 'data:image/png;base64,mockdata')
+      };
+
+      global.document = {
+        createElement: vi.fn(() => mockCanvas)
+      };
+    });
+
+    it('should generate canvas fingerprint', () => {
+      const fingerprint = config.getCanvasFingerprint();
+
+      expect(fingerprint).toBe('data:image/png;base64,mockdata');
+      expect(global.document.createElement).toHaveBeenCalledWith('canvas');
+    });
+
+    it('should return "no-canvas" when canvas context unavailable', () => {
+      const mockCanvas = {
+        getContext: vi.fn(() => null)
+      };
+
+      global.document = {
+        createElement: vi.fn(() => mockCanvas)
+      };
+
+      const fingerprint = config.getCanvasFingerprint();
+
+      expect(fingerprint).toBe('no-canvas');
+    });
+
+    it('should return "canvas-error" on exception', () => {
+      global.document = {
+        createElement: vi.fn(() => {
+          throw new Error('Canvas not supported');
+        })
+      };
+
+      const fingerprint = config.getCanvasFingerprint();
+
+      expect(fingerprint).toBe('canvas-error');
+    });
+  });
+
+  describe('Configuration Getters/Setters', () => {
+    beforeEach(() => {
+      config = new Config();
+    });
+
+    it('should get/set cmsAddress', () => {
+      expect(config.cmsAddress).toBe('');
+
+      config.cmsAddress = 'https://new.cms.com';
+
+      expect(config.cmsAddress).toBe('https://new.cms.com');
+      expect(config.data.cmsAddress).toBe('https://new.cms.com');
+    });
+
+    it('should save to localStorage when cmsAddress set', () => {
+      config.cmsAddress = 'https://test.com';
+
+      const stored = JSON.parse(mockLocalStorage.getItem('xibo_config'));
+      expect(stored.cmsAddress).toBe('https://test.com');
+    });
+
+    it('should get/set cmsKey', () => {
+      config.cmsKey = 'new-key';
+
+      expect(config.cmsKey).toBe('new-key');
+      expect(config.data.cmsKey).toBe('new-key');
+    });
+
+    it('should get/set displayName', () => {
+      config.displayName = 'New Display';
+
+      expect(config.displayName).toBe('New Display');
+      expect(config.data.displayName).toBe('New Display');
+    });
+
+    it('should get hardwareKey (read-only via data)', () => {
+      const originalKey = config.hardwareKey;
+
+      expect(config.hardwareKey).toBe(originalKey);
+      expect(config.hardwareKey).toMatch(/^pwa-/);
+    });
+
+    it('should get xmrChannel (read-only)', () => {
+      const channel = config.xmrChannel;
+
+      expect(channel).toMatch(/^[0-9a-f-]{36}$/);
+    });
+  });
+
+  describe('isConfigured()', () => {
+    beforeEach(() => {
+      config = new Config();
+    });
+
+    it('should return false when config incomplete', () => {
+      expect(config.isConfigured()).toBe(false);
+    });
+
+    it('should return false when only cmsAddress set', () => {
+      config.cmsAddress = 'https://test.com';
+
+      expect(config.isConfigured()).toBe(false);
+    });
+
+    it('should return false when only cmsKey set', () => {
+      config.cmsKey = 'test-key';
+
+      expect(config.isConfigured()).toBe(false);
+    });
+
+    it('should return false when only displayName set', () => {
+      config.displayName = 'Test Display';
+
+      expect(config.isConfigured()).toBe(false);
+    });
+
+    it('should return true when all required fields set', () => {
+      config.cmsAddress = 'https://test.com';
+      config.cmsKey = 'test-key';
+      config.displayName = 'Test Display';
+
+      expect(config.isConfigured()).toBe(true);
+    });
+  });
+
+  describe('save()', () => {
+    beforeEach(() => {
+      config = new Config();
+    });
+
+    it('should save current config to localStorage', () => {
+      config.data.cmsAddress = 'https://manual.com';
+      config.data.cmsKey = 'manual-key';
+
+      config.save();
+
+      const stored = JSON.parse(mockLocalStorage.getItem('xibo_config'));
+      expect(stored.cmsAddress).toBe('https://manual.com');
+      expect(stored.cmsKey).toBe('manual-key');
+    });
+
+    it('should auto-save when setters used', () => {
+      config.cmsAddress = 'https://auto.com';
+
+      const stored = JSON.parse(mockLocalStorage.getItem('xibo_config'));
+      expect(stored.cmsAddress).toBe('https://auto.com');
+    });
+  });
+
+  describe('Backwards Compatibility', () => {
+    beforeEach(() => {
+      config = new Config();
+    });
+
+    it('should support generateHardwareKey() alias', () => {
+      const key1 = config.generateHardwareKey();
+      const key2 = config.generateStableHardwareKey();
+
+      // Both should generate valid keys
+      expect(key1).toMatch(/^pwa-[0-9a-f]{28}$/);
+      expect(key2).toMatch(/^pwa-[0-9a-f]{28}$/);
+    });
+  });
+
+  describe('Edge Cases', () => {
+    it('should handle missing hardwareKey in loaded config', () => {
+      mockLocalStorage.setItem('xibo_config', JSON.stringify({
+        cmsAddress: 'https://test.com',
+        cmsKey: 'test-key',
+        displayName: 'Test'
+        // hardwareKey missing
+      }));
+
+      config = new Config();
+
+      // Should auto-generate
+      expect(config.hardwareKey).toMatch(/^pwa-/);
+    });
+
+    it('should handle null values in config', () => {
+      mockLocalStorage.setItem('xibo_config', JSON.stringify({
+        cmsAddress: null,
+        cmsKey: null,
+        displayName: null,
+        hardwareKey: 'pwa-1234567812344567890123456789',
+        xmrChannel: '12345678-1234-4567-8901-234567890abc'
+      }));
+
+      config = new Config();
+
+      expect(config.isConfigured()).toBe(false);
+      expect(config.cmsAddress).toBeNull();
+    });
+
+    it('should handle very long strings', () => {
+      config = new Config();
+
+      const longString = 'a'.repeat(10000);
+      const hash = config.hash(longString);
+
+      expect(hash).toMatch(/^[0-9a-f]{32}$/);
+    });
+
+    it('should handle unicode in hash', () => {
+      config = new Config();
+
+      const hash = config.hash('测试中文🎉');
+
+      expect(hash).toMatch(/^[0-9a-f]{32}$/);
+    });
+  });
+
+  describe('Persistence', () => {
+    it('should persist hardware key across multiple instances', () => {
+      const config1 = new Config();
+      const key1 = config1.hardwareKey;
+
+      const config2 = new Config();
+      const key2 = config2.hardwareKey;
+
+      expect(key1).toBe(key2);
+    });
+
+    it('should persist configuration changes', () => {
+      const config1 = new Config();
+      config1.cmsAddress = 'https://persist.com';
+      config1.cmsKey = 'persist-key';
+      config1.displayName = 'Persist Display';
+
+      const config2 = new Config();
+
+      expect(config2.cmsAddress).toBe('https://persist.com');
+      expect(config2.cmsKey).toBe('persist-key');
+      expect(config2.displayName).toBe('Persist Display');
+    });
+  });
+});

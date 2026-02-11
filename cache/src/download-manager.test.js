@@ -7,7 +7,7 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { DownloadTask, DownloadQueue, DownloadManager } from './download-manager.js';
-import { mockFetch, createTestBlob, waitFor, createSpy } from './test-utils.js';
+import { mockFetch, mockChunkedFetch, createTestBlob, waitFor, createSpy } from './test-utils.js';
 
 describe('DownloadTask', () => {
   describe('State Machine', () => {
@@ -435,6 +435,243 @@ describe('DownloadManager', () => {
 
       expect(manager.queue.concurrency).toBe(4); // DEFAULT_CONCURRENCY
       expect(manager.queue.chunkSize).toBe(50 * 1024 * 1024); // DEFAULT_CHUNK_SIZE
+    });
+  });
+});
+
+// ============================================================================
+// Progressive Chunk Streaming Tests
+// ============================================================================
+
+describe('DownloadTask - Progressive Streaming', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  describe('onChunkDownloaded callback', () => {
+    it('should initialize onChunkDownloaded as null', () => {
+      const task = new DownloadTask({ id: '1', type: 'media', path: 'http://test.com/file.mp4' });
+
+      expect(task.onChunkDownloaded).toBeNull();
+    });
+
+    it('should allow setting onChunkDownloaded before start', () => {
+      const task = new DownloadTask({ id: '1', type: 'media', path: 'http://test.com/file.mp4' });
+      const callback = vi.fn();
+
+      task.onChunkDownloaded = callback;
+
+      expect(task.onChunkDownloaded).toBe(callback);
+    });
+
+    it('should call onChunkDownloaded for each chunk during chunked download', async () => {
+      // 200MB file → will use downloadChunks (threshold is 100MB)
+      const fileSize = 200 * 1024 * 1024;
+      const sourceBlob = createTestBlob(fileSize, 'video/mp4');
+
+      const task = new DownloadTask(
+        { id: '1', type: 'media', path: 'http://test.com/big.mp4' },
+        { chunkSize: 50 * 1024 * 1024, chunksPerFile: 4 }
+      );
+
+      mockChunkedFetch(sourceBlob);
+
+      const chunkCalls = [];
+      task.onChunkDownloaded = vi.fn(async (index, blob, total) => {
+        chunkCalls.push({ index, size: blob.size, total });
+      });
+
+      await task.start();
+
+      // 200MB / 50MB = 4 chunks
+      expect(task.onChunkDownloaded).toHaveBeenCalledTimes(4);
+      expect(chunkCalls.length).toBe(4);
+
+      // Each callback receives (chunkIndex, chunkBlob, totalChunks)
+      for (const call of chunkCalls) {
+        expect(call.total).toBe(4);
+        expect(call.size).toBeGreaterThan(0);
+      }
+
+      // All chunk indices should be present (order may vary due to parallelism)
+      const indices = chunkCalls.map(c => c.index).sort();
+      expect(indices).toEqual([0, 1, 2, 3]);
+    });
+
+    it('should return empty blob when onChunkDownloaded is set', async () => {
+      const fileSize = 200 * 1024 * 1024;
+      const sourceBlob = createTestBlob(fileSize, 'video/mp4');
+
+      const task = new DownloadTask(
+        { id: '1', type: 'media', path: 'http://test.com/big.mp4' },
+        { chunkSize: 50 * 1024 * 1024, chunksPerFile: 4 }
+      );
+
+      mockChunkedFetch(sourceBlob);
+
+      // Set callback → triggers empty blob return path
+      task.onChunkDownloaded = vi.fn(async () => {});
+
+      await task.start();
+
+      // Post-condition: blob should be empty (data was handled by callbacks)
+      expect(task.blob.size).toBe(0);
+      expect(task.state).toBe('complete');
+    });
+
+    it('should return full blob when onChunkDownloaded is NOT set', async () => {
+      const fileSize = 200 * 1024 * 1024;
+      const sourceBlob = createTestBlob(fileSize, 'video/mp4');
+
+      const task = new DownloadTask(
+        { id: '1', type: 'media', path: 'http://test.com/big.mp4' },
+        { chunkSize: 50 * 1024 * 1024, chunksPerFile: 4 }
+      );
+
+      mockChunkedFetch(sourceBlob);
+
+      // No callback set → traditional reassembly
+      await task.start();
+
+      // Post-condition: blob contains the full file
+      expect(task.blob.size).toBe(fileSize);
+      expect(task.state).toBe('complete');
+    });
+
+    it('should not call onChunkDownloaded for small files (single request)', async () => {
+      const fileSize = 10 * 1024 * 1024; // 10MB - below 100MB threshold
+      const sourceBlob = createTestBlob(fileSize);
+
+      const task = new DownloadTask(
+        { id: '1', type: 'media', path: 'http://test.com/small.mp4' },
+        { chunkSize: 50 * 1024 * 1024, chunksPerFile: 4 }
+      );
+
+      mockChunkedFetch(sourceBlob);
+
+      task.onChunkDownloaded = vi.fn(async () => {});
+
+      await task.start();
+
+      // Small file uses downloadFull, not downloadChunks → callback not called
+      expect(task.onChunkDownloaded).not.toHaveBeenCalled();
+      // But the blob should still contain data
+      expect(task.blob.size).toBe(fileSize);
+    });
+
+    it('should handle async callback errors gracefully', async () => {
+      const fileSize = 200 * 1024 * 1024;
+      const sourceBlob = createTestBlob(fileSize, 'video/mp4');
+
+      const task = new DownloadTask(
+        { id: '1', type: 'media', path: 'http://test.com/big.mp4' },
+        { chunkSize: 50 * 1024 * 1024, chunksPerFile: 4 }
+      );
+
+      mockChunkedFetch(sourceBlob);
+
+      // Callback throws — should not crash download
+      task.onChunkDownloaded = vi.fn(async () => {
+        throw new Error('Cache storage failed');
+      });
+
+      // Download should still complete despite callback errors
+      await task.start();
+
+      expect(task.state).toBe('complete');
+      expect(task.onChunkDownloaded).toHaveBeenCalledTimes(4);
+    });
+
+    it('should resolve waiters with empty blob when callback is set', async () => {
+      const fileSize = 200 * 1024 * 1024;
+      const sourceBlob = createTestBlob(fileSize, 'video/mp4');
+
+      const task = new DownloadTask(
+        { id: '1', type: 'media', path: 'http://test.com/big.mp4' },
+        { chunkSize: 50 * 1024 * 1024, chunksPerFile: 4 }
+      );
+
+      mockChunkedFetch(sourceBlob);
+
+      task.onChunkDownloaded = vi.fn(async () => {});
+
+      // Set up waiter before start
+      const waiterPromise = task.wait();
+
+      await task.start();
+
+      const result = await waiterPromise;
+      // Waiter gets the empty blob (data already handled by callbacks)
+      expect(result.size).toBe(0);
+    });
+  });
+});
+
+// ============================================================================
+// DownloadQueue Priority Tests
+// ============================================================================
+
+describe('DownloadQueue - Priority', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  describe('prioritize()', () => {
+    it('should move queued file to front', () => {
+      const queue = new DownloadQueue({ concurrency: 0 }); // Concurrency 0 prevents auto-start
+
+      // Enqueue 3 files (none will start due to concurrency 0)
+      // Actually concurrency 0 means the while loop never runs in processQueue
+      // But we need concurrency > 0 to create tasks. Let me just use a high enough count.
+      // Instead, create tasks manually
+      const task1 = new DownloadTask({ id: '1', type: 'media', path: 'http://a' });
+      const task2 = new DownloadTask({ id: '2', type: 'media', path: 'http://b' });
+      const task3 = new DownloadTask({ id: '3', type: 'media', path: 'http://c' });
+
+      queue.queue = [task1, task2, task3];
+      queue.active.set('http://a', task1);
+      queue.active.set('http://b', task2);
+      queue.active.set('http://c', task3);
+
+      // task3 is at position 2 → prioritize it
+      const found = queue.prioritize('media', '3');
+
+      expect(found).toBe(true);
+      expect(queue.queue[0]).toBe(task3); // Now at front
+      expect(queue.queue[1]).toBe(task1);
+      expect(queue.queue[2]).toBe(task2);
+    });
+
+    it('should return true if file is already at front', () => {
+      const queue = new DownloadQueue();
+      const task = new DownloadTask({ id: '1', type: 'media', path: 'http://a' });
+      queue.queue = [task];
+      queue.active.set('http://a', task);
+
+      const found = queue.prioritize('media', '1');
+
+      expect(found).toBe(true);
+      expect(queue.queue[0]).toBe(task);
+    });
+
+    it('should return false if file not found', () => {
+      const queue = new DownloadQueue();
+
+      const found = queue.prioritize('media', '999');
+
+      expect(found).toBe(false);
+    });
+
+    it('should return true if file is already downloading', () => {
+      const queue = new DownloadQueue();
+      const task = new DownloadTask({ id: '5', type: 'media', path: 'http://x' });
+      task.state = 'downloading';
+      queue.active.set('http://x', task);
+      // Not in queue (already started)
+
+      const found = queue.prioritize('media', '5');
+
+      expect(found).toBe(true);
     });
   });
 });
