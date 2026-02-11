@@ -33,6 +33,9 @@ export class DownloadTask {
     this.reject = null;
     this.waiters = []; // Promises waiting for completion
     this.state = 'pending'; // pending, downloading, complete, failed
+    // Progressive streaming: callback fired for each chunk as it downloads
+    // Set externally before download starts: (chunkIndex, chunkBlob, totalChunks) => Promise
+    this.onChunkDownloaded = null;
   }
 
   /**
@@ -143,6 +146,9 @@ export class DownloadTask {
 
   /**
    * Download file in parallel chunks (for large files)
+   * If onChunkDownloaded callback is set, fires it for each chunk as it arrives
+   * so the caller can cache chunks progressively (enabling streaming before
+   * the entire file is downloaded).
    */
   async downloadChunks(url, contentType, chunkSize, concurrentChunks) {
     // Calculate chunk ranges
@@ -177,6 +183,15 @@ export class DownloadTask {
         const progress = (this.downloadedBytes / this.totalBytes * 100).toFixed(1);
         console.log('[DownloadTask] Chunk', range.index + 1, '/', chunkRanges.length, `(${progress}%)`);
 
+        // Progressive streaming: notify caller to cache this chunk immediately
+        if (this.onChunkDownloaded) {
+          try {
+            await this.onChunkDownloaded(range.index, chunkBlob, chunkRanges.length);
+          } catch (e) {
+            console.warn('[DownloadTask] onChunkDownloaded callback error:', e);
+          }
+        }
+
         // Notify progress if callback provided
         if (this.options.onProgress) {
           this.options.onProgress(this.downloadedBytes, this.totalBytes);
@@ -205,7 +220,13 @@ export class DownloadTask {
     }
     await Promise.all(downloaders);
 
-    // Reassemble chunks in order
+    // If progressive caching was used, skip reassembly (chunks are already cached)
+    if (this.onChunkDownloaded) {
+      // Return a lightweight marker — the real data is already in cache
+      return new Blob([], { type: contentType });
+    }
+
+    // Reassemble chunks in order (traditional path for small chunked downloads)
     const orderedChunks = [];
     for (let i = 0; i < chunkRanges.length; i++) {
       orderedChunks.push(chunkMap.get(i));

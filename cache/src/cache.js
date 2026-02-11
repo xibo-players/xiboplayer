@@ -15,6 +15,8 @@ export class CacheManager {
   constructor() {
     this.cache = null;
     this.db = null;
+    // Dependants: mediaId → Set<layoutId> — tracks which layouts use each media file
+    this.dependants = new Map();
   }
 
   /**
@@ -409,6 +411,15 @@ export class CacheManager {
       return localPath;
     });
 
+    // Rewrite Interactive Control hostAddress to SW-interceptable path
+    // The IC library uses hostAddress + '/info', '/trigger', etc.
+    // Original: hostAddress: "https://cms.example.com" → XHR to /info goes to CMS (fails)
+    // Rewritten: hostAddress: "/player/pwa/ic" → XHR to /player/pwa/ic/info (intercepted by SW)
+    modifiedHtml = modifiedHtml.replace(
+      /hostAddress\s*:\s*["']https?:\/\/[^"']+["']/g,
+      'hostAddress: "/player/pwa/ic"'
+    );
+
     console.log(`[Cache] Injected base tag and rewrote CMS URLs in widget HTML`);
 
     // Construct full URL for cache storage
@@ -441,7 +452,6 @@ export class CacheManager {
             return;
           }
 
-          const blob = await resp.blob();
           const ext = filename.split('.').pop().toLowerCase();
           const contentType = {
             'js': 'application/javascript',
@@ -452,11 +462,58 @@ export class CacheManager {
             'svg': 'image/svg+xml'
           }[ext] || 'application/octet-stream';
 
-          await staticCache.put(staticKey, new Response(blob, {
-            headers: { 'Content-Type': contentType }
-          }));
+          // For CSS files, rewrite font URLs and cache referenced font files
+          if (ext === 'css') {
+            let cssText = await resp.text();
+            const fontResources = [];
+            const fontUrlRegex = /url\((['"]?)(https?:\/\/[^'")\s]+\?[^'")\s]*file=([^&'")\s]+\.(?:woff2?|ttf|otf|eot|svg))[^'")\s]*)\1\)/gi;
+            cssText = cssText.replace(fontUrlRegex, (_match, quote, fullUrl, fontFilename) => {
+              fontResources.push({ filename: fontFilename, originalUrl: fullUrl });
+              console.log(`[Cache] Rewrote font URL in CSS: ${fontFilename}`);
+              return `url(${quote}/player/pwa/cache/static/${encodeURIComponent(fontFilename)}${quote})`;
+            });
 
-          console.log(`[Cache] Cached static resource: ${filename} (${contentType}, ${blob.size} bytes)`);
+            await staticCache.put(staticKey, new Response(cssText, {
+              headers: { 'Content-Type': 'text/css' }
+            }));
+            console.log(`[Cache] Cached CSS with ${fontResources.length} rewritten font URLs: ${filename}`);
+
+            // Fetch and cache referenced font files
+            await Promise.all(fontResources.map(async ({ filename: fontFile, originalUrl: fontUrl }) => {
+              const fontKey = `/player/pwa/cache/static/${encodeURIComponent(fontFile)}`;
+              const existingFont = await staticCache.match(fontKey);
+              if (existingFont) return;
+
+              try {
+                const fontResp = await fetch(fontUrl);
+                if (!fontResp.ok) {
+                  console.warn(`[Cache] Failed to fetch font: ${fontFile} (HTTP ${fontResp.status})`);
+                  return;
+                }
+                const fontBlob = await fontResp.blob();
+                const fontExt = fontFile.split('.').pop().toLowerCase();
+                const fontContentType = {
+                  'otf': 'font/otf', 'ttf': 'font/ttf',
+                  'woff': 'font/woff', 'woff2': 'font/woff2',
+                  'eot': 'application/vnd.ms-fontobject',
+                  'svg': 'image/svg+xml'
+                }[fontExt] || 'application/octet-stream';
+
+                await staticCache.put(fontKey, new Response(fontBlob, {
+                  headers: { 'Content-Type': fontContentType }
+                }));
+                console.log(`[Cache] Cached font: ${fontFile} (${fontContentType}, ${fontBlob.size} bytes)`);
+              } catch (fontErr) {
+                console.warn(`[Cache] Failed to cache font: ${fontFile}`, fontErr);
+              }
+            }));
+          } else {
+            const blob = await resp.blob();
+            await staticCache.put(staticKey, new Response(blob, {
+              headers: { 'Content-Type': contentType }
+            }));
+            console.log(`[Cache] Cached static resource: ${filename} (${contentType}, ${blob.size} bytes)`);
+          }
         } catch (error) {
           console.warn(`[Cache] Failed to cache static resource: ${filename}`, error);
         }
@@ -464,6 +521,52 @@ export class CacheManager {
     }
 
     return cacheKey;
+  }
+
+  /**
+   * Track that a media file is used by a layout (dependant)
+   * @param {string|number} mediaId
+   * @param {string|number} layoutId
+   */
+  addDependant(mediaId, layoutId) {
+    const key = String(mediaId);
+    if (!this.dependants.has(key)) {
+      this.dependants.set(key, new Set());
+    }
+    this.dependants.get(key).add(String(layoutId));
+  }
+
+  /**
+   * Remove a layout from all dependant sets (layout removed from schedule)
+   * @param {string|number} layoutId
+   * @returns {string[]} Media IDs that are now orphaned (no layouts reference them)
+   */
+  removeLayoutDependants(layoutId) {
+    const lid = String(layoutId);
+    const orphaned = [];
+
+    for (const [mediaId, layouts] of this.dependants) {
+      layouts.delete(lid);
+      if (layouts.size === 0) {
+        this.dependants.delete(mediaId);
+        orphaned.push(mediaId);
+      }
+    }
+
+    if (orphaned.length > 0) {
+      console.log(`[Cache] ${orphaned.length} media files orphaned after layout ${layoutId} removed:`, orphaned);
+    }
+    return orphaned;
+  }
+
+  /**
+   * Check if a media file is still referenced by any layout
+   * @param {string|number} mediaId
+   * @returns {boolean}
+   */
+  isMediaReferenced(mediaId) {
+    const layouts = this.dependants.get(String(mediaId));
+    return layouts ? layouts.size > 0 : false;
   }
 
   /**
