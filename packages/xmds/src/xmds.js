@@ -40,7 +40,7 @@ export class XmdsClient {
    * Falls back to /player/ path relative to the CMS address.
    */
   getRestBaseUrl() {
-    const base = this.config.restApiUrl || `${this.config.cmsAddress}/player`;
+    const base = this.config.restApiUrl || `${this.config.cmsAddress}/pwa`;
     return base.replace(/\/+$/, '');
   }
 
@@ -658,9 +658,11 @@ export class XmdsClient {
    */
   async mediaInventory(inventoryXml) {
     if (this.useRest) {
-      return this.restSend('POST', '/mediaInventory', {
-        inventory: inventoryXml,
-      });
+      // Accept array (JSON-native) or string (XML) — send under the right key
+      const body = Array.isArray(inventoryXml)
+        ? { inventoryItems: inventoryXml }
+        : { inventory: inventoryXml };
+      return this.restSend('POST', '/mediaInventory', body);
     }
 
     return await this.call('MediaInventory', {
@@ -700,7 +702,7 @@ export class XmdsClient {
    */
   async getResource(layoutId, regionId, mediaId) {
     if (this.useRest) {
-      return this.restGet('/resource', {
+      return this.restGet('/getResource', {
         layoutId: String(layoutId),
         regionId: String(regionId),
         mediaId: String(mediaId),
@@ -726,9 +728,9 @@ export class XmdsClient {
    */
   async submitLog(logXml) {
     if (this.useRest) {
-      const result = await this.restSend('POST', '/log', {
-        logXml,
-      });
+      // Accept array (JSON-native) or string (XML) — send under the right key
+      const body = Array.isArray(logXml) ? { logs: logXml } : { logXml };
+      const result = await this.restSend('POST', '/log', body);
       return result?.success === true;
     }
 
@@ -771,9 +773,9 @@ export class XmdsClient {
   async submitStats(statsXml) {
     if (this.useRest) {
       try {
-        const result = await this.restSend('POST', '/stats', {
-          statXml: statsXml,
-        });
+        // Accept array (JSON-native) or string (XML) — send under the right key
+        const body = Array.isArray(statsXml) ? { stats: statsXml } : { statXml: statsXml };
+        const result = await this.restSend('POST', '/stats', body);
         const success = result?.success === true;
         log.info(`SubmitStats result: ${success}`);
         return success;
