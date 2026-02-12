@@ -412,8 +412,8 @@ export class RendererLite {
             regionDuration += widget.duration;
           } else {
             // Widget with duration=0 means "use media length"
-            // For now, default to 60s as we don't know actual media length yet
-            // TODO: Get actual video duration from video element after load
+            // Default to 60s here; actual duration is detected dynamically
+            // from video.loadedmetadata event and updateLayoutDuration() recalculates
             regionDuration = 60;
             break;
           }
@@ -736,6 +736,34 @@ export class RendererLite {
       return;
     }
     this.log.warn(`Target widget ${targetWidgetId} not found in any region`);
+  }
+
+  /**
+   * Navigate to the next widget in a region (wraps around)
+   * @param {string} [regionId] - Target region. If omitted, uses the first region.
+   */
+  nextWidget(regionId) {
+    const region = regionId ? this.regions.get(regionId) : this.regions.values().next().value;
+    if (!region || region.widgets.length <= 1) return;
+
+    const nextIndex = (region.currentIndex + 1) % region.widgets.length;
+    const targetWidget = region.widgets[nextIndex];
+    this.log.info(`nextWidget → index ${nextIndex} (widget ${targetWidget.id})`);
+    this.navigateToWidget(targetWidget.id);
+  }
+
+  /**
+   * Navigate to the previous widget in a region (wraps around)
+   * @param {string} [regionId] - Target region. If omitted, uses the first region.
+   */
+  previousWidget(regionId) {
+    const region = regionId ? this.regions.get(regionId) : this.regions.values().next().value;
+    if (!region || region.widgets.length <= 1) return;
+
+    const prevIndex = (region.currentIndex - 1 + region.widgets.length) % region.widgets.length;
+    const targetWidget = region.widgets[prevIndex];
+    this.log.info(`previousWidget → index ${prevIndex} (widget ${targetWidget.id})`);
+    this.navigateToWidget(targetWidget.id);
   }
 
   // ── Layout Rendering ──────────────────────────────────────────────
@@ -1265,7 +1293,40 @@ export class RendererLite {
       videoSrc = `${window.location.origin}/player/cache/media/${fileId}`;
     }
 
-    video.src = videoSrc;
+    // HLS/DASH streaming support
+    const isHlsStream = videoSrc.includes('.m3u8');
+    if (isHlsStream) {
+      // Try native HLS first (Safari, iOS, some Android)
+      if (video.canPlayType('application/vnd.apple.mpegurl')) {
+        this.log.info(`HLS stream (native): ${fileId}`);
+        video.src = videoSrc;
+      } else {
+        // Dynamic import hls.js for Chrome/Firefox (code-split, not in main bundle)
+        try {
+          const { default: Hls } = await import('hls.js');
+          if (Hls.isSupported()) {
+            const hls = new Hls({ enableWorker: true, lowLatencyMode: true });
+            hls.loadSource(videoSrc);
+            hls.attachMedia(video);
+            hls.on(Hls.Events.ERROR, (_event, data) => {
+              if (data.fatal) {
+                this.log.error(`HLS fatal error: ${data.type}`, data.details);
+                hls.destroy();
+              }
+            });
+            this.log.info(`HLS stream (hls.js): ${fileId}`);
+          } else {
+            this.log.warn(`HLS not supported on this browser for ${fileId}`);
+            video.src = videoSrc; // Fallback — may not work
+          }
+        } catch (e) {
+          this.log.warn(`hls.js not available, falling back to native: ${e.message}`);
+          video.src = videoSrc;
+        }
+      }
+    } else {
+      video.src = videoSrc;
+    }
 
     // Detect video duration for dynamic layout timing (when useDuration=0)
     video.addEventListener('loadedmetadata', () => {
