@@ -1,21 +1,25 @@
 {
   "name": "@xibo-player/cms-testing",
   "version": "1.0.0",
-  "description": "Automated testing for Xibo CMS integration with PWA player",
+  "description": "Automated testing for Xibo CMS integration with player",
   "type": "module",
   "main": "src/index.js",
   "scripts": {
     "test": "node src/run-tests.js",
+    "test:api": "vitest run tests/api/",
+    "test:e2e": "playwright test tests/e2e/",
     "test:debug": "node src/debug-api.js",
     "test:verify": "node src/verify-player.js",
     "test:cleanup": "node src/cleanup-tests.js"
   },
   "dependencies": {
+    "@xiboplayer/utils": "workspace:*",
     "node-fetch": "^3.3.2",
     "dotenv": "^16.3.1"
   },
   "devDependencies": {
-    "playwright": "^1.40.0"
+    "vitest": "^2.0.0",
+    "@playwright/test": "^1.40.0"
   },
   "keywords": [
     "xibo",
