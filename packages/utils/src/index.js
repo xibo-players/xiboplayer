@@ -3,3 +3,4 @@ export { createLogger, setLogLevel, getLogLevel, isDebug, applyCmsLogLevel, mapC
 export { EventEmitter } from './event-emitter.js';
 export { config } from './config.js';
 export { fetchWithRetry } from './fetch-retry.js';
+export { CmsApiClient } from './cms-api.js';
