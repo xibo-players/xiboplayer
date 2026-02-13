@@ -239,7 +239,7 @@ export class StatsCollector {
     const stat = this.inProgressStats.get(key);
 
     if (!stat) {
-      log.warn(`Widget ${mediaId} not found in progress - possible missing start event`);
+      log.debug(`Widget ${mediaId} not found in progress (expected during layout transitions)`);
       return;
     }
 
