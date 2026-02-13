@@ -53,12 +53,14 @@ export class XmdsClient {
 
   /**
    * Rewrite XMDS URL for Electron proxy.
-   * If running in Electron (localhost:8765), use local proxy to avoid CORS.
+   * If running inside the Electron shell, use the local proxy to avoid CORS.
+   * Detection: preload.js exposes window.electronAPI.isElectron = true,
+   * or fallback to checking localhost:8765 (default Electron server port).
    */
   rewriteXmdsUrl(cmsUrl) {
     if (typeof window !== 'undefined' &&
-        window.location.hostname === 'localhost' &&
-        window.location.port === '8765') {
+        (window.electronAPI?.isElectron ||
+         (window.location.hostname === 'localhost' && window.location.port === '8765'))) {
       const encodedCmsUrl = encodeURIComponent(cmsUrl);
       return `/xmds-proxy?cms=${encodedCmsUrl}`;
     }
