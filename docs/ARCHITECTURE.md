@@ -1,701 +1,358 @@
-# PWA Player Architecture
+# PWA Player Architecture (v0.9.0)
 
-Technical architecture of the free Xibo PWA player.
+Technical architecture of the Xibo PWA player monorepo.
 
 ## Design Philosophy
 
-Build a **minimal, dependency-light player** that:
-- Works in any modern browser
-- Reuses across Android (WebView) and webOS (Cordova)
-- Avoids framework bloat (React, Vue, Angular)
-- Uses platform APIs (Cache API, IndexedDB, Service Worker)
-- Matches arexibo's architecture but in JavaScript
+Build a **platform-independent, modular player** that:
+- Separates core logic from platform-specific code
+- Works across PWA, Electron, Android WebView, and webOS Cordova
+- Uses browser-native APIs (Cache API, IndexedDB, Service Worker, Web Animations)
+- Avoids framework bloat (no React, Vue, or Angular)
+- Matches or exceeds upstream player performance
+- Supports both SOAP and REST CMS transports
 
 ## System Architecture
 
 ```
-┌─────────────────────────────────────────────┐
-│            Browser / WebView                 │
-│                                             │
-│  ┌──────────────────────────────────────┐  │
-│  │         Service Worker                │  │
-│  │  (offline cache, fetch intercept)    │  │
-│  └────────────┬─────────────────────────┘  │
-│               │                             │
-│  ┌────────────┴─────────────────────────┐  │
-│  │         Player Core (main.js)         │  │
-│  │                                       │  │
-│  │  ┌──────────┐  ┌──────────┐         │  │
-│  │  │  XMDS    │  │ Schedule │         │  │
-│  │  │  Client  │  │ Manager  │         │  │
-│  │  └────┬─────┘  └────┬─────┘         │  │
-│  │       │              │                │  │
-│  │  ┌────┴─────┐  ┌────┴─────┐         │  │
-│  │  │  Cache   │  │  Layout  │         │  │
-│  │  │ Manager  │  │Translator│         │  │
-│  │  └────┬─────┘  └────┬─────┘         │  │
-│  │       │              │                │  │
-│  │  ┌────┴──────────────┴─────┐        │  │
-│  │  │    Cache API + IndexedDB  │        │  │
-│  │  └───────────────────────────┘        │  │
-│  └───────────────────────────────────────┘  │
-│                                             │
-│  ┌──────────────────────────────────────┐  │
-│  │    <iframe> Layout Renderer           │  │
-│  │  (loads translated HTML layouts)     │  │
-│  └──────────────────────────────────────┘  │
-└─────────────────────────────────────────────┘
+                        ┌─────────────────────────────────────────────────────┐
+                        │              Platform Layer (pwa/main.ts)           │
+                        │  PwaPlayer: wires all packages together            │
+                        │  Wake Lock, Screenshot, SW registration            │
+                        └──────────────────────┬──────────────────────────────┘
+                                               │
+        ┌──────────────────────────────────────┼──────────────────────────────────┐
+        │                                      │                                  │
+┌───────┴────────┐  ┌─────────┴─────────┐  ┌──┴──────────────┐  ┌───────────────┐
+│  PlayerCore    │  │  RendererLite     │  │  Service Worker  │  │  XmrWrapper   │
+│  (982 lines)   │  │  (2119 lines)     │  │  (sw-pwa.js)     │  │  (359 lines)  │
+│                │  │                   │  │  1667 lines      │  │               │
+│ Orchestration  │  │ XLF rendering    │  │                   │  │ WebSocket     │
+│ Collection     │  │ Element reuse    │  │ Chunk streaming   │  │ 13 commands   │
+│ Schedule sync  │  │ Transitions      │  │ Range requests    │  │ Reconnect     │
+│ Offline cache  │  │ Touch/keyboard   │  │ IC interception   │  │               │
+│ CRC32 skip     │  │ HLS (hls.js)     │  │ Font rewriting    │  │               │
+│ Commands       │  │ PDF (PDF.js)     │  │ Cache-first       │  │               │
+│ Data connectors│  │ IC server        │  │ Offline fallback   │  │               │
+│ Webhooks       │  │ Overlays         │  │                   │  │               │
+└───────┬────────┘  └──────────────────┘  └───────────────────┘  └───────────────┘
+        │
+        ├───────────────────────────┬───────────────────────┬──────────────────┐
+        │                           │                       │                  │
+┌───────┴──────────┐  ┌────────────┴────────┐  ┌──────────┴──────┐  ┌────────┴───────┐
+│  XmdsClient      │  │  ScheduleManager    │  │  CacheManager   │  │  StatsCollector │
+│  (371 lines)     │  │  (346 lines)        │  │  (729 lines)    │  │  (633 lines)    │
+│  + RestClient    │  │  + Interrupts       │  │  + CacheProxy   │  │  + LogReporter  │
+│  (332 lines)     │  │  (298 lines)        │  │  (463 lines)    │  │  (541 lines)    │
+│                  │  │  + Overlays         │  │  + DlManager    │  │                 │
+│ SOAP + REST      │  │  (155 lines)        │  │  (424 lines)    │  │ Proof-of-play   │
+│ Dual transport   │  │                     │  │                 │  │ Fault reporting  │
+│ All 10 methods   │  │ Dayparting          │  │ Parallel chunks │  │ Log submission   │
+│ ETag caching     │  │ maxPlaysPerHour     │  │ MD5 validation  │  │ Aggregation     │
+│ CRC32 skip       │  │ Campaigns           │  │ Font rewriting  │  │ IndexedDB       │
+│                  │  │ ShareOfVoice        │  │ Dependants      │  │                 │
+└──────────────────┘  └─────────────────────┘  └─────────────────┘  └─────────────────┘
+        │
+        ├──────────────────────┬──────────────────────┐
+        │                      │                      │
+┌───────┴──────────┐  ┌───────┴──────────┐  ┌────────┴───────┐
+│  DisplaySettings │  │  PlayerState     │  │  Utils         │
+│  (352 lines)     │  │  (54 lines)      │  │                │
+│                  │  │                  │  │ Config (288)   │
+│ CMS settings     │  │ Centralized      │  │ Logger (237)   │
+│ EventEmitter     │  │ state store      │  │ EventEmitter   │
+│ Log level        │  │                  │  │ (77)           │
+│ Download windows │  │                  │  │ FetchRetry (61)│
+│ Screenshot cfg   │  │                  │  │ CmsApi (656)   │
+└──────────────────┘  └──────────────────┘  └────────────────┘
 ```
 
-## Module Breakdown
+## Monorepo Package Breakdown
 
-### config.js (90 lines)
+### Platform Layer
 
-**Purpose:** Configuration management using localStorage
+| File | Lines | Purpose |
+|------|-------|---------|
+| `platforms/pwa/src/main.ts` | 1,567 | PWA integration: wires all packages, Wake Lock, screenshot capture, SW registration |
+| `platforms/pwa/public/sw-pwa.js` | 1,667 | Service Worker: chunk streaming, Range requests, IC interception, cache-first |
 
-**Key concepts:**
-- Auto-generates `hardwareKey` (device fingerprint hash)
-- Auto-generates `xmrChannel` (UUID)
-- Persists CMS address, key, display name
-- Simple property getters/setters with auto-save
+### Core Packages
 
-**Similar to:** arexibo `config.rs`
+| Package | Main File | Lines | Purpose |
+|---------|-----------|-------|---------|
+| `@xiboplayer/core` | `player-core.js` | 982 | Platform-independent orchestration, collection cycle, offline cache |
+| `@xiboplayer/core` | `state.js` | 54 | Centralized player state with EventEmitter |
+| `@xiboplayer/core` | `data-connectors.js` | 198 | DataConnectorManager with polling |
+| `@xiboplayer/renderer` | `renderer-lite.js` | 2,119 | XLF renderer: element reuse, transitions, HLS, PDF, IC server |
+| `@xiboplayer/cache` | `cache.js` | 729 | CacheManager: parallel chunks, MD5, font rewriting |
+| `@xiboplayer/cache` | `cache-proxy.js` | 463 | CacheProxy: delegates to CacheManager or SW |
+| `@xiboplayer/cache` | `download-manager.js` | 424 | DownloadManager: 4-chunk parallel, dynamic sizing |
+| `@xiboplayer/schedule` | `schedule.js` | 346 | ScheduleManager: dayparting, campaigns, maxPlaysPerHour |
+| `@xiboplayer/schedule` | `interrupts.js` | 298 | InterruptScheduler: share-of-voice interleaving |
+| `@xiboplayer/schedule` | `overlays.js` | 155 | Overlay scheduling with priority and criteria |
+| `@xiboplayer/xmds` | `xmds-client.js` | 371 | SOAP transport: all 10 XMDS v5 methods |
+| `@xiboplayer/xmds` | `rest-client.js` | 332 | REST transport: JSON payloads, ETag 304 caching |
+| `@xiboplayer/xmr` | `xmr-wrapper.js` | 359 | XMR WebSocket: 13 command handlers, exponential backoff |
+| `@xiboplayer/stats` | `stats-collector.js` | 633 | Proof-of-play: layout/widget tracking, aggregation, IndexedDB |
+| `@xiboplayer/stats` | `log-reporter.js` | 541 | CMS logging: fault reporting with dedup, IndexedDB persistence |
+| `@xiboplayer/settings` | `settings.js` | 352 | DisplaySettings: CMS settings parser with EventEmitter |
+| `@xiboplayer/utils` | `config.js` | 288 | Configuration: hardware key, CMS address, localStorage |
+| `@xiboplayer/utils` | `logger.js` | 237 | Logger: level-based, CMS sink integration |
+| `@xiboplayer/utils` | `event-emitter.js` | 77 | EventEmitter base class |
+| `@xiboplayer/utils` | `fetch-retry.js` | 61 | fetchWithRetry: configurable retry with backoff |
+| `@xiboplayer/utils` | `cms-api.js` | 656 | CMS API helpers |
 
-### xmds.js (220 lines)
+**Total source code: ~12,000 lines** (excluding tests)
 
-**Purpose:** XMDS SOAP client
+## Key Design Patterns
 
-**Key operations:**
-- `registerDisplay()` - Authenticate and get settings
-- `requiredFiles()` - Get file list
-- `schedule()` - Get layout schedule
-- `notifyStatus()` - Report current status
-- `mediaInventory()` - Report file inventory
+### 1. Platform-Independent Core
 
-**SOAP implementation:**
-- Hand-crafted XML envelope builder
-- DOMParser for response parsing
-- Uses `fetch()` API for HTTP POST
-- No SOAP library needed (protocol is simple)
+PlayerCore contains all business logic without platform assumptions. The platform layer (`platforms/pwa/main.ts`) wires packages together and provides platform-specific implementations (Wake Lock, screenshot capture, Service Worker registration).
 
-**Similar to:** arexibo `xmds.rs` (but without WSDL code generation)
+This enables code reuse: the same PlayerCore works in Electron, Android WebView, and webOS Cordova.
 
-### cache.js (160 lines)
+### 2. EventEmitter Communication
 
-**Purpose:** File download and caching
+All modules communicate via events, not direct method calls:
 
-**Storage:**
-- **Cache API** - Binary blobs (images, videos, layouts)
-- **IndexedDB** - File metadata (id, type, md5, size, cachedAt)
+```
+PlayerCore emits:  schedule-updated, collection-complete, purge-request, ...
+RendererLite emits: layoutStart, layoutEnd, widgetStart, widgetEnd, action-trigger, ...
+StatsCollector listens: layoutStart, layoutEnd, widgetStart, widgetEnd
+LogReporter listens: reportFault calls from IC, renderer errors, collection errors
+```
 
-**Features:**
-- HTTP downloads with `fetch()`
-- MD5 verification using spark-md5
-- Deduplication (skip if MD5 matches)
-- Cache eviction (TODO)
+### 3. Dual Transport (SOAP + REST)
 
-**Similar to:** arexibo `resource.rs`
+The XMDS package provides two transport implementations with identical API surfaces:
 
-### schedule.js (60 lines)
+- **XmdsClient** (SOAP/XML) - Traditional protocol, compatible with all CMS versions
+- **RestClient** (REST/JSON) - PWA-exclusive, 30% smaller payloads, ETag 304 caching
 
-**Purpose:** Schedule parsing and layout selection
+Selectable per deployment; the PlayerCore does not know which transport is active.
 
-**Logic:**
-- Parse schedule XML from XMDS
-- Find active layouts based on current time
-- Priority-based selection (higher priority wins)
-- Fallback to default layout
+### 4. Element Reuse (Arexibo Pattern, Refined)
 
-**Similar to:** arexibo `schedule.rs`
+RendererLite pre-creates ALL widget DOM elements at layout load time, stores them in a Map, and toggles visibility instead of recreating DOM nodes. This eliminates DOM thrashing and enables instant layout replay (<0.5s).
 
-### layout.js (180 lines)
+```
+Layout load:  Pre-create all elements -> widgetElements.set(widgetId, element)
+Widget switch: Hide current -> Show next (visibility toggle, no DOM create/destroy)
+Layout replay: Detect isSameLayout -> Reuse elements -> Restart videos (currentTime=0)
+Layout change: Revoke all blob URLs -> Destroy all elements -> Create new set
+```
 
-**Purpose:** XLF → HTML translator
+### 5. Service Worker as Media Server
 
-**Translation:**
-- Parse XLF XML with DOMParser
-- For each region: create positioned div
-- For each media: create start/stop/duration functions
-- Generate standalone HTML with embedded JavaScript
-- Auto-cycle media items
+Instead of running a local HTTP server (like Arexibo's tiny_http on port 9696), the PWA uses its Service Worker to intercept fetch requests and serve cached media. This also enables:
 
-**Media type support:**
-- `image` → `<img>` tag
-- `video` → `<video>` tag with autoplay
-- `text` / `ticker` → `<iframe>` with inline HTML
-- `webpage` → `<iframe>` with external URL
-- `embedded` → `<iframe>` with raw content
-
-**Similar to:** arexibo `layout.rs`
-
-### main.js (160 lines)
-
-**Purpose:** Orchestrator (collection loop, schedule checks)
-
-**Timers:**
-- Collection cycle: Every 15 minutes (configurable)
-- Schedule check: Every 1 minute
-- Screenshot: Configurable (TODO)
-
-**Flow:**
-1. Check if configured → redirect to setup if not
-2. Initialize cache (Cache API + IndexedDB)
-3. Start collection cycle:
-   - RegisterDisplay
-   - RequiredFiles
-   - Download files
-   - Translate layouts
-   - Get schedule
-   - Apply schedule
-   - Notify status
-4. Schedule check cycle:
-   - Check current time against schedule
-   - Switch layouts if needed
-
-**Similar to:** arexibo `mainloop.rs` + `main.rs`
+- **Chunk streaming** with Range request support for large videos
+- **IC interception** (Interactive Control routes served by the SW)
+- **Font CSS URL rewriting** (rewrites `url()` references to local cache paths)
+- **Cache-first strategy** with network fallback
+- **Offline operation** using pre-cached content
 
 ## Data Flow
 
-### Initial Setup
+### Collection Cycle (every 5-900 seconds, configurable)
 
 ```
-User opens /player/
-    → main.js checks config
-    → Not configured
-    → Redirect to /player/setup.html
-    → User enters CMS address, key, name
-    → Save to localStorage
-    → Call RegisterDisplay
-    → Redirect to /player/
+1. RegisterDisplay()        -> CMS settings, commands, XMR address
+2. CRC32 comparison         -> Skip RequiredFiles/Schedule if unchanged
+3. RequiredFiles()          -> File list with MD5 hashes
+4. Download missing files   -> 4 parallel chunks, MD5 verify, font rewrite
+5. Schedule()               -> Layout schedule XML
+6. Parse schedule           -> Layouts, overlays, actions, data connectors, commands
+7. MediaInventory()         -> Report cached file inventory
+8. NotifyStatus()           -> Report status (disk, timezone, current layout)
+9. SubmitStats()            -> Proof-of-play records
+10. SubmitLog()             -> Queued log entries
+11. SubmitScreenShot()      -> If screenshot was captured
 ```
 
-### Normal Operation
+### Layout Rendering
 
 ```
-Collection Cycle (every 15 min):
-    1. RegisterDisplay()     → settings, commands
-    2. RequiredFiles()       → file list with MD5s
-    3. Download missing files → HTTP fetch + MD5 verify
-    4. Translate layouts     → XLF → HTML
-    5. Schedule()            → layout schedule
-    6. NotifyStatus()        → report to CMS
-
-Schedule Check (every 1 min):
-    1. Get current time
-    2. Find active schedules
-    3. Select highest priority
-    4. If changed: update iframe src
+1. ScheduleManager selects layout (priority, dayparting, campaigns)
+2. RendererLite receives XLF content
+3. Parse layout: dimensions, background, regions, widgets
+4. Pre-create ALL widget elements (img, video, iframe, etc.)
+5. Prefetch ALL media URLs in parallel (Promise.all)
+6. Start first widget in each region (visibility: visible)
+7. Cycle widgets on duration expiry (visibility toggle)
+8. Emit events: layoutStart, widgetStart, widgetEnd, layoutEnd
+9. StatsCollector records proof-of-play
+10. On layout change: revoke blob URLs, destroy elements, start new layout
 ```
 
 ### Offline Mode
 
 ```
 Network down:
-    → Service Worker intercepts fetch
-    → Serves from Cache API
-    → Player continues with last schedule
-    → Shows last downloaded layouts
+  -> XMDS calls fail -> PlayerCore uses IndexedDB-cached schedule/settings/requiredFiles
+  -> Media requests -> Service Worker serves from Cache API
+  -> Stats/logs -> Queued in IndexedDB, submitted when network returns
+  -> Player continues rendering with last known schedule
 ```
 
 ## Storage Architecture
 
-### localStorage (Config)
-
-```javascript
-{
-  cmsAddress: "https://displays.superpantalles.com",
-  cmsKey: "abc123...",
-  displayName: "My Display",
-  hardwareKey: "auto-generated-hash",
-  xmrChannel: "auto-generated-uuid"
-}
-```
-
 ### Cache API (Binary Files)
 
-```
-Cache: xibo-media-v1
-├── /cache/layout/1         → 1.xlf (XML)
-├── /cache/layout/2         → 2.xlf
-├── /cache/layout-html/1    → 1.xlf.html (translated)
-├── /cache/layout-html/2    → 2.xlf.html
-├── /cache/media/image.jpg  → Media file
-└── /cache/media/video.mp4  → Media file
-```
-
-### IndexedDB (Metadata)
+Served by the Service Worker for fetch-intercepted access:
 
 ```
-Database: xibo-player v1
-└── Object Store: files
-    ├── {id: "1", type: "layout", md5: "abc...", size: 2048, cachedAt: 1706544000}
-    ├── {id: "2", type: "layout", md5: "def...", size: 3072, cachedAt: 1706544100}
-    └── {id: "image.jpg", type: "media", md5: "ghi...", size: 1048576, cachedAt: 1706544200}
+Cache: xibo-media
+├── /media/{id}              -> Media files (images, videos)
+├── /widget/{widgetId}       -> Widget HTML (getWidgetHtml responses)
+├── /font/{fontFile}         -> Font files (referenced by CSS)
+└── /static/{path}           -> Static player assets
+
+Cache: xibo-static
+├── /player/pwa/index.html   -> Player shell
+└── /player/pwa/assets/*     -> JS/CSS bundles
 ```
 
-## Service Worker Lifecycle
-
-### Install Event
-
-- Pre-cache static files (index.html, setup.html, manifest.json)
-- Skip waiting (activate immediately)
-
-### Activate Event
-
-- Clean up old cache versions
-- Claim all clients
-
-### Fetch Event
+### IndexedDB (Structured Data)
 
 ```
-Request to /cache/* URLs:
-    → Check Cache API
-    → Return cached response
-    → Or 404 if not found
-
-Request to other URLs:
-    → Try cache first
-    → Fallback to network
-    → Cache successful responses
-    → Offline fallback for documents
+Database: xibo-player
+├── files          -> File metadata (id, type, md5, size, cachedAt)
+├── stats          -> Proof-of-play records (pending submission)
+├── logs           -> Log entries (pending submission)
+├── schedule       -> Last known schedule XML (offline fallback)
+├── settings       -> Last known CMS settings (offline fallback)
+└── requiredFiles  -> Last known required files (offline fallback)
 ```
 
-## Layout Rendering
+### localStorage (Configuration)
 
-### XLF Structure
-
-```xml
-<layout width="1920" height="1080" bgcolor="#000">
-  <region id="r1" width="960" height="1080" left="0" top="0">
-    <media type="image" duration="10">
-      <options><uri>image.jpg</uri></options>
-    </media>
-    <media type="video" duration="30">
-      <options><uri>video.mp4</uri></options>
-    </media>
-  </region>
-  <region id="r2" width="960" height="1080" left="960" top="0">
-    <media type="text" duration="15">
-      <raw><![CDATA[<h1>Hello World</h1>]]></raw>
-    </media>
-  </region>
-</layout>
 ```
-
-### Translated HTML
-
-```html
-<div id="region_r1" style="position:absolute; left:0; top:0; width:960px; height:1080px;">
-</div>
-<div id="region_r2" style="position:absolute; left:960px; top:0; width:960px; height:1080px;">
-</div>
-
-<script>
-const regions = {
-  'r1': {
-    media: [
-      {
-        start: () => { /* create img element */ },
-        stop: null,
-        duration: 10
-      },
-      {
-        start: () => { /* create video element */ },
-        stop: () => { /* pause video */ },
-        duration: 30
-      }
-    ]
-  },
-  'r2': {
-    media: [
-      {
-        start: () => { /* create iframe with HTML */ },
-        stop: null,
-        duration: 15
-      }
-    ]
-  }
-};
-
-// Auto-cycle logic
-function playRegion(id) {
-  let currentIndex = 0;
-  function playNext() {
-    const media = regions[id].media[currentIndex];
-    media.start();
-    setTimeout(() => {
-      if (media.stop) media.stop();
-      currentIndex = (currentIndex + 1) % regions[id].media.length;
-      playNext();
-    }, media.duration * 1000);
-  }
-  playNext();
+{
+  cmsAddress: "https://cms.example.com",
+  cmsKey: "server-key-from-cms",
+  hardwareKey: "pwa-a1b2c3d4...",       // FNV-1a hash with pwa- prefix
+  displayName: "Lobby Display",
+  xmrChannel: "auto-generated-uuid",
+  displayId: 42,                         // From RegisterDisplay
+  transportType: "soap"                  // or "rest"
 }
-
-// Start all regions
-Object.keys(regions).forEach(playRegion);
-</script>
 ```
 
 ## Technology Stack
 
-| Layer | Technology | Why |
-|-------|-----------|-----|
-| Language | Vanilla JavaScript (ES6+) | No transpilation needed, works everywhere |
-| Module system | ES modules | Native browser support, no bundler required |
-| HTTP client | `fetch()` API | Built-in, promise-based |
-| XML parsing | `DOMParser` | Built-in |
-| Storage | Cache API + IndexedDB | Built-in, offline-first |
-| Offline | Service Worker | Built-in PWA feature |
-| MD5 hashing | spark-md5 | Only external dependency (4KB) |
-| Build tool | Vite | Fast dev server, minification |
-| Package manager | npm | Standard |
+| Layer | Technology | Rationale |
+|-------|-----------|-----------|
+| Language | JavaScript (ES2020+) + TypeScript (platform layer) | Cross-platform, no transpilation for core |
+| Module system | ES modules | Native browser support |
+| HTTP client | `fetch()` + fetchWithRetry wrapper | Built-in, promise-based, configurable retry |
+| XML parsing | `DOMParser` | Built-in, namespace-aware |
+| Storage | Cache API + IndexedDB | Built-in PWA APIs, offline-first |
+| Offline | Service Worker | Built-in, intercepts all fetches |
+| MD5 hashing | spark-md5 | Tiny (4KB), ArrayBuffer support |
+| PDF rendering | PDF.js (lazy-loaded) | Industry standard, canvas-based |
+| HLS streaming | hls.js (lazy-loaded) | Polyfill for non-Safari browsers |
+| XMR client | @xibosignage/xibo-communication-framework | Official Xibo WebSocket library |
+| Animations | Web Animations API | Built-in, GPU-accelerated |
+| Build tool | Vite | Fast dev server, tree-shaking, minification |
+| Package manager | npm workspaces | Monorepo management |
 
-**Total dependencies:** 1 runtime (spark-md5), 1 dev-only (vite)
+**Runtime dependencies:** spark-md5 (4KB), hls.js (lazy), PDF.js (lazy), xibo-communication-framework
 
-## Comparison with Arexibo
+## Comparison with Upstream Players
 
-| Feature | Arexibo (Rust) | PWA (JavaScript) |
-|---------|---------------|------------------|
-| Language | Rust (compiled) | JavaScript (interpreted) |
-| GUI | Qt WebEngine | Browser / WebView |
-| XMDS | Generated from WSDL | Hand-crafted SOAP |
-| XMR | ZeroMQ native | Not yet implemented |
-| Storage | File system | Cache API + IndexedDB |
-| Platform | Linux (binary) | Any (runs in browser) |
-| Size | ~10MB binary | ~500KB bundle |
-| Performance | Native | Near-native (V8/JIT) |
-| Deployment | RPM / mkosi image | Static files |
+| Aspect | XLR/Electron | Windows (.NET) | Arexibo (Rust) | PWA (This Repo) |
+|--------|-------------|----------------|----------------|------------------|
+| Language | TypeScript | C# | Rust + C++ | JS/TS |
+| Rendering | XLR library | CEF WebView | Qt WebEngine | RendererLite |
+| Transport | SOAP only | SOAP only | SOAP only | SOAP + REST |
+| Media serving | Express | File system | tiny_http | Service Worker |
+| XMR | WebSocket | ZeroMQ/WS | ZeroMQ + RSA | WebSocket |
+| Platform | Desktop | Windows | Linux | Any browser |
+| Core reuse | Electron-coupled | Monolithic | Monolithic | Platform-independent |
+| Total code | ~15,000 lines | ~50,000 lines | ~8,000 lines | ~12,000 lines |
 
-## Future Enhancements
+See `docs/FEATURE_COMPARISON.md` for detailed feature-by-feature comparison.
 
-### XMR (Real-time Push)
+## Performance Characteristics
 
-Add WebSocket-based XMR client:
+### Measured Performance
 
-```javascript
-// xmr.js (new file)
-class XmrClient {
-  constructor(config) {
-    this.ws = null;
-    this.config = config;
-  }
+| Metric | Value | Notes |
+|--------|-------|-------|
+| Initial load (cold) | 3-5s | Includes SW registration + first collection |
+| Layout replay | <0.5s | Element reuse + visibility toggle |
+| 1GB download | 1-2 min | 4 parallel chunks, dynamic sizing |
+| Widget switch | <50ms | Visibility toggle, no DOM recreation |
+| Bundle size | ~500KB | Minified, excluding lazy-loaded deps |
+| Memory (10 cycles) | Stable | Blob URL lifecycle tracking |
 
-  connect(xmrWebSocketAddress) {
-    this.ws = new WebSocket(xmrWebSocketAddress);
-    this.ws.onmessage = (event) => {
-      const message = JSON.parse(event.data);
-      this.handleMessage(message);
-    };
-  }
+### Why It Is Fast
 
-  handleMessage(message) {
-    switch (message.action) {
-      case 'collectNow': /* trigger collection */ break;
-      case 'screenShot': /* capture screenshot */ break;
-      // etc.
-    }
-  }
-}
-```
+1. **Parallel chunk downloads** - 4 concurrent streams, chunk size adapts to device RAM
+2. **Element reuse** - Pre-create all widget DOM elements at layout load, toggle visibility
+3. **Parallel media prefetch** - Promise.all for all media URLs before rendering starts
+4. **Service Worker streaming** - Range request support, no full-file blocking
+5. **Blob URL lifecycle** - Per-layout tracking, revoke on layout switch (no memory leaks)
+6. **CRC32 skip** - Skip RequiredFiles/Schedule if CMS data is unchanged
 
-Use `xmrWebSocketAddress` from RegisterDisplay settings instead of ZeroMQ TCP.
+## Security Model
 
-### Statistics & Logging
+### Authentication
+- **CMS**: Server key + hardware key in every XMDS/REST request
+- **XMR**: Channel token from RegisterDisplay response
+- **Display**: Hardware key generated from FNV-1a hash of device fingerprint
 
-Implement SubmitStats and SubmitLog:
+### Storage Security
+- All storage (Cache API, IndexedDB, localStorage) is same-origin scoped
+- Service Worker only caches same-origin requests
+- No external requests except to configured CMS and XMR addresses
 
-```javascript
-// Add IndexedDB stores for logs and stats
-// Queue entries locally
-// Submit batches during collection cycle
-```
-
-### Commands
-
-Execute remote commands from CMS:
-
-```javascript
-// Parse commands from RegisterDisplay settings
-// Execute shell commands via... (browser limitation)
-// Or HTTP commands via fetch()
-```
-
-### Transitions
-
-Add fade/slide transitions between layouts:
-
-```javascript
-// CSS transitions when switching iframe src
-// Crossfade between old and new layout
-```
+### Content Isolation
+- Widget HTML runs in sandboxed iframes
+- Interactive Control uses postMessage (no direct DOM access)
+- Service Worker validates cached responses
 
 ## Browser Compatibility
 
 | Browser | Version | Status |
 |---------|---------|--------|
-| Chrome | 90+ | ✅ Full support |
-| Firefox | 88+ | ✅ Full support |
-| Safari | 14+ | ✅ Full support |
-| Edge | 90+ | ✅ Full support |
-| Chrome Android | 90+ | ✅ Full support |
-| Safari iOS | 14+ | ✅ Full support |
-| webOS Browser | 3.0+ | ✅ Expected to work |
+| Chrome | 90+ | Full support |
+| Firefox | 88+ | Full support |
+| Edge | 90+ | Full support |
+| Safari | 14+ | Full support (Service Worker available on iOS 14+) |
+| Chrome Android | 90+ | Full support |
+| webOS Browser | 3.0+ | Expected to work |
 
-**Required features:**
-- ES6 modules
-- `fetch()` API
-- Cache API
-- IndexedDB
-- Service Workers
-- localStorage
-- DOMParser
-
-All supported by modern browsers (2020+).
-
-## Performance Characteristics
-
-### Startup Time
-
-- Cold start (no cache): ~2 seconds
-- Warm start (cached): ~500ms
-- Service Worker activation: ~100ms
-
-### Memory Usage
-
-- Player core: ~50MB
-- Cache: ~100MB per 10 layouts/media files
-- IndexedDB: ~1MB
-
-### Network Usage
-
-- Initial sync: ~10MB (depends on layouts/media)
-- Collection cycle: ~50KB (XMDS SOAP responses)
-- Incremental: Only new/changed files
-
-### CPU Usage
-
-- Idle: ~1% (timer checks)
-- Collection: ~10% (file downloads, MD5 verify, XLF parsing)
-- Rendering: Depends on layout complexity
-
-## Security Model
-
-### Authentication
-
-- `serverKey` (CMS secret key) - Known to player
-- `hardwareKey` (device ID) - Generated per device
-- Both sent in every XMDS request
-
-### Storage
-
-- localStorage - Scoped to origin, cleared on logout
-- Cache API - Same-origin only
-- IndexedDB - Same-origin only
-
-### Network
-
-- HTTPS enforced by SWAG
-- Service Worker only caches same-origin
-- No external requests (except to configured CMS)
-
-### Content Security
-
-- Layouts run in iframes (sandboxed)
-- No inline script execution in main page
-- Service Worker validates cached responses
-
-## Comparison with Official Clients
-
-### vs. Xibo for Chrome (Official)
-
-| Feature | Official | Our PWA |
-|---------|----------|---------|
-| License | Commercial | Free (AGPL) |
-| `clientType` | `"chrome"` | `"linux"` |
-| License checks | Every 30 days | None |
-| Size | ~1.4MB bundle | ~500KB bundle |
-| XMDS version | v7 | v5 (upgradable) |
-| XMR | WebSocket | Not yet (TODO) |
-| Ad exchange | Yes | No |
-| Framework | Unknown (minified) | Vanilla JS |
-
-### vs. Xibo for Android (Official)
-
-| Feature | Official | Our PWA |
-|---------|----------|---------|
-| License | Commercial | Free (AGPL) |
-| Language | Java/Kotlin | JavaScript |
-| XMR | ZeroMQ (native) | WebSocket (TODO) |
-| Storage | SQLite | Cache API + IndexedDB |
-| Packaging | APK (native) | APK (WebView wrapper) |
-| Size | ~4MB | ~500KB + wrapper |
-
-### vs. Xibo for webOS (Official)
-
-| Feature | Official | Our PWA |
-|---------|----------|---------|
-| License | Commercial | Free (AGPL) |
-| XMR service | Node.js ZeroMQ | Reusable (copy ZmqClient.js) |
-| Frontend | Cordova + custom | Cordova + our PWA |
-| Video sync | Custom API | Not yet (TODO) |
-| Packaging | IPK | IPK (reuses our PWA) |
-
-## Code Statistics
-
-| File | Lines | Purpose |
-|------|-------|---------|
-| config.js | 90 | Configuration management |
-| xmds.js | 220 | SOAP client |
-| cache.js | 160 | Download + caching |
-| schedule.js | 60 | Schedule manager |
-| layout.js | 180 | XLF translator |
-| main.js | 160 | Orchestrator |
-| **Total** | **870** | **Core player logic** |
-| index.html | 50 | Player UI |
-| setup.html | 150 | Setup form |
-| sw.js | 90 | Service worker |
-| **Grand Total** | **1,160** | **Complete PWA** |
-
-Plus ~30KB minified from spark-md5.
-
-## Design Decisions
-
-### Why No Framework?
-
-**Considered:** React, Vue, Svelte
-
-**Rejected because:**
-- Player is simple (config form + fullscreen iframe)
-- No complex state management needed
-- Frameworks add 40-200KB+ overhead
-- Slower initial load
-- More dependencies to maintain
-- Browsers already provide everything we need
-
-### Why Vite?
-
-**Considered:** Webpack, Parcel, esbuild, Rollup, no bundler
-
-**Chose Vite because:**
-- Fast dev server with hot reload
-- Zero config for simple projects
-- ES modules out of the box
-- Production minification included
-- Small community, well-maintained
-
-### Why spark-md5?
-
-**Considered:** crypto.subtle.digest (built-in), other MD5 libraries
-
-**Chose spark-md5 because:**
-- `crypto.subtle` doesn't support MD5 in all browsers
-- Tiny (4KB minified)
-- Fast (optimized for large files)
-- No dependencies
-- Works with ArrayBuffer (perfect for file verification)
-
-### Why Cache API + IndexedDB?
-
-**Considered:** localStorage (too small), FileSystem API (deprecated), custom storage
-
-**Chose Cache API + IndexedDB because:**
-- **Cache API** - Perfect for binary blobs, integrates with Service Worker
-- **IndexedDB** - Structured data (file metadata), fast queries
-- Both are standard PWA APIs
-- Offline-first by design
-- Unlimited storage (user permission required)
-
-### Why Hand-Crafted SOAP?
-
-**Considered:** `soap` npm package, XML libraries, auto-generation from WSDL
-
-**Chose hand-crafted because:**
-- XMDS SOAP is simple (just XML envelope + body)
-- SOAP libraries are heavy (100KB+)
-- DOMParser handles XML perfectly
-- Template strings for XML generation
-- Total code: ~50 lines for all operations
-- Easy to understand and maintain
+### Required APIs
+- ES2020 (async/await, optional chaining, nullish coalescing)
+- Cache API, IndexedDB, Service Workers
+- Web Animations API
+- Screen Wake Lock API (optional, for kiosk mode)
+- fetch() with AbortController
 
 ## Platform Integration
 
-### Browser (Desktop/Mobile)
+### PWA (Primary)
+Direct browser access. Install as PWA via "Add to Home Screen". Full offline capability.
 
-- Direct access via URL
-- Install as PWA (Add to Home Screen)
-- Runs full-screen
-- Offline capable
+### Electron
+Wrap with Electron shell. PlayerCore + RendererLite reused; platform layer provides native screenshot (webContents.capturePage), file system cache, and native kiosk mode.
 
 ### Android WebView
-
-```kotlin
-val webView = WebView(this)
-webView.settings.apply {
-    javaScriptEnabled = true
-    domStorageEnabled = true
-    databaseEnabled = true
-    cacheMode = WebSettings.LOAD_DEFAULT
-}
-webView.loadUrl("https://displays.superpantalles.com/player/")
-```
-
-**Storage maps to:**
-- localStorage → WebView's data directory
-- Cache API → WebView cache
-- IndexedDB → WebView database
+Load in Android WebView with JavaScript and DOM storage enabled. Same Service Worker and Cache API. Platform layer provides Android-specific wake lock and screenshot.
 
 ### webOS Cordova
+Load in Cordova WebView. XMR service runs separately as Node.js process (ZeroMQ bridge). Platform layer handles webOS-specific display management.
 
-```html
-<!-- index.html -->
-<script>window.location.href = 'https://displays.superpantalles.com/player/';</script>
-```
+## Code Statistics
 
-Or use iframe:
-```html
-<iframe src="https://displays.superpantalles.com/player/" style="width:100%;height:100%;border:none;"></iframe>
-```
+| Category | Lines | Files |
+|----------|-------|-------|
+| Core packages | ~7,500 | 20 source files |
+| Platform (PWA) | ~3,200 | 2 files (main.ts + sw-pwa.js) |
+| Tests | ~3,000+ | 12 test files |
+| **Total source** | **~12,000** | **~22 files** |
 
-**XMR service runs separately** (Node.js) and communicates via Socket.IO.
-
-## Roadmap
-
-### v0.1 (Current) - MVP
-
-- ✅ XMDS v5 client (RegisterDisplay, RequiredFiles, Schedule)
-- ✅ HTTP file downloads with MD5 verification
-- ✅ XLF → HTML layout translator
-- ✅ Schedule manager with priorities
-- ✅ Cache API + IndexedDB storage
-- ✅ Service Worker offline mode
-- ✅ Config UI
-
-### v0.2 - Reporting
-
-- ⏳ MediaInventory submission
-- ⏳ SubmitLog implementation
-- ⏳ SubmitStats implementation
-- ⏳ NotifyStatus expansion
-- ⏳ SubmitScreenShot (canvas capture)
-
-### v0.3 - Real-time
-
-- ⏳ XMR WebSocket client
-- ⏳ Instant collection on XMR message
-- ⏳ Remote commands
-- ⏳ Webhook triggers
-
-### v0.4 - Advanced
-
-- ⏳ XMDS v7 (GetData, GetWeather, etc.)
-- ⏳ Layout transitions
-- ⏳ Dynamic criteria (weather, geolocation)
-- ⏳ Multi-display sync
-
-### v1.0 - Production Ready
-
-- ⏳ Comprehensive error handling
-- ⏳ Retry logic with backoff
-- ⏳ Performance monitoring
-- ⏳ Admin UI for debugging
+Compare with v0.1 (870 lines, 6 files). The codebase has grown 14x while maintaining zero framework dependencies.
