@@ -436,7 +436,38 @@ export class PlayerCore extends EventEmitter {
    */
   async initializeXmr(regResult) {
     const xmrUrl = regResult.settings?.xmrWebSocketAddress || regResult.settings?.xmrNetworkAddress;
-    if (!xmrUrl) return;
+    if (!xmrUrl) {
+      log.warn('XMR not configured: no xmrWebSocketAddress or xmrNetworkAddress in CMS settings');
+      this.emit('xmr-misconfigured', {
+        reason: 'missing',
+        message: 'XMR address not configured in CMS. Go to CMS Admin → Settings → Configuration → XMR and set the WebSocket address.',
+      });
+      return;
+    }
+
+    // Validate URL protocol — PWA players need ws:// or wss://, not tcp://
+    if (xmrUrl.startsWith('tcp://')) {
+      log.warn(`XMR address uses tcp:// protocol which is not supported by PWA players: ${xmrUrl}`);
+      log.warn('Configure XMR_WS_ADDRESS in CMS Admin → Settings → Configuration → XMR (e.g. wss://your-domain/xmr)');
+      this.emit('xmr-misconfigured', {
+        reason: 'wrong-protocol',
+        url: xmrUrl,
+        message: `XMR uses tcp:// protocol (not supported by PWA). Set XMR WebSocket Address to wss://your-domain/xmr in CMS Settings.`,
+      });
+      return;
+    }
+
+    // Detect placeholder/example URLs
+    if (/example\.(org|com|net)/i.test(xmrUrl)) {
+      log.warn(`XMR address contains placeholder domain: ${xmrUrl}`);
+      log.warn('Configure the real XMR address in CMS Admin → Settings → Configuration → XMR');
+      this.emit('xmr-misconfigured', {
+        reason: 'placeholder',
+        url: xmrUrl,
+        message: `XMR address is still the default placeholder (${xmrUrl}). Update it in CMS Settings.`,
+      });
+      return;
+    }
 
     const xmrCmsKey = regResult.settings?.xmrCmsKey || regResult.settings?.serverKey || this.config.serverKey;
     log.debug('XMR CMS Key:', xmrCmsKey ? 'present' : 'missing');

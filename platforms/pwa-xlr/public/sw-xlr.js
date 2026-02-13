@@ -61,12 +61,11 @@ async function fetchAndCacheChunk(originalUrl, rangeHeader, cacheKey, cache) {
   return response;
 }
 
-// Files to cache on install (with /player/ prefix)
+// Files to cache on install
 const STATIC_FILES = [
-  '/player/',
-  '/player/index.html',
-  '/player/setup.html',
-  '/player/manifest.json'
+  '/player/xlr/',
+  '/player/xlr/index.html',
+  '/player/xlr/setup.html'
 ];
 
 // Install event - cache static files

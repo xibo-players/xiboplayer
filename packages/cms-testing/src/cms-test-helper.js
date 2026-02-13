@@ -152,22 +152,28 @@ export class CmsTestHelper {
    * @returns {Promise<{ layoutId, regionId, playlistId, widgetId }>}
    */
   async createSimpleLayout({ name, widgetType = 'text', widgetProps = {}, resolutionId, publish = true }) {
-    // Create layout
+    // Create layout (Xibo v4 auto-creates a parent + hidden draft)
     const layout = await this.api.createLayout({
       name,
       resolutionId: resolutionId || this.defaultResolutionId
     });
     this.track('layout', layout.layoutId, name);
 
-    // Add region (full-screen)
-    const region = await this.api.addRegion(layout.layoutId, {
+    // Xibo v4: find the auto-created draft (editable copy)
+    const draft = await this.api.getDraftLayout(layout.layoutId);
+    const draftId = draft?.layoutId || layout.layoutId;
+
+    // Add region (full-screen) — use draft ID
+    const region = await this.api.addRegion(draftId, {
       width: 1920,
       height: 1080,
       top: 0,
       left: 0
     });
     const regionId = region.regionId;
-    const playlistId = region.playlists?.[0]?.playlistId;
+    // Xibo v4 returns regionPlaylist (singular object), not playlists (array)
+    const playlistId = region.regionPlaylist?.playlistId
+      || region.playlists?.[0]?.playlistId;
 
     if (!playlistId) {
       throw new Error(`No playlist returned for region ${regionId}`);
@@ -181,12 +187,18 @@ export class CmsTestHelper {
     const widget = await this.api.addWidget(widgetType, playlistId, defaultProps);
     const widgetId = widget.widgetId;
 
-    // Publish
+    // Publish via parent ID (CMS expects parent, not draft)
+    // After publish, the parent is DELETED and the draft becomes the published layout
     if (publish) {
       await this.api.publishLayout(layout.layoutId);
+      // Replace tracked parent ID with draft ID (parent is deleted by publishDraft)
+      const tracked = this.trackedResources.find(r => r.type === 'layout' && r.id === layout.layoutId);
+      if (tracked) tracked.id = draftId;
     }
 
-    return { layoutId: layout.layoutId, regionId, playlistId, widgetId };
+    // After publish: draftId is the live published layout; parent layoutId is deleted
+    const publishedLayoutId = publish ? draftId : layout.layoutId;
+    return { layoutId: publishedLayoutId, draftId, regionId, playlistId, widgetId };
   }
 
   /**
@@ -204,17 +216,23 @@ export class CmsTestHelper {
     });
     this.track('layout', layout.layoutId, name);
 
+    // Xibo v4: find the auto-created draft (editable copy)
+    const draft = await this.api.getDraftLayout(layout.layoutId);
+    const draftId = draft?.layoutId || layout.layoutId;
+
     const createdRegions = [];
 
     for (const regionDef of regions) {
-      const region = await this.api.addRegion(layout.layoutId, {
+      const region = await this.api.addRegion(draftId, {
         width: regionDef.width || 960,
         height: regionDef.height || 540,
         top: regionDef.top || 0,
         left: regionDef.left || 0
       });
 
-      const playlistId = region.playlists?.[0]?.playlistId;
+      // Xibo v4 returns regionPlaylist (singular object), not playlists (array)
+      const playlistId = region.regionPlaylist?.playlistId
+        || region.playlists?.[0]?.playlistId;
       let widgetId = null;
 
       if (regionDef.widgetType && playlistId) {
@@ -231,9 +249,13 @@ export class CmsTestHelper {
 
     if (publish) {
       await this.api.publishLayout(layout.layoutId);
+      // Replace tracked parent ID with draft ID (parent is deleted by publishDraft)
+      const tracked = this.trackedResources.find(r => r.type === 'layout' && r.id === layout.layoutId);
+      if (tracked) tracked.id = draftId;
     }
 
-    return { layoutId: layout.layoutId, regions: createdRegions };
+    const publishedLayoutId = publish ? draftId : layout.layoutId;
+    return { layoutId: publishedLayoutId, regions: createdRegions };
   }
 
   /**
@@ -274,8 +296,9 @@ export class CmsTestHelper {
       eventTypeId: 1, // Campaign
       campaignId,
       displayGroupIds: [displayGroupId],
-      fromDt: options.fromDt || now.toISOString(),
-      toDt: options.toDt || tomorrow.toISOString(),
+      // Xibo expects "Y-m-d H:i:s" format, not ISO 8601
+      fromDt: options.fromDt || CmsTestHelper._formatDate(now),
+      toDt: options.toDt || CmsTestHelper._formatDate(tomorrow),
       isPriority: options.priority || 0
     });
 
@@ -332,9 +355,12 @@ export class CmsTestHelper {
       throw new Error('No test display configured. Set TEST_DISPLAY_HARDWARE_KEY in .env');
     }
 
-    // Each display has an auto-created display group with the same name
-    // Try to find it first
-    const groups = await this.api.listDisplayGroups({ displayGroup: this.testDisplay.display });
+    // Each display has an auto-created display-specific group with the same name
+    // isDisplaySpecific=-1 includes these auto-created groups in results
+    const groups = await this.api.listDisplayGroups({
+      displayGroup: this.testDisplay.display,
+      isDisplaySpecific: -1
+    });
     const existingGroup = groups.find(g => g.displayGroup === this.testDisplay.display);
 
     if (existingGroup) {
@@ -352,6 +378,16 @@ export class CmsTestHelper {
 
     this.testDisplayGroup = group.displayGroupId;
     return this.testDisplayGroup;
+  }
+
+  /**
+   * Format a Date to Xibo's expected "Y-m-d H:i:s" format
+   * @param {Date} date
+   * @returns {string} e.g. "2026-02-12 18:03:38"
+   */
+  static _formatDate(date) {
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${date.getUTCFullYear()}-${pad(date.getUTCMonth() + 1)}-${pad(date.getUTCDate())} ${pad(date.getUTCHours())}:${pad(date.getUTCMinutes())}:${pad(date.getUTCSeconds())}`;
   }
 
   /**

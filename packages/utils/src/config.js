@@ -1,19 +1,59 @@
 /**
- * Configuration management using localStorage
+ * Configuration management with priority: env vars → localStorage → defaults
+ *
+ * In Node.js (tests, CLI): environment variables are the only source.
+ * In browser (PWA player): localStorage is primary, env vars override if set.
  */
 
 const STORAGE_KEY = 'xibo_config';
 const HW_DB_NAME = 'xibo-hw-backup';
 const HW_DB_VERSION = 1;
 
+/**
+ * Check for environment variable config (highest priority).
+ * Env vars: CMS_ADDRESS, CMS_KEY, DISPLAY_NAME, HARDWARE_KEY, XMR_CHANNEL
+ * Returns config object if any env vars are set, null otherwise.
+ */
+function loadFromEnv() {
+  // Check if process.env is available (Node.js or bundler injection)
+  const env = typeof process !== 'undefined' && process.env ? process.env : {};
+
+  const envConfig = {
+    cmsAddress: env.CMS_ADDRESS || env.CMS_URL || '',
+    cmsKey: env.CMS_KEY || '',
+    displayName: env.DISPLAY_NAME || '',
+    hardwareKey: env.HARDWARE_KEY || '',
+    xmrChannel: env.XMR_CHANNEL || '',
+  };
+
+  // Return env config if any value is set
+  const hasEnvValues = Object.values(envConfig).some(v => v !== '');
+  return hasEnvValues ? envConfig : null;
+}
+
 export class Config {
   constructor() {
     this.data = this.load();
     // Async: try to restore hardware key from IndexedDB if localStorage lost it
-    this._restoreHardwareKeyFromBackup();
+    // (only when not running from env vars)
+    if (!this._fromEnv) {
+      this._restoreHardwareKeyFromBackup();
+    }
   }
 
   load() {
+    // Priority 1: Environment variables (Node.js, tests, CI)
+    const envConfig = loadFromEnv();
+    if (envConfig) {
+      this._fromEnv = true;
+      return envConfig;
+    }
+
+    // Priority 2: localStorage (browser)
+    if (typeof localStorage === 'undefined') {
+      return { cmsAddress: '', cmsKey: '', displayName: '', hardwareKey: '', xmrChannel: '' };
+    }
+
     // Try to load from localStorage
     const json = localStorage.getItem(STORAGE_KEY);
 
@@ -91,6 +131,7 @@ export class Config {
    * differs from the current one, it restores the original key.
    */
   async _restoreHardwareKeyFromBackup() {
+    if (typeof indexedDB === 'undefined') return;
     try {
       const db = await new Promise((resolve, reject) => {
         const req = indexedDB.open(HW_DB_NAME, HW_DB_VERSION);
@@ -128,7 +169,9 @@ export class Config {
   }
 
   save() {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(this.data));
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(this.data));
+    }
   }
 
   isConfigured() {

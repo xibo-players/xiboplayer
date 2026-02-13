@@ -4,20 +4,10 @@
  * Tests for XMDS campaign parsing
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
-import { XmdsClient } from '../../xmds/src/xmds.js';
+import { describe, it, expect } from 'vitest';
+import { parseScheduleResponse } from '../../xmds/src/schedule-parser.js';
 
-describe('XmdsClient - Schedule Parsing', () => {
-  let client;
-
-  beforeEach(() => {
-    client = new XmdsClient({
-      cmsAddress: 'http://test',
-      cmsKey: 'key',
-      hardwareKey: 'hw'
-    });
-  });
-
+describe('Schedule Parsing', () => {
   describe('Campaign Parsing', () => {
     it('should parse schedule with campaigns', () => {
       const xml = `
@@ -36,7 +26,7 @@ describe('XmdsClient - Schedule Parsing', () => {
         </schedule>
       `;
 
-      const schedule = client.parseScheduleResponse(xml);
+      const schedule = parseScheduleResponse(xml);
 
       // Check default
       expect(schedule.default).toBe('0');
@@ -75,7 +65,7 @@ describe('XmdsClient - Schedule Parsing', () => {
         </schedule>
       `;
 
-      const schedule = client.parseScheduleResponse(xml);
+      const schedule = parseScheduleResponse(xml);
 
       expect(schedule.default).toBe('0');
       expect(schedule.campaigns).toHaveLength(0);
@@ -93,7 +83,7 @@ describe('XmdsClient - Schedule Parsing', () => {
         </schedule>
       `;
 
-      const schedule = client.parseScheduleResponse(xml);
+      const schedule = parseScheduleResponse(xml);
 
       expect(schedule.default).toBe('999');
       expect(schedule.campaigns).toHaveLength(0);
@@ -113,7 +103,7 @@ describe('XmdsClient - Schedule Parsing', () => {
         </schedule>
       `;
 
-      const schedule = client.parseScheduleResponse(xml);
+      const schedule = parseScheduleResponse(xml);
 
       const campaign = schedule.campaigns[0];
 
@@ -137,7 +127,7 @@ describe('XmdsClient - Schedule Parsing', () => {
         </schedule>
       `;
 
-      const schedule = client.parseScheduleResponse(xml);
+      const schedule = parseScheduleResponse(xml);
 
       const campaign = schedule.campaigns[0];
 
@@ -157,7 +147,7 @@ describe('XmdsClient - Schedule Parsing', () => {
         </schedule>
       `;
 
-      const schedule = client.parseScheduleResponse(xml);
+      const schedule = parseScheduleResponse(xml);
 
       // Campaign layouts should have campaignId
       expect(schedule.campaigns[0].layouts[0].campaignId).toBe('42');
@@ -180,7 +170,7 @@ describe('XmdsClient - Schedule Parsing', () => {
         </schedule>
       `;
 
-      const schedule = client.parseScheduleResponse(xml);
+      const schedule = parseScheduleResponse(xml);
 
       expect(schedule.layouts[0].scheduleid).toBe('123');
       expect(schedule.campaigns[0].scheduleid).toBe('456');
@@ -198,7 +188,7 @@ describe('XmdsClient - Schedule Parsing', () => {
         </schedule>
       `;
 
-      const schedule = client.parseScheduleResponse(xml);
+      const schedule = parseScheduleResponse(xml);
 
       expect(schedule.actions).toHaveLength(1);
       expect(schedule.actions[0].actionType).toBe('navLayout');
@@ -222,7 +212,7 @@ describe('XmdsClient - Schedule Parsing', () => {
         </schedule>
       `;
 
-      const schedule = client.parseScheduleResponse(xml);
+      const schedule = parseScheduleResponse(xml);
 
       expect(schedule.actions).toHaveLength(3);
       expect(schedule.actions[0].triggerCode).toBe('tc1');
@@ -241,7 +231,7 @@ describe('XmdsClient - Schedule Parsing', () => {
         </schedule>
       `;
 
-      const schedule = client.parseScheduleResponse(xml);
+      const schedule = parseScheduleResponse(xml);
 
       expect(schedule.actions[0].isGeoAware).toBe(true);
       expect(schedule.actions[0].geoLocation).toBe('41.3851,2.1734');
@@ -255,7 +245,7 @@ describe('XmdsClient - Schedule Parsing', () => {
         </schedule>
       `;
 
-      const schedule = client.parseScheduleResponse(xml);
+      const schedule = parseScheduleResponse(xml);
 
       expect(schedule.actions).toEqual([]);
     });
@@ -270,7 +260,7 @@ describe('XmdsClient - Schedule Parsing', () => {
         </schedule>
       `;
 
-      const schedule = client.parseScheduleResponse(xml);
+      const schedule = parseScheduleResponse(xml);
 
       expect(schedule.commands).toHaveLength(1);
       expect(schedule.commands[0].code).toBe('collectNow');
@@ -286,7 +276,7 @@ describe('XmdsClient - Schedule Parsing', () => {
         </schedule>
       `;
 
-      const schedule = client.parseScheduleResponse(xml);
+      const schedule = parseScheduleResponse(xml);
 
       expect(schedule.commands).toHaveLength(2);
       expect(schedule.commands[0].code).toBe('collectNow');
@@ -302,7 +292,7 @@ describe('XmdsClient - Schedule Parsing', () => {
         </schedule>
       `;
 
-      const schedule = client.parseScheduleResponse(xml);
+      const schedule = parseScheduleResponse(xml);
 
       expect(schedule.commands).toEqual([]);
     });
@@ -324,7 +314,7 @@ describe('XmdsClient - Schedule Parsing', () => {
         </schedule>
       `;
 
-      const schedule = client.parseScheduleResponse(xml);
+      const schedule = parseScheduleResponse(xml);
 
       expect(schedule.default).toBe('0');
       expect(schedule.layouts).toHaveLength(1);

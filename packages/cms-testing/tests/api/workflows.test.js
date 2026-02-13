@@ -109,14 +109,18 @@ describe('Full Workflows', () => {
     });
     helper.track('layout', layout.layoutId);
 
-    // Edit background color
-    await api.editLayoutBackground(layout.layoutId, {
-      backgroundColor: '#FF5722'
+    // Xibo v4: find auto-created draft (editable copy)
+    const draft = await api.getDraftLayout(layout.layoutId);
+    const draftId = draft?.layoutId || layout.layoutId;
+
+    // Edit background color on the draft (backgroundzIndex is required by Xibo API)
+    const updated = await api.editLayoutBackground(draftId, {
+      backgroundColor: '#FF5722',
+      backgroundzIndex: 0
     });
 
-    // Verify by fetching the layout
-    const updated = await api.getLayout(layout.layoutId);
-    // The exact field name may vary; just verify no error was thrown
-    expect(updated).toHaveProperty('layoutId', layout.layoutId);
+    // The edit returns the updated layout — verify the change took effect
+    expect(updated).toHaveProperty('layoutId', draftId);
+    expect(updated.backgroundColor).toBe('#FF5722');
   });
 });

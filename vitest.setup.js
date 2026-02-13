@@ -16,7 +16,8 @@ import 'fake-indexeddb/auto';
 // IndexedDB: use fake-indexeddb (imported above) which provides a real
 // in-memory IndexedDB implementation — much better than a broken stub.
 
-// Mock fetch (will be overridden in tests)
+// Mock fetch (will be overridden in tests that need real network)
+global.__nativeFetch = globalThis.fetch;
 global.fetch = vi.fn();
 
 // Mock canvas for screenshot tests

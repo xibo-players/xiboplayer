@@ -11,6 +11,11 @@ const DB_VERSION = 1;
 const STORE_FILES = 'files';
 const CONCURRENT_CHUNKS = 4; // Download 4 chunks simultaneously for 4x speedup
 
+// Dynamic base path for multi-variant deployment (pwa, pwa-xmds, pwa-xlr)
+const BASE = (typeof window !== 'undefined')
+  ? window.location.pathname.replace(/\/[^/]*$/, '').replace(/\/$/, '') || '/player/pwa'
+  : '/player/pwa';
+
 export class CacheManager {
   constructor() {
     this.cache = null;
@@ -336,7 +341,7 @@ export class CacheManager {
    */
   getCacheKey(type, id, filename = null) {
     const key = filename || id;
-    return `/player/pwa/cache/${type}/${key}`;
+    return `${BASE}/cache/${type}/${key}`;
   }
 
   /**
@@ -381,7 +386,7 @@ export class CacheManager {
    * @returns {Promise<string>} Cache key URL
    */
   async cacheWidgetHtml(layoutId, regionId, mediaId, html) {
-    const cacheKey = `/player/pwa/cache/widget/${layoutId}/${regionId}/${mediaId}`;
+    const cacheKey = `${BASE}/cache/widget/${layoutId}/${regionId}/${mediaId}`;
     const cache = await caches.open(CACHE_NAME);
 
     // Inject <base> tag to fix relative paths for widget dependencies
@@ -405,7 +410,7 @@ export class CacheManager {
     const cmsUrlRegex = /https?:\/\/[^"'\s)]+xmds\.php\?[^"'\s)]*file=([^&"'\s)]+)[^"'\s)]*/g;
     const staticResources = [];
     modifiedHtml = modifiedHtml.replace(cmsUrlRegex, (match, filename) => {
-      const localPath = `/player/pwa/cache/static/${filename}`;
+      const localPath = `${BASE}/cache/static/${filename}`;
       staticResources.push({ filename, originalUrl: match });
       console.log(`[Cache] Rewrote widget URL: ${filename} → ${localPath}`);
       return localPath;
@@ -417,7 +422,7 @@ export class CacheManager {
     // Rewritten: hostAddress: "/player/pwa/ic" → XHR to /player/pwa/ic/info (intercepted by SW)
     modifiedHtml = modifiedHtml.replace(
       /hostAddress\s*:\s*["']https?:\/\/[^"']+["']/g,
-      'hostAddress: "/player/pwa/ic"'
+      `hostAddress: "${BASE}/ic"`
     );
 
     console.log(`[Cache] Injected base tag and rewrote CMS URLs in widget HTML`);
@@ -441,7 +446,7 @@ export class CacheManager {
       const staticCache = await caches.open(STATIC_CACHE_NAME);
 
       await Promise.all(staticResources.map(async ({ filename, originalUrl }) => {
-        const staticKey = `/player/pwa/cache/static/${filename}`;
+        const staticKey = `${BASE}/cache/static/${filename}`;
         const existing = await staticCache.match(staticKey);
         if (existing) return; // Already cached
 
@@ -470,7 +475,7 @@ export class CacheManager {
             cssText = cssText.replace(fontUrlRegex, (_match, quote, fullUrl, fontFilename) => {
               fontResources.push({ filename: fontFilename, originalUrl: fullUrl });
               console.log(`[Cache] Rewrote font URL in CSS: ${fontFilename}`);
-              return `url(${quote}/player/pwa/cache/static/${encodeURIComponent(fontFilename)}${quote})`;
+              return `url(${quote}${BASE}/cache/static/${encodeURIComponent(fontFilename)}${quote})`;
             });
 
             await staticCache.put(staticKey, new Response(cssText, {
@@ -480,7 +485,7 @@ export class CacheManager {
 
             // Fetch and cache referenced font files
             await Promise.all(fontResources.map(async ({ filename: fontFile, originalUrl: fontUrl }) => {
-              const fontKey = `/player/pwa/cache/static/${encodeURIComponent(fontFile)}`;
+              const fontKey = `${BASE}/cache/static/${encodeURIComponent(fontFile)}`;
               const existingFont = await staticCache.match(fontKey);
               if (existingFont) return;
 

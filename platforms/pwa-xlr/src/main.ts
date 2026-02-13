@@ -45,8 +45,7 @@ class PwaXlrPlayer {
     // Service Worker now properly handles HTTP 202 responses (doesn't cache them)
     if ('serviceWorker' in navigator) {
       try {
-        // Use sw-v2.js to force browser to load new Service Worker
-        const swPath = new URL('./sw-v2.js', window.location.href).pathname;
+        const swPath = new URL('./sw-xlr.js', window.location.href).pathname;
         const registration = await navigator.serviceWorker.register(swPath);
         console.log('[PWA-XLR] Service Worker registered for offline mode:', registration.scope);
 
@@ -104,7 +103,8 @@ class PwaXlrPlayer {
     try {
       // Import as ES modules
       const cacheModule = await import('@core/cache.js');
-      const xmdsModule = await import('@core/xmds.js');
+      // @ts-ignore - JavaScript package without .d.ts
+      const xmdsModule = await import('@xiboplayer/xmds');
       const scheduleModule = await import('@core/schedule.js');
       const configModule = await import('@core/config.js');
       // @ts-ignore - JavaScript module without types

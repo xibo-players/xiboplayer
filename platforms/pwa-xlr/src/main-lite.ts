@@ -33,7 +33,7 @@ class PwaLitePlayer {
     // Register Service Worker
     if ('serviceWorker' in navigator) {
       try {
-        const swPath = new URL('./sw.js', window.location.href).pathname;
+        const swPath = new URL('./sw-xlr.js', window.location.href).pathname;
         const registration = await navigator.serviceWorker.register(swPath);
         console.log('[PWA-Lite] Service Worker registered:', registration.scope);
 
@@ -101,7 +101,8 @@ class PwaLitePlayer {
   private async loadCoreModules() {
     try {
       const cacheModule = await import('@core/cache.js');
-      const xmdsModule = await import('@core/xmds.js');
+      // @ts-ignore - JavaScript package without .d.ts
+      const xmdsModule = await import('@xiboplayer/xmds');
       const scheduleModule = await import('@core/schedule.js');
       const configModule = await import('@core/config.js');
       // @ts-ignore
