@@ -49,7 +49,7 @@ dist/
 ### Step 1: Build PWA
 
 ```bash
-cd /home/pau/Devel/tecman/xibo_players/platforms/pwa
+cd platforms/pwa
 npm run build
 ```
 
@@ -60,7 +60,7 @@ npm run build
 **Current deployment (via Ansible)**:
 
 ```bash
-cd ~/Devel/tecman/tecman_ansible
+cd ../../tecman_ansible
 
 # Deploy PWA to web server
 ansible-playbook playbooks/services/deploy-pwa.yml
@@ -135,11 +135,11 @@ ls playbooks/services/deploy-pwa.yml
 **If exists, use it**:
 ```bash
 # Build PWA
-cd ~/Devel/tecman/xibo_players/platforms/pwa
+cd platforms/pwa
 npm run build
 
-# Deploy
-cd ~/Devel/tecman/tecman_ansible
+# Deploy (in tecman_ansible repo)
+cd ../../tecman_ansible
 ansible-playbook playbooks/services/deploy-pwa.yml
 ```
 
@@ -149,14 +149,14 @@ ansible-playbook playbooks/services/deploy-pwa.yml
 
 ```bash
 # Build
-cd ~/Devel/tecman/xibo_players/platforms/pwa
+cd platforms/pwa
 npm run build
 
 # Copy to server
 scp -r dist/* user@h1.superpantalles.com:/var/www/player/core/
 
 # Copy router
-scp ../../player-router.html user@h1.superpantalles.com:/var/www/player/index.html
+scp ../player-router.html user@h1.superpantalles.com:/var/www/player/index.html
 ```
 
 ---
@@ -174,9 +174,9 @@ If `deploy-pwa.yml` doesn't exist, create it:
   become: yes
 
   vars:
-    pwa_source: "/home/pau/Devel/tecman/xibo_players/platforms/pwa/dist"
+    pwa_source: "{{ xibo_players_repo }}/platforms/pwa/dist"
     pwa_dest: "/var/www/player/core"
-    router_source: "/home/pau/Devel/tecman/xibo_players/player-router.html"
+    router_source: "{{ xibo_players_repo }}/player-router.html"
     router_dest: "/var/www/player/index.html"
     web_user: "www-data"
     web_group: "www-data"
@@ -272,7 +272,7 @@ ansible-playbook playbooks/services/deploy-pwa.yml
 ### 1. Build PWA
 
 ```bash
-cd /home/pau/Devel/tecman/xibo_players/platforms/pwa
+cd platforms/pwa
 npm run build
 ls -lh dist/
 ```
@@ -332,8 +332,8 @@ cd platforms/pwa
 npm install
 npm run build
 
-# Redeploy
-cd ~/Devel/tecman/tecman_ansible
+# Redeploy (in tecman_ansible repo)
+cd ../../tecman_ansible
 ansible-playbook playbooks/services/deploy-pwa.yml
 ```
 

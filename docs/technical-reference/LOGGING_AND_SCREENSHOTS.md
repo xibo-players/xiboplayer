@@ -403,6 +403,6 @@ console.log(config.cmsKey);
 
 ## References
 
-- **Upstream implementation**: `/home/pau/Devel/tecman/upstream_players/electron-player/src/main/xmds/xmds.ts`
+- **Upstream implementation**: `electron-player/src/main/xmds/xmds.ts` (Xibo upstream)
 - **XMDS protocol**: https://github.com/linuxnow/xibo_players_docs
 - **Tests**: `packages/xmds/src/xmds.test.js`, `packages/stats/src/log-reporter.test.js`

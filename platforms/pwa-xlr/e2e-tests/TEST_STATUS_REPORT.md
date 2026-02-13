@@ -6,8 +6,8 @@
 **Test Process:** RUNNING (check with `ps aux | grep exhaustive-playback`)
 **Test Duration:** Started at approximately 17:59 (check log timestamps)
 **Total Iterations:** 50 planned
-**Log File:** `/home/pau/Devel/tecman/xibo_players/platforms/pwa-xlr/e2e-tests/exhaustive-test.log`
-**Results File:** `/home/pau/Devel/tecman/xibo_players/platforms/pwa-xlr/e2e-tests/exhaustive-test-results.json`
+**Log File:** `exhaustive-test.log`
+**Results File:** `exhaustive-test-results.json`
 
 ## Issue Identified
 
@@ -43,13 +43,13 @@ The deployed player at `https://displays.superpantalles.com/player/xlr/` may hav
 ps aux | grep exhaustive-playback | grep -v grep
 
 # View recent log output
-tail -50 /home/pau/Devel/tecman/xibo_players/platforms/pwa-xlr/e2e-tests/exhaustive-test.log
+tail -50 exhaustive-test.log
 
 # Check current iteration count
-grep "ITERATION" /home/pau/Devel/tecman/xibo_players/platforms/pwa-xlr/e2e-tests/exhaustive-test.log | tail -5
+grep "ITERATION" exhaustive-test.log | tail -5
 
 # View summary
-grep "SUMMARY:" /home/pau/Devel/tecman/xibo_players/platforms/pwa-xlr/e2e-tests/exhaustive-test.log | tail -1
+grep "SUMMARY:" exhaustive-test.log | tail -1
 
 # Stop the test
 pkill -f exhaustive-playback-test.js
@@ -61,7 +61,7 @@ pkill -f exhaustive-playback-test.js
 ## Screenshots Available
 
 Screenshots from each iteration are in:
-`/home/pau/Devel/tecman/xibo_players/platforms/pwa-xlr/e2e-tests/screenshots/`
+`screenshots/`
 
 Each iteration creates:
 - `iter###-01-initial-load.png` - First page load (shows setup screen)
@@ -105,7 +105,7 @@ https://displays.superpantalles.com/player/xlr/?cmsAddress=...&cmsKey=...
 ### Option 4: Check Working Test
 Run one of the working E2E tests to see what they do differently:
 ```bash
-cd /home/pau/Devel/tecman/xibo_players/platforms/pwa-xlr/e2e-tests
+cd platforms/pwa-xlr/e2e-tests
 npx playwright test tests/authenticated-player.spec.js --headed
 ```
 

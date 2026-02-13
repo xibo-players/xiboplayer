@@ -79,13 +79,13 @@ Possible reasons for black screen:
 
 ```bash
 # View current progress
-tail -50 /home/pau/Devel/tecman/xibo_players/platforms/pwa-xlr/e2e-tests/exhaustive-test.log
+tail -50 exhaustive-test.log
 
 # Check summary
-grep "SUMMARY:" /home/pau/Devel/tecman/xibo_players/platforms/pwa-xlr/e2e-tests/exhaustive-test.log | tail -1
+grep "SUMMARY:" exhaustive-test.log | tail -1
 
 # View results JSON
-cat /home/pau/Devel/tecman/xibo_players/platforms/pwa-xlr/e2e-tests/exhaustive-test-results.json | jq '.summary'
+cat exhaustive-test-results.json | jq '.summary'
 
 # Check if still running
 ps aux | grep exhaustive-playback-test-v2 | grep -v grep
@@ -94,7 +94,7 @@ ps aux | grep exhaustive-playback-test-v2 | grep -v grep
 pkill -f exhaustive-playback-test-v2.js
 
 # View latest screenshot
-ls -lt /home/pau/Devel/tecman/xibo_players/platforms/pwa-xlr/e2e-tests/screenshots/iter*.png | head -1
+ls -lt screenshots/iter*.png | head -1
 ```
 
 ## Test Configuration
@@ -123,7 +123,7 @@ The 500 error suggests the CMS key might be invalid. Check:
 Instead of generating a new display, use an existing one:
 ```bash
 # Get valid hardware key from CMS
-cd /home/pau/Devel/tecman/xibo_players/platforms/pwa-xlr/e2e-tests
+cd platforms/pwa-xlr/e2e-tests
 grep "cmsKey" tests/authenticated-player.spec.js
 ```
 

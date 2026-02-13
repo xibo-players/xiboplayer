@@ -21,7 +21,7 @@ Created `restore-auth.js` which:
 
 ### Quick Restore (Anytime)
 ```bash
-cd /home/pau/Devel/tecman/xibo_players/platforms/pwa-xlr/e2e-tests
+cd platforms/pwa-xlr/e2e-tests
 node restore-auth.js
 ```
 

@@ -7,7 +7,7 @@ This comprehensive test suite validates all aspects of PWA-XLR playback includin
 ## Quick Start
 
 ```bash
-cd /home/pau/Devel/tecman/xibo_players/platforms/pwa-xlr/e2e-tests
+cd platforms/pwa-xlr/e2e-tests
 
 # Run complete test suite
 ./run-comprehensive-tests.sh

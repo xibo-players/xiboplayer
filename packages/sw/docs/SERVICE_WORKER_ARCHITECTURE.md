@@ -361,7 +361,7 @@ cd platforms/pwa
 npm run build
 
 # Deploy
-cd /home/pau/Devel/tecman/tecman_ansible
+# Deploy (from the tecman_ansible repo)
 ansible-playbook playbooks/services/deploy-pwa.yml -l h1.superpantalles.com
 
 # Test in browser

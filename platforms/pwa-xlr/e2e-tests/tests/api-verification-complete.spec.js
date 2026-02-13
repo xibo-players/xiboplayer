@@ -431,7 +431,7 @@ test.describe('API Verification - CMS State Checks', () => {
     console.log('═══════════════════════════════════════════════════════════\n');
 
     const token = await getToken(request);
-    const testFile = '/home/pau/Devel/tecman/xibo_players/platforms/pwa-xlr/e2e-tests/test-media/images/test-image.png';
+    const testFile = './test-media/images/test-image.png';
 
     if (!fs.existsSync(testFile)) {
       console.log('⚠️  Test file not found, skipping');

@@ -14,13 +14,13 @@ Successfully implemented a standalone Service Worker for the Xibo PWA player tha
 
 Created a completely new Service Worker with 5 core classes:
 
-1. **DownloadQueue** (/home/pau/Devel/tecman/xibo_players/platforms/pwa/public/sw.js:23-88)
+1. **DownloadQueue** (platforms/pwa/public/sw.js:23-88)
    - Manages download queue with concurrency control (4 concurrent)
    - FIFO queue processing
    - Task tracking for active downloads
    - Auto-processes queue when capacity available
 
-2. **DownloadTask** (/home/pau/Devel/tecman/xibo_players/platforms/pwa/public/sw.js:90-227)
+2. **DownloadTask** (platforms/pwa/public/sw.js:90-227)
    - Individual file download handler
    - Parallel chunk downloads (50MB chunks, 4 concurrent)
    - MD5 verification support (placeholder)
@@ -29,13 +29,13 @@ Created a completely new Service Worker with 5 core classes:
      - Files < 100MB: Single request
      - Files > 100MB: Chunked with parallel downloads
 
-3. **CacheManager** (/home/pau/Devel/tecman/xibo_players/platforms/pwa/public/sw.js:229-272)
+3. **CacheManager** (platforms/pwa/public/sw.js:229-272)
    - Wraps Cache API
    - Type-aware cache keys (`/cache/media/5` vs `/cache/layout/5`)
    - Simple get/put/delete/clear operations
    - Automatic cache initialization
 
-4. **RequestHandler** (/home/pau/Devel/tecman/xibo_players/platforms/pwa/public/sw.js:274-510)
+4. **RequestHandler** (platforms/pwa/public/sw.js:274-510)
    - Handles fetch events
    - Serves from cache if available
    - Waits for download if in progress (no HTTP 202!)
@@ -47,7 +47,7 @@ Created a completely new Service Worker with 5 core classes:
      - XMDS media requests (XLR compatibility)
      - Widget HTML (/player/cache/widget/*)
 
-5. **MessageHandler** (/home/pau/Devel/tecman/xibo_players/platforms/pwa/public/sw.js:512-572)
+5. **MessageHandler** (platforms/pwa/public/sw.js:512-572)
    - Handles postMessage from client
    - DOWNLOAD_FILES: Enqueue files for download
    - CLEAR_CACHE: Clear all cached files
@@ -155,13 +155,13 @@ Works in all environments:
 ## Files Modified
 
 ### Created
-- `/home/pau/Devel/tecman/xibo_players/platforms/pwa/public/sw.js` (600+ lines, complete rewrite)
-- `/home/pau/Devel/tecman/xibo_players/docs/SERVICE_WORKER_ARCHITECTURE.md` (comprehensive docs)
-- `/home/pau/Devel/tecman/xibo_players/docs/STANDALONE_SW_IMPLEMENTATION.md` (this file)
+- `platforms/pwa/public/sw.js` (600+ lines, complete rewrite)
+- `docs/SERVICE_WORKER_ARCHITECTURE.md` (comprehensive docs)
+- `docs/STANDALONE_SW_IMPLEMENTATION.md` (this file)
 
 ### Modified
-- `/home/pau/Devel/tecman/xibo_players/platforms/pwa/src/main.ts` (3 changes: SW detection, postMessage, helper method)
-- `/home/pau/Devel/tecman/xibo_players/packages/core/src/cache.js` (1 change: SW detection in downloadFile)
+- `platforms/pwa/src/main.ts` (3 changes: SW detection, postMessage, helper method)
+- `packages/core/src/cache.js` (1 change: SW detection in downloadFile)
 
 ## Testing
 

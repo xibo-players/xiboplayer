@@ -37,7 +37,7 @@
 **All files have generated thumbnails**
 
 ### 3. ✅ Comprehensive E2E Test Suite
-**Location**: `/home/pau/Devel/tecman/xibo_players/platforms/pwa-xlr/e2e-tests/`
+**Location**: `platforms/pwa-xlr/e2e-tests/`
 
 **Test Files Created** (8 tests):
 - `player-test.spec.js` - Core player functionality ✅
@@ -87,7 +87,7 @@
 
 ### Ansible Deployment
 ```
-/home/pau/Devel/tecman/tecman_ansible/
+tecman_ansible/                          (in tecman_ansible repo)
 ├── deploy-xlr-test.sh                    (One-command deployment)
 ├── .xibo_credentials                     (API credentials)
 └── playbooks/services/
@@ -99,7 +99,7 @@
 
 ### E2E Tests
 ```
-/home/pau/Devel/tecman/xibo_players/platforms/pwa-xlr/e2e-tests/
+platforms/pwa-xlr/e2e-tests/
 ├── README.md                             (Test documentation)
 ├── playwright.config.js                  (Test configuration)
 ├── package.json                          (Dependencies)
@@ -136,7 +136,7 @@ If player was previously configured in this browser:
 
 ### Interactive (Watch Browser)
 ```bash
-cd ~/Devel/tecman/xibo_players/platforms/pwa-xlr/e2e-tests
+cd platforms/pwa-xlr/e2e-tests
 
 # Run all tests
 npx playwright test --headed
@@ -262,6 +262,6 @@ npx playwright show-report
 
 ---
 
-**Test Location**: `/home/pau/Devel/tecman/xibo_players/platforms/pwa-xlr/e2e-tests/`
+**Test Location**: `platforms/pwa-xlr/e2e-tests/`
 **Run Command**: `npx playwright test --headed`
 **Status**: ✅ PRODUCTION READY

@@ -4,7 +4,7 @@ Complete the standalone PWA player using renderer-lite.js for full video widget 
 
 ## Context
 
-**Repository:** `/home/pau/Devel/tecman/xibo_players`
+**Repository:** xibo_players
 **Branch:** `feature/pwa-lite`
 **Current State:** Structure created, renderer-lite library complete, video blocked in PWA-XLR by XLR limitations
 
@@ -149,8 +149,8 @@ cd platforms/pwa
 npm install
 npm run build
 
-# Deploy
-cd /home/pau/Devel/tecman/tecman_ansible
+# Deploy (in tecman_ansible repo)
+cd ../../../tecman_ansible
 ansible-playbook playbooks/services/deploy-pwa.yml -e target_host=h1.superpantalles.com
 ```
 

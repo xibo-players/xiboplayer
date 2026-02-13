@@ -293,7 +293,7 @@ When storage quota is exceeded, the oldest 100 submitted entries are automatical
 
 ## Integration with PWA Platform
 
-The stats package is integrated into the PWA platform at `/home/pau/Devel/tecman/xibo_players/platforms/pwa/src/main.ts`:
+The stats package is integrated into the PWA platform (`platforms/pwa/src/main.ts`):
 
 ```typescript
 // Initialize stats collector
