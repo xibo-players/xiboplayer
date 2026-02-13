@@ -55,14 +55,18 @@ describe('Layout CRUD', () => {
     });
     helper.track('layout', layout.layoutId);
 
-    const region = await api.addRegion(layout.layoutId, {
+    // Xibo v4: find auto-created draft (editable copy)
+    const draft = await api.getDraftLayout(layout.layoutId);
+    const draftId = draft?.layoutId || layout.layoutId;
+
+    const region = await api.addRegion(draftId, {
       width: 1920, height: 1080, top: 0, left: 0
     });
 
     expect(region).toHaveProperty('regionId');
-    expect(region.playlists).toBeDefined();
-    expect(region.playlists.length).toBeGreaterThan(0);
-    expect(region.playlists[0]).toHaveProperty('playlistId');
+    // Xibo v4 returns regionPlaylist (singular object)
+    expect(region.regionPlaylist).toBeDefined();
+    expect(region.regionPlaylist).toHaveProperty('playlistId');
   });
 
   it('should add a text widget to a region', async () => {
@@ -74,11 +78,16 @@ describe('Layout CRUD', () => {
     });
     helper.track('layout', layout.layoutId);
 
-    const region = await api.addRegion(layout.layoutId, {
+    // Xibo v4: find auto-created draft (editable copy)
+    const draft = await api.getDraftLayout(layout.layoutId);
+    const draftId = draft?.layoutId || layout.layoutId;
+
+    const region = await api.addRegion(draftId, {
       width: 1920, height: 1080, top: 0, left: 0
     });
 
-    const playlistId = region.playlists[0].playlistId;
+    // Xibo v4 returns regionPlaylist (singular object)
+    const playlistId = region.regionPlaylist.playlistId;
     const widget = await api.addWidget('text', playlistId, {
       text: '<h1>Hello World</h1>',
       duration: 10
@@ -93,7 +102,7 @@ describe('Layout CRUD', () => {
       publish: false
     });
 
-    // Should not throw
+    // Publish expects the parent ID (layoutId when publish=false is still the parent)
     await helper.getApi().publishLayout(layoutId);
   });
 

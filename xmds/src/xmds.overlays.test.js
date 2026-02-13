@@ -4,21 +4,10 @@
  * Tests that overlays are correctly parsed from Schedule XML response
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
-import { XmdsClient } from './xmds.js';
+import { describe, it, expect } from 'vitest';
+import { parseScheduleResponse } from './schedule-parser.js';
 
-describe('XmdsClient - Overlay Parsing', () => {
-  let xmds;
-
-  beforeEach(() => {
-    xmds = new XmdsClient({
-      cmsAddress: 'http://test.local',
-      cmsKey: 'test-key',
-      hardwareKey: 'test-hardware-key',
-      displayName: 'Test Display'
-    });
-  });
-
+describe('Schedule Parsing - Overlays', () => {
   describe('parseScheduleResponse()', () => {
     it('should parse overlays from Schedule XML', () => {
       const xml = `<?xml version="1.0"?>
@@ -29,7 +18,7 @@ describe('XmdsClient - Overlay Parsing', () => {
   </overlays>
 </schedule>`;
 
-      const schedule = xmds.parseScheduleResponse(xml);
+      const schedule = parseScheduleResponse(xml);
 
       expect(schedule.overlays).toBeDefined();
       expect(schedule.overlays.length).toBe(1);
@@ -51,7 +40,7 @@ describe('XmdsClient - Overlay Parsing', () => {
   </overlays>
 </schedule>`;
 
-      const schedule = xmds.parseScheduleResponse(xml);
+      const schedule = parseScheduleResponse(xml);
 
       expect(schedule.overlays.length).toBe(3);
       expect(schedule.overlays[0].file).toBe('101.xlf');
@@ -67,7 +56,7 @@ describe('XmdsClient - Overlay Parsing', () => {
   </overlays>
 </schedule>`;
 
-      const schedule = xmds.parseScheduleResponse(xml);
+      const schedule = parseScheduleResponse(xml);
 
       expect(schedule.overlays[0].isGeoAware).toBe(true);
       expect(schedule.overlays[0].geoLocation).toBe('geo-fence-1');
@@ -81,7 +70,7 @@ describe('XmdsClient - Overlay Parsing', () => {
   </overlays>
 </schedule>`;
 
-      const schedule = xmds.parseScheduleResponse(xml);
+      const schedule = parseScheduleResponse(xml);
 
       expect(schedule.overlays[0].isGeoAware).toBe(false);
       expect(schedule.overlays[0].geoLocation).toBe('');
@@ -94,7 +83,7 @@ describe('XmdsClient - Overlay Parsing', () => {
   <layout file="2.xlf" fromdt="2026-01-01 00:00:00" todt="2026-12-31 23:59:59" scheduleid="123" priority="0"/>
 </schedule>`;
 
-      const schedule = xmds.parseScheduleResponse(xml);
+      const schedule = parseScheduleResponse(xml);
 
       expect(schedule.overlays).toBeDefined();
       expect(schedule.overlays.length).toBe(0);
@@ -107,7 +96,7 @@ describe('XmdsClient - Overlay Parsing', () => {
   <overlays></overlays>
 </schedule>`;
 
-      const schedule = xmds.parseScheduleResponse(xml);
+      const schedule = parseScheduleResponse(xml);
 
       expect(schedule.overlays).toBeDefined();
       expect(schedule.overlays.length).toBe(0);
@@ -122,7 +111,7 @@ describe('XmdsClient - Overlay Parsing', () => {
   </overlays>
 </schedule>`;
 
-      const schedule = xmds.parseScheduleResponse(xml);
+      const schedule = parseScheduleResponse(xml);
 
       expect(schedule.overlays[0].priority).toBe(100);
       expect(schedule.overlays[1].priority).toBe(0);
@@ -142,7 +131,7 @@ describe('XmdsClient - Overlay Parsing', () => {
   </overlays>
 </schedule>`;
 
-      const schedule = xmds.parseScheduleResponse(xml);
+      const schedule = parseScheduleResponse(xml);
 
       expect(schedule.default).toBe('1.xlf');
       expect(schedule.layouts.length).toBe(1);
@@ -159,7 +148,7 @@ describe('XmdsClient - Overlay Parsing', () => {
   </overlays>
 </schedule>`;
 
-      const schedule = xmds.parseScheduleResponse(xml);
+      const schedule = parseScheduleResponse(xml);
 
       expect(schedule.overlays[0].duration).toBe(30);
       expect(schedule.overlays[1].duration).toBe(120);
@@ -173,7 +162,7 @@ describe('XmdsClient - Overlay Parsing', () => {
   </overlays>
 </schedule>`;
 
-      const schedule = xmds.parseScheduleResponse(xml);
+      const schedule = parseScheduleResponse(xml);
 
       expect(schedule.overlays[0].duration).toBe(60); // Default
     });

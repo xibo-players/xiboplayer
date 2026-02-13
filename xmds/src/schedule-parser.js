@@ -1,0 +1,138 @@
+/**
+ * Shared schedule XML parser used by both RestClient and XmdsClient.
+ *
+ * Both transports return the same XML structure for the Schedule endpoint,
+ * so the parsing logic lives here to avoid duplication.
+ */
+
+/**
+ * Parse Schedule XML response into a normalized schedule object.
+ *
+ * @param {string} xml - Raw XML string from CMS schedule endpoint
+ * @returns {Object} Parsed schedule with default, layouts, campaigns, overlays, actions, commands, dataConnectors
+ */
+export function parseScheduleResponse(xml) {
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(xml, 'text/xml');
+
+  const schedule = {
+    default: null,
+    layouts: [],
+    campaigns: [],
+    overlays: [],
+    actions: [],
+    commands: [],
+    dataConnectors: []
+  };
+
+  const defaultEl = doc.querySelector('default');
+  if (defaultEl) {
+    schedule.default = defaultEl.getAttribute('file');
+  }
+
+  // Parse campaigns (groups of layouts with shared priority)
+  for (const campaignEl of doc.querySelectorAll('campaign')) {
+    const campaign = {
+      id: campaignEl.getAttribute('id'),
+      priority: parseInt(campaignEl.getAttribute('priority') || '0'),
+      fromdt: campaignEl.getAttribute('fromdt'),
+      todt: campaignEl.getAttribute('todt'),
+      scheduleid: campaignEl.getAttribute('scheduleid'),
+      layouts: []
+    };
+
+    // Parse layouts within this campaign
+    for (const layoutEl of campaignEl.querySelectorAll('layout')) {
+      const fileId = layoutEl.getAttribute('file');
+      campaign.layouts.push({
+        id: String(fileId), // Normalized string ID for consistent type usage
+        file: fileId,
+        // Layouts in campaigns inherit timing from campaign level
+        fromdt: layoutEl.getAttribute('fromdt') || campaign.fromdt,
+        todt: layoutEl.getAttribute('todt') || campaign.todt,
+        scheduleid: campaign.scheduleid,
+        priority: campaign.priority, // Priority at campaign level
+        campaignId: campaign.id,
+        maxPlaysPerHour: parseInt(layoutEl.getAttribute('maxPlaysPerHour') || '0')
+      });
+    }
+
+    schedule.campaigns.push(campaign);
+  }
+
+  // Parse standalone layouts (not in campaigns)
+  for (const layoutEl of doc.querySelectorAll('schedule > layout')) {
+    const fileId = layoutEl.getAttribute('file');
+    schedule.layouts.push({
+      id: String(fileId), // Normalized string ID for consistent type usage
+      file: fileId,
+      fromdt: layoutEl.getAttribute('fromdt'),
+      todt: layoutEl.getAttribute('todt'),
+      scheduleid: layoutEl.getAttribute('scheduleid'),
+      priority: parseInt(layoutEl.getAttribute('priority') || '0'),
+      campaignId: null, // Standalone layout
+      maxPlaysPerHour: parseInt(layoutEl.getAttribute('maxPlaysPerHour') || '0')
+    });
+  }
+
+  // Parse overlay layouts (appear on top of main layouts)
+  const overlaysContainer = doc.querySelector('overlays');
+  if (overlaysContainer) {
+    for (const overlayEl of overlaysContainer.querySelectorAll('overlay')) {
+      const fileId = overlayEl.getAttribute('file');
+      schedule.overlays.push({
+        id: String(fileId), // Normalized string ID for consistent type usage
+        duration: parseInt(overlayEl.getAttribute('duration') || '60'),
+        file: fileId,
+        fromDt: overlayEl.getAttribute('fromdt'),
+        toDt: overlayEl.getAttribute('todt'),
+        priority: parseInt(overlayEl.getAttribute('priority') || '0'),
+        scheduleId: overlayEl.getAttribute('scheduleid'),
+        isGeoAware: overlayEl.getAttribute('isGeoAware') === '1',
+        geoLocation: overlayEl.getAttribute('geoLocation') || '',
+        maxPlaysPerHour: parseInt(overlayEl.getAttribute('maxPlaysPerHour') || '0')
+      });
+    }
+  }
+
+  // Parse action events (scheduled triggers)
+  const actionsContainer = doc.querySelector('actions');
+  if (actionsContainer) {
+    for (const actionEl of actionsContainer.querySelectorAll('action')) {
+      schedule.actions.push({
+        actionType: actionEl.getAttribute('actionType') || '',
+        triggerCode: actionEl.getAttribute('triggerCode') || '',
+        layoutCode: actionEl.getAttribute('layoutCode') || '',
+        commandCode: actionEl.getAttribute('commandCode') || '',
+        duration: parseInt(actionEl.getAttribute('duration') || '0'),
+        fromDt: actionEl.getAttribute('fromdt'),
+        toDt: actionEl.getAttribute('todt'),
+        priority: parseInt(actionEl.getAttribute('priority') || '0'),
+        scheduleId: actionEl.getAttribute('scheduleid'),
+        isGeoAware: actionEl.getAttribute('isGeoAware') === '1',
+        geoLocation: actionEl.getAttribute('geoLocation') || ''
+      });
+    }
+  }
+
+  // Parse server commands (remote control)
+  for (const cmdEl of doc.querySelectorAll('schedule > command')) {
+    schedule.commands.push({
+      code: cmdEl.getAttribute('command') || '',
+      date: cmdEl.getAttribute('date') || ''
+    });
+  }
+
+  // Parse data connectors (real-time data sources for widgets)
+  for (const dcEl of doc.querySelectorAll('dataconnector')) {
+    schedule.dataConnectors.push({
+      id: dcEl.getAttribute('id') || '',
+      dataConnectorId: dcEl.getAttribute('dataConnectorId') || '',
+      dataKey: dcEl.getAttribute('dataKey') || '',
+      url: dcEl.getAttribute('url') || '',
+      updateInterval: parseInt(dcEl.getAttribute('updateInterval') || '300', 10)
+    });
+  }
+
+  return schedule;
+}

@@ -104,7 +104,8 @@ export class StatsCollector {
    * Start tracking a layout
    *
    * Creates a new layout stat entry and tracks it as in-progress.
-   * If a layout with the same ID is already in progress, logs a warning.
+   * If a layout with the same ID is already in progress (replay),
+   * silently ends the previous cycle and starts a new one.
    *
    * @param {number} layoutId - Layout ID from CMS
    * @param {number} scheduleId - Schedule ID that triggered this layout
@@ -116,12 +117,18 @@ export class StatsCollector {
       return;
     }
 
-    const key = `layout-${layoutId}-${scheduleId}`;
+    // Key excludes scheduleId: only one layout instance can be in-progress at a time,
+    // and scheduleId may change mid-play when a collection cycle completes.
+    const key = `layout-${layoutId}`;
 
-    // Check if layout is already in progress
+    // Layout replay: end previous cycle silently before starting new one
     if (this.inProgressStats.has(key)) {
-      log.warn(`Layout ${layoutId} already in progress - possible duplicate start event`);
-      return;
+      const prev = this.inProgressStats.get(key);
+      prev.end = new Date();
+      prev.duration = Math.floor((prev.end - prev.start) / 1000);
+      await this._saveStat(prev);
+      this.inProgressStats.delete(key);
+      log.debug(`Layout ${layoutId} replay - ended previous cycle (${prev.duration}s)`);
     }
 
     const stat = {
@@ -155,11 +162,11 @@ export class StatsCollector {
       return;
     }
 
-    const key = `layout-${layoutId}-${scheduleId}`;
+    const key = `layout-${layoutId}`;
     const stat = this.inProgressStats.get(key);
 
     if (!stat) {
-      log.warn(`Layout ${layoutId} not found in progress - possible missing start event`);
+      log.debug(`Layout ${layoutId} not found in progress (may have been ended by replay)`);
       return;
     }
 
@@ -182,6 +189,8 @@ export class StatsCollector {
    * Start tracking a widget/media
    *
    * Creates a new media stat entry and tracks it as in-progress.
+   * If a widget with the same key is already in progress (replay),
+   * silently ends the previous cycle and starts a new one.
    *
    * @param {number} mediaId - Media ID from CMS
    * @param {number} layoutId - Parent layout ID
@@ -194,12 +203,17 @@ export class StatsCollector {
       return;
     }
 
-    const key = `media-${mediaId}-${layoutId}-${scheduleId}`;
+    // Key excludes scheduleId: it may change mid-play during collection cycles.
+    const key = `media-${mediaId}-${layoutId}`;
 
-    // Check if widget is already in progress
+    // Widget replay: end previous cycle silently before starting new one
     if (this.inProgressStats.has(key)) {
-      log.warn(`Widget ${mediaId} already in progress - possible duplicate start event`);
-      return;
+      const prev = this.inProgressStats.get(key);
+      prev.end = new Date();
+      prev.duration = Math.floor((prev.end - prev.start) / 1000);
+      await this._saveStat(prev);
+      this.inProgressStats.delete(key);
+      log.debug(`Widget ${mediaId} replay - ended previous cycle (${prev.duration}s)`);
     }
 
     const stat = {
@@ -235,7 +249,7 @@ export class StatsCollector {
       return;
     }
 
-    const key = `media-${mediaId}-${layoutId}-${scheduleId}`;
+    const key = `media-${mediaId}-${layoutId}`;
     const stat = this.inProgressStats.get(key);
 
     if (!stat) {

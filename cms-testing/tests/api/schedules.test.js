@@ -4,7 +4,7 @@
  * Tests schedule creation and deletion. Requires a test display to be configured.
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { createTestHelper } from '../../src/cms-test-helper.js';
+import { createTestHelper, CmsTestHelper } from '../../src/cms-test-helper.js';
 
 describe('Schedule Management', () => {
   const helper = createTestHelper();
@@ -18,7 +18,8 @@ describe('Schedule Management', () => {
   });
 
   it('should list display groups', async () => {
-    const groups = await helper.getApi().listDisplayGroups();
+    // isDisplaySpecific=-1 includes auto-created per-display groups
+    const groups = await helper.getApi().listDisplayGroups({ isDisplaySpecific: -1 });
 
     expect(Array.isArray(groups)).toBe(true);
     expect(groups.length).toBeGreaterThan(0);
@@ -86,8 +87,8 @@ describe('Schedule Management', () => {
     const oneHourLater = new Date(now.getTime() + 60 * 60 * 1000);
 
     const eventId = await helper.scheduleOnTestDisplay(campaignId, {
-      fromDt: now.toISOString(),
-      toDt: oneHourLater.toISOString()
+      fromDt: CmsTestHelper._formatDate(now),
+      toDt: CmsTestHelper._formatDate(oneHourLater)
     });
 
     expect(eventId).toBeDefined();

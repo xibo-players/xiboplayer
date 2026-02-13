@@ -6,18 +6,18 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { XmdsClient } from './xmds.js';
+import { RestClient } from './rest-client.js';
+import { XmdsClient } from './xmds-client.js';
 
 // ─── Helpers ──────────────────────────────────────────────────────────
 
 function createRestClient(overrides = {}) {
-  return new XmdsClient({
+  return new RestClient({
     cmsAddress: 'https://cms.example.com',
     cmsKey: 'test-server-key',
     hardwareKey: 'test-hw-key',
     displayName: 'Test Display',
     xmrChannel: 'test-xmr-channel',
-    useRestApi: true,
     retryOptions: { maxRetries: 0 },
     ...overrides,
   });
@@ -76,34 +76,20 @@ function errorResponse(status, message) {
 
 // ─── Constructor & Config ─────────────────────────────────────────────
 
-describe('XmdsClient - REST Config', () => {
-  it('should enable REST transport when useRestApi is true', () => {
-    const client = createRestClient();
-    expect(client.useRest).toBe(true);
-  });
-
-  it('should default to SOAP transport when useRestApi is not set', () => {
-    const client = new XmdsClient({
-      cmsAddress: 'https://cms.example.com',
-      cmsKey: 'key',
-      hardwareKey: 'hw',
-    });
-    expect(client.useRest).toBe(false);
-  });
-
+describe('RestClient - Config', () => {
   it('should derive REST base URL from cmsAddress', () => {
     const client = createRestClient();
-    expect(client.getRestBaseUrl()).toBe('https://cms.example.com/player');
+    expect(client.getRestBaseUrl()).toBe('https://cms.example.com/pwa');
   });
 
   it('should use custom restApiUrl when provided', () => {
-    const client = createRestClient({ restApiUrl: 'https://api.example.com/v1/player' });
-    expect(client.getRestBaseUrl()).toBe('https://api.example.com/v1/player');
+    const client = createRestClient({ restApiUrl: 'https://api.example.com/v1/pwa' });
+    expect(client.getRestBaseUrl()).toBe('https://api.example.com/v1/pwa');
   });
 
   it('should strip trailing slashes from REST base URL', () => {
-    const client = createRestClient({ restApiUrl: 'https://api.example.com/player/' });
-    expect(client.getRestBaseUrl()).toBe('https://api.example.com/player');
+    const client = createRestClient({ restApiUrl: 'https://api.example.com/pwa/' });
+    expect(client.getRestBaseUrl()).toBe('https://api.example.com/pwa');
   });
 
   it('should initialize empty ETag and response caches', () => {
@@ -115,7 +101,7 @@ describe('XmdsClient - REST Config', () => {
 
 // ─── REST GET with ETag Caching ───────────────────────────────────────
 
-describe('XmdsClient - REST GET & Caching', () => {
+describe('RestClient - GET & Caching', () => {
   let client;
   let mockFetch;
 
@@ -131,7 +117,7 @@ describe('XmdsClient - REST GET & Caching', () => {
     await client.restGet('/requiredFiles');
 
     const url = new URL(mockFetch.mock.calls[0][0]);
-    expect(url.pathname).toContain('/player/requiredFiles');
+    expect(url.pathname).toContain('/pwa/requiredFiles');
     expect(url.searchParams.get('serverKey')).toBe('test-server-key');
     expect(url.searchParams.get('hardwareKey')).toBe('test-hw-key');
     expect(url.searchParams.get('v')).toBe('5');
@@ -198,7 +184,7 @@ describe('XmdsClient - REST GET & Caching', () => {
 
 // ─── REST POST/PUT ──────────────────────────────────────────────────
 
-describe('XmdsClient - REST POST/PUT', () => {
+describe('RestClient - POST/PUT', () => {
   let client;
   let mockFetch;
 
@@ -241,7 +227,7 @@ describe('XmdsClient - REST POST/PUT', () => {
 
 // ─── RegisterDisplay ─────────────────────────────────────────────────
 
-describe('XmdsClient REST - RegisterDisplay', () => {
+describe('RestClient - RegisterDisplay', () => {
   let client;
   let mockFetch;
 
@@ -314,7 +300,7 @@ describe('XmdsClient REST - RegisterDisplay', () => {
 
 // ─── RequiredFiles ───────────────────────────────────────────────────
 
-describe('XmdsClient REST - RequiredFiles', () => {
+describe('RestClient - RequiredFiles', () => {
   let client;
   let mockFetch;
 
@@ -378,32 +364,27 @@ describe('XmdsClient REST - RequiredFiles', () => {
     expect(second).toEqual(first);
   });
 
-  it('should produce identical output to SOAP parser for same data', () => {
-    // Verify the REST JSON parser produces the same structure as the XML parser
+  it('should parse required files JSON into standard structure', () => {
     const json = {
       file: [
         { '@attributes': { type: 'media', id: '42', size: '1024', md5: 'abc', download: 'http', path: '/media/42.jpg' } },
       ]
     };
 
-    const restResult = client._parseRequiredFilesJson(json);
+    const result = client._parseRequiredFilesJson(json);
 
-    const xml = '<files><file type="media" id="42" size="1024" md5="abc" download="http" path="/media/42.jpg" /></files>';
-    const soapResult = client.parseRequiredFilesResponse(xml);
-
-    // Both should produce identical structures
-    expect(restResult[0].type).toBe(soapResult[0].type);
-    expect(restResult[0].id).toBe(soapResult[0].id);
-    expect(restResult[0].size).toBe(soapResult[0].size);
-    expect(restResult[0].md5).toBe(soapResult[0].md5);
-    expect(restResult[0].download).toBe(soapResult[0].download);
-    expect(restResult[0].path).toBe(soapResult[0].path);
+    expect(result[0].type).toBe('media');
+    expect(result[0].id).toBe('42');
+    expect(result[0].size).toBe(1024);
+    expect(result[0].md5).toBe('abc');
+    expect(result[0].download).toBe('http');
+    expect(result[0].path).toBe('/media/42.jpg');
   });
 });
 
 // ─── Schedule ────────────────────────────────────────────────────────
 
-describe('XmdsClient REST - Schedule', () => {
+describe('RestClient - Schedule', () => {
   let client;
   let mockFetch;
 
@@ -470,7 +451,7 @@ describe('XmdsClient REST - Schedule', () => {
 
 // ─── GetResource ─────────────────────────────────────────────────────
 
-describe('XmdsClient REST - GetResource', () => {
+describe('RestClient - GetResource', () => {
   let client;
   let mockFetch;
 
@@ -504,7 +485,7 @@ describe('XmdsClient REST - GetResource', () => {
 
 // ─── NotifyStatus ────────────────────────────────────────────────────
 
-describe('XmdsClient REST - NotifyStatus', () => {
+describe('RestClient - NotifyStatus', () => {
   let client;
   let mockFetch;
 
@@ -522,7 +503,7 @@ describe('XmdsClient REST - NotifyStatus', () => {
 
     const [url, opts] = mockFetch.mock.calls[0];
     expect(opts.method).toBe('PUT');
-    expect(new URL(url).pathname).toContain('/player/status');
+    expect(new URL(url).pathname).toContain('/pwa/status');
 
     const body = JSON.parse(opts.body);
     expect(body.statusData.currentLayoutId).toBe('5');
@@ -538,7 +519,7 @@ describe('XmdsClient REST - NotifyStatus', () => {
 
 // ─── SubmitLog ───────────────────────────────────────────────────────
 
-describe('XmdsClient REST - SubmitLog', () => {
+describe('RestClient - SubmitLog', () => {
   let client;
   let mockFetch;
 
@@ -575,7 +556,7 @@ describe('XmdsClient REST - SubmitLog', () => {
 
 // ─── SubmitStats ─────────────────────────────────────────────────────
 
-describe('XmdsClient REST - SubmitStats', () => {
+describe('RestClient - SubmitStats', () => {
   let client;
   let mockFetch;
 
@@ -611,7 +592,7 @@ describe('XmdsClient REST - SubmitStats', () => {
 
 // ─── SubmitScreenShot ────────────────────────────────────────────────
 
-describe('XmdsClient REST - SubmitScreenShot', () => {
+describe('RestClient - SubmitScreenShot', () => {
   let client;
   let mockFetch;
 
@@ -641,7 +622,7 @@ describe('XmdsClient REST - SubmitScreenShot', () => {
 
 // ─── MediaInventory ──────────────────────────────────────────────────
 
-describe('XmdsClient REST - MediaInventory', () => {
+describe('RestClient - MediaInventory', () => {
   let client;
   let mockFetch;
 
@@ -663,40 +644,17 @@ describe('XmdsClient REST - MediaInventory', () => {
 
 // ─── BlackList (always SOAP) ─────────────────────────────────────────
 
-describe('XmdsClient REST - BlackList falls back to SOAP', () => {
-  let client;
-  let mockFetch;
-
-  beforeEach(() => {
-    client = createRestClient();
-    mockFetch = vi.fn();
-    global.fetch = mockFetch;
-  });
-
-  it('should use SOAP transport even when useRest is true', async () => {
-    mockFetch.mockResolvedValue({
-      ok: true,
-      text: async () => `<?xml version="1.0"?>
-<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
-  <soap:Body>
-    <BlackListResponse><success>true</success></BlackListResponse>
-  </soap:Body>
-</soap:Envelope>`
-    });
-
+describe('RestClient - BlackList', () => {
+  it('should return false since REST has no BlackList endpoint', async () => {
+    const client = createRestClient();
     const result = await client.blackList('42', 'media', 'Broken');
-    expect(result).toBe(true);
-
-    // Should have used SOAP envelope, not JSON
-    const body = mockFetch.mock.calls[0][1].body;
-    expect(body).toContain('<tns:BlackList>');
-    expect(body).toContain('soap:Envelope');
+    expect(result).toBe(false);
   });
 });
 
 // ─── Transport Parity ────────────────────────────────────────────────
 
-describe('XmdsClient - Transport Parity', () => {
+describe('Transport Parity', () => {
   it('SOAP and REST clients should expose identical public methods', () => {
     const soap = new XmdsClient({
       cmsAddress: 'https://cms.example.com',

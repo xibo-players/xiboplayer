@@ -32,6 +32,11 @@ import { EventEmitter, createLogger } from '@xiboplayer/utils';
 
 const log = createLogger('CacheProxy');
 
+// Dynamic base path for multi-variant deployment (pwa, pwa-xmds, pwa-xlr)
+const BASE = (typeof window !== 'undefined')
+  ? window.location.pathname.replace(/\/[^/]*$/, '').replace(/\/$/, '') || '/player/pwa'
+  : '/player/pwa';
+
 /**
  * ServiceWorkerBackend - Uses Service Worker for downloads and caching
  */
@@ -108,7 +113,7 @@ class ServiceWorkerBackend extends EventEmitter {
 
     // Service Worker serves files via fetch interception
     // Construct cache URL and fetch it
-    const cacheUrl = `/player/pwa/cache/${type}/${id}`;
+    const cacheUrl = `${BASE}/cache/${type}/${id}`;
 
     log.debug(`getFile(${type}, ${id}) → fetching ${cacheUrl}`);
     log.debug(`About to call fetch()...`);
@@ -151,7 +156,7 @@ class ServiceWorkerBackend extends EventEmitter {
       await this.fetchReadyPromise;
     }
 
-    const cacheUrl = `/player/pwa/cache/${type}/${id}`;
+    const cacheUrl = `${BASE}/cache/${type}/${id}`;
 
     try {
       // SW's handleRequest uses CacheManager.fileExists() internally
@@ -223,7 +228,7 @@ class ServiceWorkerBackend extends EventEmitter {
    * @returns {Promise<boolean>}
    */
   async isCached(type, id) {
-    const cacheUrl = `/player/pwa/cache/${type}/${id}`;
+    const cacheUrl = `${BASE}/cache/${type}/${id}`;
 
     try {
       const response = await fetch(cacheUrl, { method: 'HEAD' });

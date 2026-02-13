@@ -43,6 +43,9 @@ describe.skipIf(SKIP)('XMDS REST API — Live Integration', () => {
   let soapClient;
 
   beforeAll(() => {
+    // Restore real fetch (vitest.setup.js mocks it for unit tests)
+    global.fetch = global.__nativeFetch;
+
     // REST client
     client = new RestClient({
       cmsAddress: CMS_URL,

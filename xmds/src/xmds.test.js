@@ -5,7 +5,7 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { XmdsClient } from './xmds.js';
+import { XmdsClient } from './xmds-client.js';
 
 describe('XmdsClient - SubmitLog', () => {
   let client;

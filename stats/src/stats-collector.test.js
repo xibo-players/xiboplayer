@@ -58,7 +58,7 @@ describe('StatsCollector', () => {
     it('should start tracking a layout', async () => {
       await collector.startLayout(123, 456);
 
-      const key = 'layout-123-456';
+      const key = 'layout-123';
       expect(collector.inProgressStats.has(key)).toBe(true);
 
       const stat = collector.inProgressStats.get(key);
@@ -88,7 +88,7 @@ describe('StatsCollector', () => {
       await collector.endLayout(123, 456);
 
       // Should be removed from in-progress
-      const key = 'layout-123-456';
+      const key = 'layout-123';
       expect(collector.inProgressStats.has(key)).toBe(false);
 
       // Should be saved to database
@@ -143,7 +143,7 @@ describe('StatsCollector', () => {
     it('should start tracking a widget', async () => {
       await collector.startWidget(111, 123, 456);
 
-      const key = 'media-111-123-456';
+      const key = 'media-111-123';
       expect(collector.inProgressStats.has(key)).toBe(true);
 
       const stat = collector.inProgressStats.get(key);
@@ -162,7 +162,7 @@ describe('StatsCollector', () => {
 
       await collector.endWidget(111, 123, 456);
 
-      const key = 'media-111-123-456';
+      const key = 'media-111-123';
       expect(collector.inProgressStats.has(key)).toBe(false);
 
       const stats = await collector.getAllStats();

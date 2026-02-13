@@ -290,16 +290,30 @@ export class CmsApiClient {
    * @returns {Promise<void>}
    */
   async publishLayout(layoutId) {
-    await this.request('PUT', `/layout/publish/${layoutId}`);
+    await this.request('PUT', `/layout/publish/${layoutId}`, { publishNow: 1 });
   }
 
   /**
-   * Checkout a published layout (creates editable draft)
+   * Checkout a published layout (creates editable draft).
+   * NOTE: Not needed for newly created layouts — they already have a draft.
+   * Use getDraftLayout() to find the auto-created draft instead.
    * @param {number} layoutId
    * @returns {Promise<Object>} Draft layout
    */
   async checkoutLayout(layoutId) {
     return this.request('PUT', `/layout/checkout/${layoutId}`);
+  }
+
+  /**
+   * Get the draft (editable) layout for a given parent layout.
+   * In Xibo v4, POST /layout creates a parent + hidden draft automatically.
+   * The draft is the one you edit (add regions, widgets) before publishing.
+   * @param {number} parentId - The parent layout ID returned by createLayout()
+   * @returns {Promise<Object|null>} Draft layout or null if not found
+   */
+  async getDraftLayout(parentId) {
+    const drafts = await this.listLayouts({ parentId });
+    return drafts.length > 0 ? drafts[0] : null;
   }
 
   /**
@@ -318,9 +332,9 @@ export class CmsApiClient {
 
   /**
    * Add a region to a layout
-   * @param {number} layoutId
+   * @param {number} layoutId - Must be the DRAFT layout ID (not the parent)
    * @param {Object} params - { width, height, top, left }
-   * @returns {Promise<Object>} Created region (includes playlists array)
+   * @returns {Promise<Object>} Created region with regionPlaylist (singular object, not array)
    */
   async addRegion(layoutId, params) {
     return this.request('POST', `/region/${layoutId}`, params);
