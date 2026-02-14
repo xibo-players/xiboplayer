@@ -550,21 +550,25 @@ export class RendererLite {
 
       this.log.info(`Layout duration updated: ${oldDuration}s → ${maxRegionDuration}s (based on video metadata)`);
 
-      // Reset layout timer with new duration
+      // Reset layout timer with new duration — but only if a timer is already running.
+      // If startLayoutTimerWhenReady() hasn't fired yet (still waiting for widgets),
+      // it will pick up the updated duration when it starts the timer.
       if (this.layoutTimer) {
         clearTimeout(this.layoutTimer);
+
+        const layoutDurationMs = this.currentLayout.duration * 1000;
+        this.layoutTimer = setTimeout(() => {
+          this.log.info(`Layout ${this.currentLayoutId} duration expired (${this.currentLayout.duration}s)`);
+          if (this.currentLayoutId) {
+            this.layoutEndEmitted = true;
+            this.emit('layoutEnd', this.currentLayoutId);
+          }
+        }, layoutDurationMs);
+
+        this.log.info(`Layout timer reset to ${this.currentLayout.duration}s`);
+      } else {
+        this.log.info(`Layout duration updated to ${maxRegionDuration}s (timer not yet started, will use new value)`);
       }
-
-      const layoutDurationMs = this.currentLayout.duration * 1000;
-      this.layoutTimer = setTimeout(() => {
-        this.log.info(`Layout ${this.currentLayoutId} duration expired (${this.currentLayout.duration}s)`);
-        if (this.currentLayoutId) {
-          this.layoutEndEmitted = true;
-          this.emit('layoutEnd', this.currentLayoutId);
-        }
-      }, layoutDurationMs);
-
-      this.log.info(`Layout timer reset to ${this.currentLayout.duration}s`);
     }
   }
 
@@ -814,19 +818,8 @@ export class RendererLite {
           this.startRegion(regionId);
         }
 
-        // Set layout timer
-        if (this.currentLayout.duration > 0) {
-          const layoutDurationMs = this.currentLayout.duration * 1000;
-          this.log.info(`Layout ${layoutId} will end after ${this.currentLayout.duration}s`);
-
-          this.layoutTimer = setTimeout(() => {
-            this.log.info(`Layout ${layoutId} duration expired (${this.currentLayout.duration}s)`);
-            if (this.currentLayoutId) {
-              this.layoutEndEmitted = true;
-              this.emit('layoutEnd', this.currentLayoutId);
-            }
-          }, layoutDurationMs);
-        }
+        // Wait for all initial widgets to be ready then start layout timer
+        this.startLayoutTimerWhenReady(layoutId, this.currentLayout);
 
         this.log.info(`Layout ${layoutId} restarted (reused elements)`);
         return; // EARLY RETURN - skip recreation below
@@ -932,20 +925,9 @@ export class RendererLite {
         this.startRegion(regionId);
       }
 
-      // Set layout timer based on layout duration (not widget completion)
-      if (layout.duration > 0) {
-        const layoutDurationMs = layout.duration * 1000;
-        this.log.info(`Layout ${layoutId} will end after ${layout.duration}s`);
-
-        this.layoutTimer = setTimeout(() => {
-          this.log.info(`Layout ${layoutId} duration expired (${layout.duration}s)`);
-          // Fire layoutEnd regardless of widget/region state
-          if (this.currentLayoutId) {
-            this.layoutEndEmitted = true;
-            this.emit('layoutEnd', this.currentLayoutId);
-          }
-        }, layoutDurationMs);
-      }
+      // Wait for all initial widgets to be ready (videos playing, images loaded)
+      // THEN start the layout timer — ensures videos play to their last frame
+      this.startLayoutTimerWhenReady(layoutId, layout);
 
       this.log.info(`Layout ${layoutId} started`);
 
@@ -1086,7 +1068,18 @@ export class RendererLite {
     const videoEl = this.findMediaElement(element, 'VIDEO');
     if (videoEl) {
       videoEl.currentTime = 0;
-      videoEl.play().catch(err => this.log.warn('Video play failed:', err));
+      // Wait for seek to complete before playing — avoids DOMException
+      // "The play() request was interrupted" when calling play() mid-seek
+      const playAfterSeek = () => {
+        videoEl.removeEventListener('seeked', playAfterSeek);
+        videoEl.play().catch(() => {}); // Silently ignore — autoplay will retry
+      };
+      videoEl.addEventListener('seeked', playAfterSeek);
+      // Fallback: if seeked doesn't fire (already at 0), try play directly
+      if (videoEl.currentTime === 0 && videoEl.readyState >= 2) {
+        videoEl.removeEventListener('seeked', playAfterSeek);
+        videoEl.play().catch(() => {});
+      }
       this.log.info(`Video restarted: ${widget.fileId || widget.id}`);
       return;
     }
@@ -1095,7 +1088,15 @@ export class RendererLite {
     const audioEl = this.findMediaElement(element, 'AUDIO');
     if (audioEl) {
       audioEl.currentTime = 0;
-      audioEl.play().catch(err => this.log.warn('Audio play failed:', err));
+      const playAfterSeek = () => {
+        audioEl.removeEventListener('seeked', playAfterSeek);
+        audioEl.play().catch(() => {});
+      };
+      audioEl.addEventListener('seeked', playAfterSeek);
+      if (audioEl.currentTime === 0 && audioEl.readyState >= 2) {
+        audioEl.removeEventListener('seeked', playAfterSeek);
+        audioEl.play().catch(() => {});
+      }
       this.log.info(`Audio restarted: ${widget.fileId || widget.id}`);
       return;
     }
@@ -1105,6 +1106,109 @@ export class RendererLite {
 
     // Iframes: Could reload if needed (future enhancement)
     // const iframeEl = this.findMediaElement(element, 'IFRAME');
+  }
+
+  /**
+   * Wait for a widget's media to be ready for playback.
+   * - Video: resolves when 'playing' fires (buffered enough to render frames)
+   * - Image: resolves when 'load' fires (decoded and paintable)
+   * - Text/embedded/clock: resolves immediately (inline content, no async load)
+   * @param {HTMLElement} element - Widget DOM element
+   * @param {Object} widget - Widget config
+   * @returns {Promise<void>}
+   */
+  waitForWidgetReady(element, widget) {
+    const READY_TIMEOUT = 10000; // 10s max wait — don't block forever on broken media
+
+    // Video widgets: wait for actual playback
+    const videoEl = this.findMediaElement(element, 'VIDEO');
+    if (videoEl) {
+      // Already playing (replay case where video was kept alive)
+      if (!videoEl.paused && videoEl.readyState >= 3) {
+        return Promise.resolve();
+      }
+      return new Promise((resolve) => {
+        const timer = setTimeout(() => {
+          this.log.warn(`Video ready timeout (${READY_TIMEOUT}ms) for widget ${widget.id}`);
+          resolve();
+        }, READY_TIMEOUT);
+        const onPlaying = () => {
+          videoEl.removeEventListener('playing', onPlaying);
+          clearTimeout(timer);
+          this.log.info(`Video widget ${widget.id} ready (playing)`);
+          resolve();
+        };
+        videoEl.addEventListener('playing', onPlaying);
+      });
+    }
+
+    // Image widgets: wait for image decode
+    const imgEl = this.findMediaElement(element, 'IMG');
+    if (imgEl) {
+      if (imgEl.complete && imgEl.naturalWidth > 0) {
+        return Promise.resolve();
+      }
+      return new Promise((resolve) => {
+        const timer = setTimeout(() => {
+          this.log.warn(`Image ready timeout for widget ${widget.id}`);
+          resolve();
+        }, READY_TIMEOUT);
+        const onLoad = () => {
+          imgEl.removeEventListener('load', onLoad);
+          clearTimeout(timer);
+          resolve();
+        };
+        imgEl.addEventListener('load', onLoad);
+      });
+    }
+
+    // Text, embedded, clock, etc. — ready immediately
+    return Promise.resolve();
+  }
+
+  /**
+   * Start the layout timer only after all initial widgets are ready.
+   * This ensures that the layout duration counts from when content is
+   * actually visible, so videos play their full duration to the last frame.
+   * @param {number|string} layoutId - Layout ID
+   * @param {Object} layout - Layout config with .duration
+   */
+  async startLayoutTimerWhenReady(layoutId, layout) {
+    if (!layout || layout.duration <= 0) return;
+
+    // Collect readiness promises for each region's first (current) widget
+    const readyPromises = [];
+    for (const [regionId, region] of this.regions) {
+      if (region.widgets.length === 0) continue;
+      const widget = region.widgets[region.currentIndex || 0];
+      const element = region.widgetElements.get(widget.id);
+      if (element) {
+        readyPromises.push(this.waitForWidgetReady(element, widget));
+      }
+    }
+
+    if (readyPromises.length > 0) {
+      this.log.info(`Waiting for ${readyPromises.length} widget(s) to be ready before starting layout timer...`);
+      await Promise.all(readyPromises);
+      this.log.info(`All widgets ready — starting layout timer`);
+    }
+
+    // Guard: layout may have changed while we were waiting
+    if (this.currentLayoutId !== layoutId) {
+      this.log.warn(`Layout changed while waiting for widgets — skipping timer for ${layoutId}`);
+      return;
+    }
+
+    const layoutDurationMs = layout.duration * 1000;
+    this.log.info(`Layout ${layoutId} will end after ${layout.duration}s`);
+
+    this.layoutTimer = setTimeout(() => {
+      this.log.info(`Layout ${layoutId} duration expired (${layout.duration}s)`);
+      if (this.currentLayoutId) {
+        this.layoutEndEmitted = true;
+        this.emit('layoutEnd', this.currentLayoutId);
+      }
+    }, layoutDurationMs);
   }
 
   /**
