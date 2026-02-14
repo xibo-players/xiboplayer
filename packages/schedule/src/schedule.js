@@ -2,11 +2,15 @@
  * Schedule manager - determines which layouts to show
  */
 
+import { evaluateCriteria } from './criteria.js';
+
 export class ScheduleManager {
   constructor(options = {}) {
     this.schedule = null;
     this.playHistory = new Map(); // Track plays per layout: layoutId -> [timestamps]
     this.interruptScheduler = options.interruptScheduler || null; // Optional interrupt scheduler
+    this.displayProperties = options.displayProperties || {}; // CMS display custom properties
+    this.playerLocation = null; // { latitude, longitude } from Geolocation API
   }
 
   /**
@@ -163,6 +167,22 @@ export class ScheduleManager {
         }
         if (!this.isTimeActive(layout, now)) {
           continue;
+        }
+
+        // Check criteria conditions (date/time, display properties)
+        if (layout.criteria && layout.criteria.length > 0) {
+          if (!evaluateCriteria(layout.criteria, { now, displayProperties: this.displayProperties })) {
+            console.log('[Schedule] Layout', layout.id, 'filtered by criteria');
+            continue;
+          }
+        }
+
+        // Check geo-fencing
+        if (layout.isGeoAware && layout.geoLocation) {
+          if (!this.isWithinGeoFence(layout.geoLocation)) {
+            console.log('[Schedule] Layout', layout.id, 'filtered by geofence');
+            continue;
+          }
         }
 
         // Check max plays per hour - but track that we filtered it
@@ -340,6 +360,87 @@ export class ScheduleManager {
   clearPlayHistory() {
     this.playHistory.clear();
     console.log('[Schedule] Play history cleared');
+  }
+
+  /**
+   * Set player's current GPS location (from Geolocation API or XMR command)
+   * @param {number} latitude
+   * @param {number} longitude
+   */
+  setLocation(latitude, longitude) {
+    this.playerLocation = { latitude, longitude };
+    console.log(`[Schedule] Location set: ${latitude}, ${longitude}`);
+  }
+
+  /**
+   * Set display properties from CMS (custom fields for criteria evaluation)
+   * @param {Object} properties - Key-value map of display properties
+   */
+  setDisplayProperties(properties) {
+    this.displayProperties = properties || {};
+  }
+
+  /**
+   * Check if player is within a geo-fence.
+   * geoLocation format from CMS: "lat,lng" (point + default radius)
+   * or "lat1,lng1;lat2,lng2;..." (polygon — future)
+   *
+   * Default radius: 500 meters (Xibo default for point geofences)
+   *
+   * @param {string} geoLocation - Geo-fence specification from CMS
+   * @param {number} [defaultRadius=500] - Default radius in meters for point geofences
+   * @returns {boolean} True if within geofence or no location available
+   */
+  isWithinGeoFence(geoLocation, defaultRadius = 500) {
+    if (!this.playerLocation) {
+      // No location available — be permissive, show the content
+      console.log('[Schedule] No player location, skipping geofence check');
+      return true;
+    }
+
+    if (!geoLocation) return true;
+
+    // Parse "lat,lng" format
+    const parts = geoLocation.split(',').map(s => parseFloat(s.trim()));
+    if (parts.length < 2 || isNaN(parts[0]) || isNaN(parts[1])) {
+      console.log('[Schedule] Invalid geoLocation format:', geoLocation);
+      return true; // Invalid format, be permissive
+    }
+
+    const fenceLat = parts[0];
+    const fenceLng = parts[1];
+    const radius = parts[2] || defaultRadius; // Optional 3rd param: radius in meters
+
+    const distance = this.haversineDistance(
+      this.playerLocation.latitude, this.playerLocation.longitude,
+      fenceLat, fenceLng
+    );
+
+    const within = distance <= radius;
+    console.log(`[Schedule] Geofence: ${distance.toFixed(0)}m from (${fenceLat},${fenceLng}), radius ${radius}m → ${within ? 'WITHIN' : 'OUTSIDE'}`);
+    return within;
+  }
+
+  /**
+   * Haversine formula: calculate distance between two GPS coordinates
+   * @param {number} lat1 - Latitude 1 (degrees)
+   * @param {number} lon1 - Longitude 1 (degrees)
+   * @param {number} lat2 - Latitude 2 (degrees)
+   * @param {number} lon2 - Longitude 2 (degrees)
+   * @returns {number} Distance in meters
+   */
+  haversineDistance(lat1, lon1, lat2, lon2) {
+    const R = 6371000; // Earth radius in meters
+    const toRad = deg => deg * Math.PI / 180;
+
+    const dLat = toRad(lat2 - lat1);
+    const dLon = toRad(lon2 - lon1);
+
+    const a = Math.sin(dLat / 2) ** 2 +
+              Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+              Math.sin(dLon / 2) ** 2;
+
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   }
 }
 

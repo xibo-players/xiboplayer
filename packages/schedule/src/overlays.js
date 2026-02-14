@@ -15,6 +15,7 @@
  */
 
 import { createLogger } from '@xiboplayer/utils';
+import { evaluateCriteria } from './criteria.js';
 
 const logger = createLogger('schedule:overlays');
 
@@ -25,7 +26,25 @@ const logger = createLogger('schedule:overlays');
 export class OverlayScheduler {
   constructor() {
     this.overlays = [];
+    this.displayProperties = {};
+    this.scheduleManager = null; // Reference to ScheduleManager for geo checks
     logger.debug('OverlayScheduler initialized');
+  }
+
+  /**
+   * Set reference to ScheduleManager for geo-fence checks
+   * @param {ScheduleManager} scheduleManager
+   */
+  setScheduleManager(scheduleManager) {
+    this.scheduleManager = scheduleManager;
+  }
+
+  /**
+   * Set display properties for criteria evaluation
+   * @param {Object} properties
+   */
+  setDisplayProperties(properties) {
+    this.displayProperties = properties || {};
   }
 
   /**
@@ -56,20 +75,20 @@ export class OverlayScheduler {
         continue;
       }
 
-      // Check geo-awareness (future implementation)
-      if (overlay.isGeoAware) {
-        // TODO: Check if within geo-location
-        // For now, skip geo-aware overlays
-        logger.debug(`Skipping geo-aware overlay: ${overlay.file}`);
-        continue;
+      // Check geo-awareness
+      if (overlay.isGeoAware && overlay.geoLocation) {
+        if (this.scheduleManager && !this.scheduleManager.isWithinGeoFence(overlay.geoLocation)) {
+          logger.debug(`Overlay ${overlay.file} filtered by geofence`);
+          continue;
+        }
       }
 
-      // Check criteria (future implementation)
+      // Check criteria conditions
       if (overlay.criteria && overlay.criteria.length > 0) {
-        // TODO: Evaluate criteria
-        // For now, skip criteria-based overlays
-        logger.debug(`Skipping criteria-based overlay: ${overlay.file}`);
-        continue;
+        if (!evaluateCriteria(overlay.criteria, { now, displayProperties: this.displayProperties })) {
+          logger.debug(`Overlay ${overlay.file} filtered by criteria`);
+          continue;
+        }
       }
 
       activeOverlays.push(overlay);
