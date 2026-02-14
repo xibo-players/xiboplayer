@@ -409,6 +409,83 @@ describe('Schedule Parsing', () => {
     });
   });
 
+  describe('Sync Event Parsing', () => {
+    it('should parse syncEvent from standalone layout', () => {
+      const xml = `
+        <schedule>
+          <default file="0"/>
+          <layout file="100" priority="5" fromdt="2026-01-30 00:00:00" todt="2026-01-31 23:59:59" scheduleid="1" syncEvent="1"/>
+          <layout file="200" priority="5" fromdt="2026-01-30 00:00:00" todt="2026-01-31 23:59:59" scheduleid="2" syncEvent="0"/>
+        </schedule>
+      `;
+
+      const schedule = parseScheduleResponse(xml);
+
+      expect(schedule.layouts[0].syncEvent).toBe(true);
+      expect(schedule.layouts[1].syncEvent).toBe(false);
+    });
+
+    it('should parse syncEvent from campaign layout', () => {
+      const xml = `
+        <schedule>
+          <default file="0"/>
+          <campaign id="1" priority="10" fromdt="2026-01-30 00:00:00" todt="2026-01-31 23:59:59" scheduleid="5">
+            <layout file="100" syncEvent="1"/>
+            <layout file="101" syncEvent="0"/>
+          </campaign>
+        </schedule>
+      `;
+
+      const schedule = parseScheduleResponse(xml);
+
+      expect(schedule.campaigns[0].layouts[0].syncEvent).toBe(true);
+      expect(schedule.campaigns[0].layouts[1].syncEvent).toBe(false);
+    });
+
+    it('should parse syncEvent from overlay', () => {
+      const xml = `
+        <schedule>
+          <default file="0"/>
+          <overlays>
+            <overlay file="300" duration="30" fromdt="2026-01-01 00:00:00" todt="2026-12-31 23:59:59" priority="5" scheduleid="3" syncEvent="1"/>
+          </overlays>
+        </schedule>
+      `;
+
+      const schedule = parseScheduleResponse(xml);
+
+      expect(schedule.overlays[0].syncEvent).toBe(true);
+    });
+
+    it('should default syncEvent to false when not present', () => {
+      const xml = `
+        <schedule>
+          <default file="0"/>
+          <layout file="100" priority="5" fromdt="2026-01-30 00:00:00" todt="2026-01-31 23:59:59" scheduleid="1"/>
+        </schedule>
+      `;
+
+      const schedule = parseScheduleResponse(xml);
+
+      expect(schedule.layouts[0].syncEvent).toBe(false);
+    });
+
+    it('should parse shareOfVoice from layouts', () => {
+      const xml = `
+        <schedule>
+          <default file="0"/>
+          <layout file="100" priority="5" fromdt="2026-01-30 00:00:00" todt="2026-01-31 23:59:59" scheduleid="1" shareOfVoice="30"/>
+          <layout file="200" priority="5" fromdt="2026-01-30 00:00:00" todt="2026-01-31 23:59:59" scheduleid="2"/>
+        </schedule>
+      `;
+
+      const schedule = parseScheduleResponse(xml);
+
+      expect(schedule.layouts[0].shareOfVoice).toBe(30);
+      expect(schedule.layouts[1].shareOfVoice).toBe(0);
+    });
+  });
+
   describe('Actions and Commands Together', () => {
     it('should parse both actions and commands in same schedule', () => {
       const xml = `

@@ -177,7 +177,17 @@ export class RestClient {
     const checkRf = attrs.checkRf || '';
     const checkSchedule = attrs.checkSchedule || '';
 
-    return { code, message, settings, checkRf, checkSchedule };
+    // Extract sync group config if present (multi-display sync coordination)
+    // syncGroup: "lead" if this display is leader, or leader's LAN IP if follower
+    const syncConfig = display.syncGroup ? {
+      syncGroup: String(display.syncGroup),
+      syncPublisherPort: parseInt(display.syncPublisherPort || '9590', 10),
+      syncSwitchDelay: parseInt(display.syncSwitchDelay || '750', 10),
+      syncVideoPauseDelay: parseInt(display.syncVideoPauseDelay || '100', 10),
+      isLead: String(display.syncGroup) === 'lead',
+    } : null;
+
+    return { code, message, settings, checkRf, checkSchedule, syncConfig };
   }
 
   /**
