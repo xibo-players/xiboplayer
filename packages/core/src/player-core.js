@@ -105,6 +105,7 @@ export class PlayerCore extends EventEmitter {
 
     // Multi-display sync configuration (from RegisterDisplay syncGroup settings)
     this.syncConfig = null;
+    this.syncManager = null; // Optional: set via setSyncManager() after RegisterDisplay
 
     // In-memory offline cache (populated from IndexedDB on first load)
     this._offlineCache = { schedule: null, settings: null, requiredFiles: null };
@@ -634,6 +635,25 @@ export class PlayerCore extends EventEmitter {
     const layoutFile = layoutFiles[this._currentLayoutIndex];
     const layoutId = parseInt(layoutFile.replace('.xlf', ''), 10);
 
+    // Multi-display sync: if this is a sync event and we have a SyncManager,
+    // delegate layout transitions to the sync protocol
+    if (this.syncManager && this.schedule.isSyncEvent(layoutFile)) {
+      if (this.isSyncLead()) {
+        // Lead: coordinate with followers before showing
+        log.info(`[Sync] Lead requesting coordinated layout change: ${layoutId}`);
+        this.syncManager.requestLayoutChange(layoutId).catch(err => {
+          log.error('[Sync] Layout change failed:', err);
+          // Fallback: show layout anyway
+          this.emit('layout-prepare-request', layoutId);
+        });
+        return;
+      } else {
+        // Follower: don't advance independently — wait for lead's layout-change signal
+        log.info(`[Sync] Follower waiting for lead signal (not advancing independently)`);
+        return;
+      }
+    }
+
     if (layoutId === this.currentLayoutId) {
       // Same layout (single layout schedule or wrapped back) — trigger replay
       log.info(`Next layout ${layoutId} is same as current, triggering replay`);
@@ -909,6 +929,17 @@ export class PlayerCore extends EventEmitter {
   }
 
   /**
+   * Set the SyncManager instance for multi-display coordination.
+   * Called by platform layer after RegisterDisplay returns syncConfig.
+   *
+   * @param {SyncManager} syncManager - SyncManager instance
+   */
+  setSyncManager(syncManager) {
+    this.syncManager = syncManager;
+    log.info('SyncManager attached:', syncManager.isLead ? 'LEAD' : 'FOLLOWER');
+  }
+
+  /**
    * Check if this display is part of a sync group
    * @returns {boolean}
    */
@@ -944,6 +975,12 @@ export class PlayerCore extends EventEmitter {
     if (this.xmr) {
       this.xmr.stop();
       this.xmr = null;
+    }
+
+    // Stop multi-display sync
+    if (this.syncManager) {
+      this.syncManager.stop();
+      this.syncManager = null;
     }
 
     // Stop data connector polling

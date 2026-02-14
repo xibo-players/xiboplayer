@@ -1,0 +1,9 @@
+{
+  "name": "@xiboplayer/sync",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "src/sync-manager.js",
+  "exports": {
+    ".": "./src/sync-manager.js"
+  }
+}
