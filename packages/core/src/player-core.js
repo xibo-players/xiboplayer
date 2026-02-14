@@ -200,25 +200,37 @@ export class PlayerCore extends EventEmitter {
     log.info('Offline layouts:', layoutFiles);
     this.emit('layouts-scheduled', layoutFiles);
 
-    // Reset layout cycling index on collect (schedule may have changed)
-    this._currentLayoutIndex = 0;
-
     if (layoutFiles.length > 0) {
-      const next = this.getNextLayout();
-      if (!next) {
-        log.warn('getNextLayout returned null despite layouts available (offline)');
-        return;
+      // If a layout is currently playing and still in the schedule, don't interrupt
+      if (this.currentLayoutId) {
+        const currentStillScheduled = layoutFiles.some(f =>
+          parseInt(String(f).replace('.xlf', ''), 10) === this.currentLayoutId
+        );
+        if (currentStillScheduled) {
+          const idx = layoutFiles.findIndex(f =>
+            parseInt(String(f).replace('.xlf', ''), 10) === this.currentLayoutId
+          );
+          if (idx >= 0) this._currentLayoutIndex = idx;
+          log.debug(`Layout ${this.currentLayoutId} still in schedule (offline), continuing playback`);
+          this.emit('layout-already-playing', this.currentLayoutId);
+        } else {
+          // Current layout not in schedule — switch
+          this._currentLayoutIndex = 0;
+          const next = this.getNextLayout();
+          if (next) {
+            log.info(`Offline: switching to layout ${next.layoutId}`);
+            this.emit('layout-prepare-request', next.layoutId);
+          }
+        }
+      } else {
+        // No current layout — start the first one
+        this._currentLayoutIndex = 0;
+        const next = this.getNextLayout();
+        if (next) {
+          log.info(`Offline: switching to layout ${next.layoutId}`);
+          this.emit('layout-prepare-request', next.layoutId);
+        }
       }
-      const { layoutId } = next;
-
-      if (this.currentLayoutId === layoutId) {
-        log.debug(`Layout ${layoutId} already playing (offline), skipping reload`);
-        this.emit('layout-already-playing', layoutId);
-        return;
-      }
-
-      log.info(`Offline: switching to layout ${layoutId}`);
-      this.emit('layout-prepare-request', layoutId);
     } else {
       log.info('Offline: no layouts in cached schedule');
       this.emit('no-layouts-scheduled');
@@ -371,28 +383,39 @@ export class PlayerCore extends EventEmitter {
       log.info('Current layouts:', layoutFiles);
       this.emit('layouts-scheduled', layoutFiles);
 
-      // Reset layout cycling index on collect (schedule may have changed)
-      this._currentLayoutIndex = 0;
-
       if (layoutFiles.length > 0) {
-        const next = this.getNextLayout();
-        if (!next) {
-          log.warn('getNextLayout returned null despite layouts available');
-          return;
+        // If a layout is currently playing and it's still in the schedule, don't interrupt it.
+        // Let it finish its natural duration — advanceToNextLayout() handles the transition.
+        if (this.currentLayoutId) {
+          const currentStillScheduled = layoutFiles.some(f =>
+            parseInt(String(f).replace('.xlf', ''), 10) === this.currentLayoutId
+          );
+          if (currentStillScheduled) {
+            // Update round-robin index to match current layout's position
+            const idx = layoutFiles.findIndex(f =>
+              parseInt(String(f).replace('.xlf', ''), 10) === this.currentLayoutId
+            );
+            if (idx >= 0) this._currentLayoutIndex = idx;
+            log.debug(`Layout ${this.currentLayoutId} still in schedule, continuing playback`);
+            this.emit('layout-already-playing', this.currentLayoutId);
+          } else {
+            // Current layout is not in the schedule (unscheduled or filtered) — switch
+            this._currentLayoutIndex = 0;
+            const next = this.getNextLayout();
+            if (next) {
+              log.info(`Switching to layout ${next.layoutId} (from ${this.currentLayoutId})`);
+              this.emit('layout-prepare-request', next.layoutId);
+            }
+          }
+        } else {
+          // No current layout — start the first one
+          this._currentLayoutIndex = 0;
+          const next = this.getNextLayout();
+          if (next) {
+            log.info(`Switching to layout ${next.layoutId}`);
+            this.emit('layout-prepare-request', next.layoutId);
+          }
         }
-        const { layoutId } = next;
-
-        // Skip if already playing this layout
-        if (this.currentLayoutId === layoutId) {
-          log.debug(`Layout ${layoutId} already playing, skipping reload`);
-          this.emit('layout-already-playing', layoutId);
-          return;
-        }
-
-        // Request layout preparation (platform handles media checks, widget HTML)
-        log.info(`Switching to layout ${layoutId}${this.currentLayoutId ? ` (from ${this.currentLayoutId})` : ''}`);
-        this.emit('layout-prepare-request', layoutId);
-
       } else {
         log.info('No layouts scheduled, falling back to default');
         this.emit('no-layouts-scheduled');
