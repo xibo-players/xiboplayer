@@ -107,8 +107,17 @@ export class CmsApiClient {
     return Array.isArray(data) ? data : data.data || data;
   }
 
-  async createLayout(name, { width = 1920, height = 1080, backgroundColor = '#000000', description = '' } = {}) {
-    return this.post('/api/layout', { name, width, height, backgroundColor, description });
+  async createLayout(name, opts = {}) {
+    const params = { name };
+    if (opts.resolutionId) {
+      params.resolutionId = opts.resolutionId;
+    } else {
+      params.width = opts.width || 1920;
+      params.height = opts.height || 1080;
+    }
+    if (opts.backgroundColor) params.backgroundColor = opts.backgroundColor;
+    if (opts.description) params.description = opts.description;
+    return this.post('/api/layout', params);
   }
 
   async publishLayout(layoutId) {
@@ -214,6 +223,68 @@ export class CmsApiClient {
     const qs = new URLSearchParams(params);
     const data = await this.get(`/api/template?${qs}`);
     return Array.isArray(data) ? data : data.data || data;
+  }
+
+  // ── Resolution API ──────────────────────────────────────────────
+
+  async listResolutions(params = {}) {
+    const qs = new URLSearchParams(params);
+    const data = await this.get(`/api/resolution?${qs}`);
+    return Array.isArray(data) ? data : data.data || data;
+  }
+
+  // ── Xibo v4 Draft Layout ─────────────────────────────────────────
+
+  /**
+   * Get the draft (editable) layout for a parent layout.
+   * Xibo v4: POST /api/layout creates parent + hidden draft.
+   * Add regions/widgets to the draft, publish via parent ID.
+   */
+  async getDraftLayout(parentId) {
+    const qs = new URLSearchParams({ parentId });
+    const data = await this.get(`/api/layout?${qs}`);
+    const layouts = Array.isArray(data) ? data : data.data || [];
+    return layouts.length > 0 ? layouts[0] : null;
+  }
+
+  // ── Delete operations ─────────────────────────────────────────────
+
+  async deleteLayout(layoutId) {
+    return this.request('DELETE', `/api/layout/${layoutId}`);
+  }
+
+  async deleteWidget(widgetId) {
+    return this.request('DELETE', `/api/playlist/widget/${widgetId}`);
+  }
+
+  async deleteCampaign(campaignId) {
+    return this.request('DELETE', `/api/campaign/${campaignId}`);
+  }
+
+  async deleteSchedule(eventId) {
+    return this.request('DELETE', `/api/schedule/${eventId}`);
+  }
+
+  async deleteMedia(mediaId) {
+    return this.request('DELETE', `/api/library/${mediaId}`);
+  }
+
+  async deleteRegion(regionId) {
+    return this.request('DELETE', `/api/region/${regionId}`);
+  }
+
+  // ── Edit operations ───────────────────────────────────────────────
+
+  async editWidget(widgetId, params) {
+    return this.put(`/api/playlist/widget/${widgetId}`, params);
+  }
+
+  async editRegion(regionId, params) {
+    return this.put(`/api/region/${regionId}`, params);
+  }
+
+  async editLayout(layoutId, params) {
+    return this.put(`/api/layout/${layoutId}`, params);
   }
 }
 

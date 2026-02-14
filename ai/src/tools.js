@@ -43,36 +43,46 @@ const listLayouts = {
 const createLayout = {
   definition: {
     name: 'create_layout',
-    description: 'Create a new blank layout with specified dimensions and background color. Returns the new layout ID and its default region. The layout starts in draft status — you must publish it after adding content.',
+    description: 'Create a new layout. In Xibo v4, this creates a parent + hidden draft. Use the returned draftLayoutId to add regions and widgets, then publish using the parent layoutId. The layout starts in draft status — you must publish it after adding content.',
     input_schema: {
       type: 'object',
       properties: {
         name: { type: 'string', description: 'Layout name (e.g. "Lunch Special - Monday")' },
         description: { type: 'string', description: 'Optional layout description' },
-        width: { type: 'number', description: 'Canvas width in pixels (default 1920)', default: 1920 },
-        height: { type: 'number', description: 'Canvas height in pixels (default 1080)', default: 1080 },
+        resolutionId: { type: 'number', description: 'Resolution ID (use list_resolutions to find). Default: 1080p' },
         backgroundColor: { type: 'string', description: 'Hex background color (default "#000000")', default: '#000000' },
       },
       required: ['name'],
     },
   },
   async handler(cms, input) {
-    const result = await cms.createLayout(input.name, {
-      width: input.width || 1920,
-      height: input.height || 1080,
-      backgroundColor: input.backgroundColor || '#000000',
+    // Xibo v4: createLayout creates parent + hidden draft
+    const params = {
+      name: input.name,
       description: input.description || '',
-    });
+    };
+    if (input.resolutionId) {
+      params.resolutionId = input.resolutionId;
+    } else {
+      // Default to 1920x1080 if no resolutionId given
+      params.width = 1920;
+      params.height = 1080;
+    }
+    if (input.backgroundColor) params.backgroundColor = input.backgroundColor;
+
+    const result = await cms.createLayout(input.name, params);
+    const parentId = result.layoutId;
+
+    // Get the auto-created draft (this is the editable copy)
+    const draft = await cms.getDraftLayout(parentId);
+    const draftId = draft?.layoutId || parentId;
+
     return {
-      layoutId: result.layoutId,
-      name: result.layout,
+      layoutId: parentId,
+      draftLayoutId: draftId,
+      name: result.layout || input.name,
       status: result.status,
-      regions: (result.regions || []).map(r => ({
-        regionId: r.regionId,
-        width: r.width,
-        height: r.height,
-        playlistId: r.playlists?.[0]?.playlistId,
-      })),
+      note: 'Use draftLayoutId for add_region. Use layoutId for publish_layout.',
     };
   },
 };
@@ -82,11 +92,11 @@ const createLayout = {
 const addRegion = {
   definition: {
     name: 'add_region',
-    description: 'Add a content region to a layout. Regions are rectangular areas where widgets (text, images, videos) are placed. Position with top/left coordinates and size with width/height.',
+    description: 'Add a content region to a layout. Use the draftLayoutId from create_layout (not the parent layoutId). Regions are rectangular areas where widgets are placed.',
     input_schema: {
       type: 'object',
       properties: {
-        layoutId: { type: 'number', description: 'Layout ID to add the region to' },
+        layoutId: { type: 'number', description: 'Draft layout ID (draftLayoutId from create_layout)' },
         name: { type: 'string', description: 'Region name (e.g. "Header", "Main Content", "Footer")' },
         width: { type: 'number', description: 'Region width in pixels' },
         height: { type: 'number', description: 'Region height in pixels' },
@@ -104,9 +114,12 @@ const addRegion = {
       left: input.left || 0,
       name: input.name || '',
     });
+    // Xibo v4: regionPlaylist (singular), older: playlists (array)
+    const playlistId = result.regionPlaylist?.playlistId
+      || result.playlists?.[0]?.playlistId;
     return {
       regionId: result.regionId,
-      playlistId: result.playlists?.[0]?.playlistId,
+      playlistId,
       width: result.width,
       height: result.height,
     };
@@ -351,7 +364,7 @@ const assignLayoutToCampaign = {
     },
   },
   async handler(cms, input) {
-    await cms.assignLayoutToCampaign(input.campaignId, input.layoutId, input.displayOrder || 1);
+    await cms.assignLayoutToCampaign(input.campaignId, input.layoutId, input.displayOrder);
     return { campaignId: input.campaignId, layoutId: input.layoutId, displayOrder: input.displayOrder || 1 };
   },
 };
@@ -384,9 +397,9 @@ const scheduleCampaign = {
   },
   async handler(cms, input) {
     const params = {
+      eventTypeId: 1, // Campaign schedule
       'displayGroupIds[]': input.displayGroupIds,
-      priority: input.priority || 0,
-      isPriority: input.isPriority ? 1 : 0,
+      isPriority: input.priority || 0,
     };
     if (input.campaignId) params.campaignId = input.campaignId;
     if (input.layoutId) params.layoutId = input.layoutId;
@@ -947,10 +960,203 @@ const addMenuboardWidget = {
   },
 };
 
+// ── Tool: get_draft_layout ─────────────────────────────────────
+
+const getDraftLayout = {
+  definition: {
+    name: 'get_draft_layout',
+    description: 'Get the editable draft of a layout. In Xibo v4, layouts have a parent (for publishing) and a hidden draft (for editing). After create_layout, use this to get the draft if you need its regions/widgets info.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        layoutId: { type: 'number', description: 'Parent layout ID (from create_layout response)' },
+      },
+      required: ['layoutId'],
+    },
+  },
+  async handler(cms, input) {
+    const draft = await cms.getDraftLayout(input.layoutId);
+    if (!draft) return { error: 'No draft found for this layout' };
+    return {
+      draftLayoutId: draft.layoutId,
+      parentLayoutId: input.layoutId,
+      name: draft.layout,
+      status: draft.status,
+      regions: (draft.regions || []).map(r => ({
+        regionId: r.regionId,
+        playlistId: r.regionPlaylist?.playlistId || r.playlists?.[0]?.playlistId,
+        width: r.width,
+        height: r.height,
+      })),
+    };
+  },
+};
+
+// ── Tool: list_resolutions ────────────────────────────────────
+
+const listResolutions = {
+  definition: {
+    name: 'list_resolutions',
+    description: 'List available display resolutions in the CMS. Use resolutionId when creating layouts for proper aspect ratio handling.',
+    input_schema: {
+      type: 'object',
+      properties: {},
+    },
+  },
+  async handler(cms) {
+    const resolutions = await cms.listResolutions();
+    return resolutions.map(r => ({
+      resolutionId: r.resolutionId,
+      resolution: r.resolution,
+      width: r.width,
+      height: r.height,
+    }));
+  },
+};
+
+// ── Tool: delete_layout ───────────────────────────────────────
+
+const deleteLayout = {
+  definition: {
+    name: 'delete_layout',
+    description: 'Delete a layout permanently. This cannot be undone.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        layoutId: { type: 'number', description: 'Layout ID to delete' },
+      },
+      required: ['layoutId'],
+    },
+  },
+  async handler(cms, input) {
+    await cms.deleteLayout(input.layoutId);
+    return { layoutId: input.layoutId, deleted: true };
+  },
+};
+
+// ── Tool: delete_widget ───────────────────────────────────────
+
+const deleteWidget = {
+  definition: {
+    name: 'delete_widget',
+    description: 'Delete a widget from a region playlist. This cannot be undone.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        widgetId: { type: 'number', description: 'Widget ID to delete' },
+      },
+      required: ['widgetId'],
+    },
+  },
+  async handler(cms, input) {
+    await cms.deleteWidget(input.widgetId);
+    return { widgetId: input.widgetId, deleted: true };
+  },
+};
+
+// ── Tool: delete_campaign ─────────────────────────────────────
+
+const deleteCampaign = {
+  definition: {
+    name: 'delete_campaign',
+    description: 'Delete a campaign permanently. Removes all schedule associations.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        campaignId: { type: 'number', description: 'Campaign ID to delete' },
+      },
+      required: ['campaignId'],
+    },
+  },
+  async handler(cms, input) {
+    await cms.deleteCampaign(input.campaignId);
+    return { campaignId: input.campaignId, deleted: true };
+  },
+};
+
+// ── Tool: delete_schedule ─────────────────────────────────────
+
+const deleteSchedule = {
+  definition: {
+    name: 'delete_schedule',
+    description: 'Delete a schedule event. Removes the campaign/layout from the display schedule.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        eventId: { type: 'number', description: 'Schedule event ID to delete' },
+      },
+      required: ['eventId'],
+    },
+  },
+  async handler(cms, input) {
+    await cms.deleteSchedule(input.eventId);
+    return { eventId: input.eventId, deleted: true };
+  },
+};
+
+// ── Tool: edit_widget ─────────────────────────────────────────
+
+const editWidget = {
+  definition: {
+    name: 'edit_widget',
+    description: 'Edit an existing widget\'s properties (duration, text, url, etc). Pass only the properties you want to change.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        widgetId: { type: 'number', description: 'Widget ID to edit' },
+        duration: { type: 'number', description: 'New duration in seconds' },
+        text: { type: 'string', description: 'New text content (for text widgets)' },
+        name: { type: 'string', description: 'New widget name' },
+      },
+      required: ['widgetId'],
+    },
+  },
+  async handler(cms, input) {
+    const { widgetId, ...params } = input;
+    if (params.text) params.text = params.text; // keep as-is
+    if (params.duration) params.useDuration = 1;
+    const result = await cms.editWidget(widgetId, params);
+    return { widgetId, updated: true, ...result };
+  },
+};
+
+// ── Tool: edit_region ─────────────────────────────────────────
+
+const editRegion = {
+  definition: {
+    name: 'edit_region',
+    description: 'Edit a region\'s position and size. Pass only the properties you want to change.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        regionId: { type: 'number', description: 'Region ID to edit' },
+        width: { type: 'number', description: 'New width in pixels' },
+        height: { type: 'number', description: 'New height in pixels' },
+        top: { type: 'number', description: 'New top position in pixels' },
+        left: { type: 'number', description: 'New left position in pixels' },
+      },
+      required: ['regionId'],
+    },
+  },
+  async handler(cms, input) {
+    const { regionId, ...params } = input;
+    const result = await cms.editRegion(regionId, params);
+    return { regionId, updated: true };
+  },
+};
+
 // ── Export all tools ───────────────────────────────────────────────
 
 export const CMS_TOOLS = [
+  // Read
   listLayouts,
+  listMedia,
+  listDisplays,
+  listDisplayGroups,
+  listTemplates,
+  listResolutions,
+  getDraftLayout,
+  // Create
   createLayout,
   addRegion,
   addTextWidget,
@@ -974,13 +1180,17 @@ export const CMS_TOOLS = [
   addStocksWidget,
   addMenuboardWidget,
   publishLayout,
-  listMedia,
   createCampaign,
   assignLayoutToCampaign,
   scheduleCampaign,
-  listDisplays,
-  listDisplayGroups,
-  listTemplates,
+  // Update
+  editWidget,
+  editRegion,
+  // Delete
+  deleteLayout,
+  deleteWidget,
+  deleteCampaign,
+  deleteSchedule,
 ];
 
 /**
