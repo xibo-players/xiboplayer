@@ -103,6 +103,9 @@ export class PlayerCore extends EventEmitter {
     // Schedule cycle state (round-robin through multiple layouts)
     this._currentLayoutIndex = 0;
 
+    // Multi-display sync configuration (from RegisterDisplay syncGroup settings)
+    this.syncConfig = null;
+
     // In-memory offline cache (populated from IndexedDB on first load)
     this._offlineCache = { schedule: null, settings: null, requiredFiles: null };
     this._offlineDbReady = this._initOfflineCache();
@@ -290,6 +293,14 @@ export class PlayerCore extends EventEmitter {
             this.emit('log-level-changed', regResult.settings.logLevel);
           }
         }
+      }
+
+      // Store sync config if display is in a sync group
+      if (regResult.syncConfig) {
+        this.syncConfig = regResult.syncConfig;
+        log.info('Sync group:', regResult.syncConfig.isLead ? 'LEAD' : `follower → ${regResult.syncConfig.syncGroup}`,
+          `(switchDelay: ${regResult.syncConfig.syncSwitchDelay}ms, videoPauseDelay: ${regResult.syncConfig.syncVideoPauseDelay}ms)`);
+        this.emit('sync-config', regResult.syncConfig);
       }
 
       this.emit('register-complete', regResult);
@@ -895,6 +906,30 @@ export class PlayerCore extends EventEmitter {
    */
   getDataConnectorManager() {
     return this.dataConnectorManager;
+  }
+
+  /**
+   * Check if this display is part of a sync group
+   * @returns {boolean}
+   */
+  isInSyncGroup() {
+    return this.syncConfig !== null;
+  }
+
+  /**
+   * Check if this display is the sync group leader
+   * @returns {boolean}
+   */
+  isSyncLead() {
+    return this.syncConfig?.isLead === true;
+  }
+
+  /**
+   * Get sync configuration
+   * @returns {Object|null} { syncGroup, syncPublisherPort, syncSwitchDelay, syncVideoPauseDelay, isLead }
+   */
+  getSyncConfig() {
+    return this.syncConfig;
   }
 
   /**

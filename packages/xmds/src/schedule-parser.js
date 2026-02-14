@@ -78,6 +78,8 @@ export function parseScheduleResponse(xml) {
         maxPlaysPerHour: parseInt(layoutEl.getAttribute('maxPlaysPerHour') || '0'),
         isGeoAware: layoutEl.getAttribute('isGeoAware') === '1',
         geoLocation: layoutEl.getAttribute('geoLocation') || '',
+        syncEvent: layoutEl.getAttribute('syncEvent') === '1',
+        shareOfVoice: parseInt(layoutEl.getAttribute('shareOfVoice') || '0'),
         criteria: parseCriteria(layoutEl)
       });
     }
@@ -99,6 +101,8 @@ export function parseScheduleResponse(xml) {
       maxPlaysPerHour: parseInt(layoutEl.getAttribute('maxPlaysPerHour') || '0'),
       isGeoAware: layoutEl.getAttribute('isGeoAware') === '1',
       geoLocation: layoutEl.getAttribute('geoLocation') || '',
+      syncEvent: layoutEl.getAttribute('syncEvent') === '1',
+      shareOfVoice: parseInt(layoutEl.getAttribute('shareOfVoice') || '0'),
       criteria: parseCriteria(layoutEl)
     });
   }
@@ -118,6 +122,7 @@ export function parseScheduleResponse(xml) {
         scheduleId: overlayEl.getAttribute('scheduleid'),
         isGeoAware: overlayEl.getAttribute('isGeoAware') === '1',
         geoLocation: overlayEl.getAttribute('geoLocation') || '',
+        syncEvent: overlayEl.getAttribute('syncEvent') === '1',
         maxPlaysPerHour: parseInt(overlayEl.getAttribute('maxPlaysPerHour') || '0'),
         criteria: parseCriteria(overlayEl)
       });

@@ -11,6 +11,7 @@ export class ScheduleManager {
     this.interruptScheduler = options.interruptScheduler || null; // Optional interrupt scheduler
     this.displayProperties = options.displayProperties || {}; // CMS display custom properties
     this.playerLocation = null; // { latitude, longitude } from Geolocation API
+    this._layoutMetadata = new Map(); // layoutFile → { syncEvent, shareOfVoice, ... }
   }
 
   /**
@@ -222,6 +223,17 @@ export class ScheduleManager {
       }
     }
 
+    // Build layout metadata map (syncEvent, shareOfVoice, etc.)
+    this._layoutMetadata.clear();
+    for (const layout of allLayouts) {
+      this._layoutMetadata.set(layout.file, {
+        syncEvent: layout.syncEvent || false,
+        shareOfVoice: layout.shareOfVoice || 0,
+        scheduleid: layout.scheduleid,
+        priority: layout.priority || 0,
+      });
+    }
+
     // Process interrupts if interrupt scheduler is available
     if (this.interruptScheduler) {
       const { normalLayouts, interruptLayouts } = this.interruptScheduler.separateLayouts(allLayouts);
@@ -323,6 +335,36 @@ export class ScheduleManager {
     this.playHistory.set(layoutId, cleaned);
 
     console.log(`[Schedule] Recorded play for layout ${layoutId} (${cleaned.length} plays in last hour)`);
+  }
+
+  /**
+   * Check if a layout file is a sync event (part of multi-display sync group)
+   * @param {string} layoutFile - Layout file identifier (e.g., '123')
+   * @returns {boolean}
+   */
+  isSyncEvent(layoutFile) {
+    const meta = this._layoutMetadata.get(layoutFile);
+    return meta?.syncEvent === true;
+  }
+
+  /**
+   * Get metadata for a layout file (syncEvent, shareOfVoice, etc.)
+   * @param {string} layoutFile - Layout file identifier
+   * @returns {Object|null} Metadata or null if not found
+   */
+  getLayoutMetadata(layoutFile) {
+    return this._layoutMetadata.get(layoutFile) || null;
+  }
+
+  /**
+   * Check if any current layouts are sync events
+   * @returns {boolean}
+   */
+  hasSyncEvents() {
+    for (const meta of this._layoutMetadata.values()) {
+      if (meta.syncEvent) return true;
+    }
+    return false;
   }
 
   /**

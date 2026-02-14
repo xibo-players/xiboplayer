@@ -264,3 +264,113 @@ describe('Geo-fencing', () => {
     });
   });
 });
+
+describe('Sync Event Metadata', () => {
+  it('should track syncEvent in layout metadata', () => {
+    const sm = new ScheduleManager();
+    const now = new Date('2026-02-16T10:00:00');
+
+    sm.setSchedule({
+      default: '0',
+      layouts: [
+        {
+          id: '100', file: '100', fromdt: '2026-01-01 00:00:00', todt: '2027-01-01 00:00:00',
+          priority: 5, scheduleid: '1', maxPlaysPerHour: 0,
+          isGeoAware: false, geoLocation: '', syncEvent: true, shareOfVoice: 0, criteria: []
+        },
+        {
+          id: '200', file: '200', fromdt: '2026-01-01 00:00:00', todt: '2027-01-01 00:00:00',
+          priority: 5, scheduleid: '2', maxPlaysPerHour: 0,
+          isGeoAware: false, geoLocation: '', syncEvent: false, shareOfVoice: 0, criteria: []
+        }
+      ],
+      campaigns: []
+    });
+
+    const origDate = global.Date;
+    global.Date = class extends origDate {
+      constructor(...args) {
+        if (args.length === 0) return now;
+        return new origDate(...args);
+      }
+    };
+
+    const layouts = sm.getCurrentLayouts();
+    global.Date = origDate;
+
+    expect(layouts).toContain('100');
+    expect(layouts).toContain('200');
+
+    // Check sync metadata
+    expect(sm.isSyncEvent('100')).toBe(true);
+    expect(sm.isSyncEvent('200')).toBe(false);
+    expect(sm.hasSyncEvents()).toBe(true);
+  });
+
+  it('should return false for hasSyncEvents when no sync events', () => {
+    const sm = new ScheduleManager();
+    const now = new Date('2026-02-16T10:00:00');
+
+    sm.setSchedule({
+      default: '0',
+      layouts: [
+        {
+          id: '100', file: '100', fromdt: '2026-01-01 00:00:00', todt: '2027-01-01 00:00:00',
+          priority: 5, scheduleid: '1', maxPlaysPerHour: 0,
+          isGeoAware: false, geoLocation: '', syncEvent: false, shareOfVoice: 0, criteria: []
+        }
+      ],
+      campaigns: []
+    });
+
+    const origDate = global.Date;
+    global.Date = class extends origDate {
+      constructor(...args) {
+        if (args.length === 0) return now;
+        return new origDate(...args);
+      }
+    };
+
+    sm.getCurrentLayouts();
+    global.Date = origDate;
+
+    expect(sm.hasSyncEvents()).toBe(false);
+  });
+
+  it('should expose layout metadata with getLayoutMetadata', () => {
+    const sm = new ScheduleManager();
+    const now = new Date('2026-02-16T10:00:00');
+
+    sm.setSchedule({
+      default: '0',
+      layouts: [
+        {
+          id: '100', file: '100', fromdt: '2026-01-01 00:00:00', todt: '2027-01-01 00:00:00',
+          priority: 5, scheduleid: '1', maxPlaysPerHour: 0,
+          isGeoAware: false, geoLocation: '', syncEvent: true, shareOfVoice: 30, criteria: []
+        }
+      ],
+      campaigns: []
+    });
+
+    const origDate = global.Date;
+    global.Date = class extends origDate {
+      constructor(...args) {
+        if (args.length === 0) return now;
+        return new origDate(...args);
+      }
+    };
+
+    sm.getCurrentLayouts();
+    global.Date = origDate;
+
+    const meta = sm.getLayoutMetadata('100');
+    expect(meta).not.toBeNull();
+    expect(meta.syncEvent).toBe(true);
+    expect(meta.shareOfVoice).toBe(30);
+    expect(meta.priority).toBe(5);
+
+    // Unknown layout returns null
+    expect(sm.getLayoutMetadata('999')).toBeNull();
+  });
+});
