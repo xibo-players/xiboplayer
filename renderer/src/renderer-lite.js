@@ -41,6 +41,7 @@
 
 import { createNanoEvents } from 'nanoevents';
 import { createLogger, isDebug } from '@xiboplayer/utils';
+import { LayoutPool } from './layout-pool.js';
 
 /**
  * Transition utilities for widget animations
@@ -219,6 +220,10 @@ export class RendererLite {
     // Interactive action state
     this._keydownHandler = null; // Document keydown listener (single, shared)
     this._keyboardActions = []; // Active keyboard actions for current layout
+
+    // Layout preload pool (2-layout pool for instant transitions)
+    this.layoutPool = new LayoutPool(2);
+    this.preloadTimer = null;
 
     // Setup container styles
     this.setupContainer();
@@ -822,7 +827,18 @@ export class RendererLite {
         this.startLayoutTimerWhenReady(layoutId, this.currentLayout);
 
         this.log.info(`Layout ${layoutId} restarted (reused elements)`);
+
+        // Schedule next layout preload for same-layout replay
+        this._scheduleNextLayoutPreload(this.currentLayout);
+
         return; // EARLY RETURN - skip recreation below
+      }
+
+      // Check if this layout was preloaded in the pool
+      if (this.layoutPool.has(layoutId)) {
+        this.log.info(`Layout ${layoutId} found in preload pool - instant swap!`);
+        await this._swapToPreloadedLayout(layoutId);
+        return; // EARLY RETURN - preloaded layout swapped in
       }
 
       // Different layout - full teardown and rebuild
@@ -928,6 +944,19 @@ export class RendererLite {
       // Wait for all initial widgets to be ready (videos playing, images loaded)
       // THEN start the layout timer — ensures videos play to their last frame
       this.startLayoutTimerWhenReady(layoutId, layout);
+
+      // Add current layout to preload pool as 'hot'
+      this.layoutPool.add(layoutId, {
+        container: this.container,
+        layout,
+        regions: this.regions,
+        blobUrls: new Set(this.layoutBlobUrls.get(layoutId) || []),
+        mediaUrlCache: new Map(this.mediaUrlCache)
+      });
+      this.layoutPool.setHot(layoutId);
+
+      // Schedule preloading of the next layout at 75% of current duration
+      this._scheduleNextLayoutPreload(layout);
 
       this.log.info(`Layout ${layoutId} started`);
 
@@ -1729,6 +1758,321 @@ export class RendererLite {
     return iframe;
   }
 
+  // ── Layout Preload Pool ─────────────────────────────────────────────
+
+  /**
+   * Schedule preloading of the next layout at 75% of current layout duration.
+   * Emits 'request-next-layout-preload' so the platform layer can peek at the
+   * schedule and call preloadLayout() with the next layout's XLF.
+   * @param {Object} layout - Current layout object with .duration
+   */
+  _scheduleNextLayoutPreload(layout) {
+    if (this.preloadTimer) {
+      clearTimeout(this.preloadTimer);
+      this.preloadTimer = null;
+    }
+
+    const duration = layout.duration || 60; // seconds
+    const preloadDelay = duration * 1000 * 0.75; // 75% through
+
+    this.log.info(`Scheduling next layout preload in ${(preloadDelay / 1000).toFixed(1)}s (75% of ${duration}s)`);
+
+    this.preloadTimer = setTimeout(() => {
+      this.preloadTimer = null;
+      this.emit('request-next-layout-preload');
+    }, preloadDelay);
+  }
+
+  /**
+   * Preload a layout into the pool as a warm (hidden) entry.
+   * Creates the full DOM hierarchy (regions + widgets) in a hidden container,
+   * pre-fetches media, but does NOT start widget cycling or layout timer.
+   *
+   * This is called by the platform layer in response to 'request-next-layout-preload'.
+   *
+   * @param {string} xlfXml - XLF XML content for the layout
+   * @param {number} layoutId - Layout ID
+   * @returns {Promise<boolean>} true if preload succeeded, false on failure
+   */
+  async preloadLayout(xlfXml, layoutId) {
+    // Don't preload if already in pool
+    if (this.layoutPool.has(layoutId)) {
+      this.log.info(`Layout ${layoutId} already in preload pool, skipping`);
+      return true;
+    }
+
+    // Don't preload the currently playing layout
+    if (this.currentLayoutId === layoutId) {
+      this.log.info(`Layout ${layoutId} is current, skipping preload`);
+      return true;
+    }
+
+    try {
+      this.log.info(`Preloading layout ${layoutId} into pool...`);
+
+      // Parse XLF
+      const layout = this.parseXlf(xlfXml);
+
+      // Calculate scale factor
+      this.calculateScale(layout);
+
+      // Create a hidden wrapper container for the preloaded layout
+      const wrapper = document.createElement('div');
+      wrapper.id = `preload_layout_${layoutId}`;
+      wrapper.className = 'renderer-lite-preload-wrapper';
+      wrapper.style.position = 'absolute';
+      wrapper.style.top = '0';
+      wrapper.style.left = '0';
+      wrapper.style.width = '100%';
+      wrapper.style.height = '100%';
+      wrapper.style.visibility = 'hidden';
+      wrapper.style.zIndex = '-1'; // Behind everything
+
+      // Set background
+      wrapper.style.backgroundColor = layout.bgcolor;
+
+      // Apply background image if specified
+      if (layout.background && this.options.getMediaUrl) {
+        try {
+          const bgUrl = await this.options.getMediaUrl(parseInt(layout.background));
+          if (bgUrl) {
+            wrapper.style.backgroundImage = `url(${bgUrl})`;
+            wrapper.style.backgroundSize = 'cover';
+            wrapper.style.backgroundPosition = 'center';
+            wrapper.style.backgroundRepeat = 'no-repeat';
+          }
+        } catch (err) {
+          this.log.warn('Preload: Failed to load background image:', err);
+        }
+      }
+
+      // Pre-fetch all media URLs in parallel
+      const preloadMediaUrlCache = new Map();
+      if (this.options.getMediaUrl) {
+        const mediaPromises = [];
+
+        for (const region of layout.regions) {
+          for (const widget of region.widgets) {
+            if (widget.fileId) {
+              const fileId = parseInt(widget.fileId || widget.id);
+              if (!preloadMediaUrlCache.has(fileId)) {
+                mediaPromises.push(
+                  this.options.getMediaUrl(fileId)
+                    .then(url => {
+                      preloadMediaUrlCache.set(fileId, url);
+                    })
+                    .catch(err => {
+                      this.log.warn(`Preload: Failed to fetch media ${fileId}:`, err);
+                    })
+                );
+              }
+            }
+          }
+        }
+
+        if (mediaPromises.length > 0) {
+          this.log.info(`Preload: fetching ${mediaPromises.length} media URLs...`);
+          await Promise.all(mediaPromises);
+        }
+      }
+
+      // Temporarily swap mediaUrlCache so createWidgetElement uses preload cache
+      const savedMediaUrlCache = this.mediaUrlCache;
+      const savedCurrentLayoutId = this.currentLayoutId;
+      this.mediaUrlCache = preloadMediaUrlCache;
+
+      // Create regions in the hidden wrapper
+      const preloadRegions = new Map();
+      const sf = this.scaleFactor;
+
+      for (const regionConfig of layout.regions) {
+        const regionEl = document.createElement('div');
+        regionEl.id = `preload_region_${layoutId}_${regionConfig.id}`;
+        regionEl.className = 'renderer-lite-region';
+        regionEl.style.position = 'absolute';
+        regionEl.style.zIndex = regionConfig.zindex;
+        regionEl.style.overflow = 'hidden';
+
+        // Apply scaled positioning
+        this.applyRegionScale(regionEl, regionConfig);
+
+        wrapper.appendChild(regionEl);
+
+        const region = {
+          element: regionEl,
+          config: regionConfig,
+          widgets: regionConfig.widgets,
+          currentIndex: 0,
+          timer: null,
+          width: regionConfig.width * sf,
+          height: regionConfig.height * sf,
+          complete: false,
+          widgetElements: new Map()
+        };
+
+        preloadRegions.set(regionConfig.id, region);
+      }
+
+      // Track blob URLs for the preloaded layout separately
+      const preloadBlobUrls = new Set();
+      const savedLayoutBlobUrls = this.layoutBlobUrls;
+      this.layoutBlobUrls = new Map();
+      this.layoutBlobUrls.set(layoutId, preloadBlobUrls);
+
+      // Temporarily set currentLayoutId for trackBlobUrl to work
+      this.currentLayoutId = layoutId;
+
+      // Pre-create all widget elements
+      for (const [regionId, region] of preloadRegions) {
+        for (let i = 0; i < region.widgets.length; i++) {
+          const widget = region.widgets[i];
+          widget.layoutId = layoutId;
+          widget.regionId = regionId;
+
+          try {
+            const element = await this.createWidgetElement(widget, region);
+            element.style.visibility = 'hidden';
+            element.style.opacity = '0';
+            region.element.appendChild(element);
+            region.widgetElements.set(widget.id, element);
+          } catch (error) {
+            this.log.error(`Preload: Failed to create widget ${widget.id}:`, error);
+          }
+        }
+      }
+
+      // Restore state
+      this.mediaUrlCache = savedMediaUrlCache;
+      this.currentLayoutId = savedCurrentLayoutId;
+
+      // Collect any blob URLs tracked during preload
+      const trackedBlobUrls = this.layoutBlobUrls.get(layoutId) || new Set();
+      trackedBlobUrls.forEach(url => preloadBlobUrls.add(url));
+
+      // Restore original layoutBlobUrls
+      this.layoutBlobUrls = savedLayoutBlobUrls;
+
+      // Add wrapper to main container (hidden)
+      this.container.appendChild(wrapper);
+
+      // Add to pool as warm
+      this.layoutPool.add(layoutId, {
+        container: wrapper,
+        layout,
+        regions: preloadRegions,
+        blobUrls: preloadBlobUrls,
+        mediaUrlCache: preloadMediaUrlCache
+      });
+
+      this.log.info(`Layout ${layoutId} preloaded into pool (${preloadRegions.size} regions, ${preloadMediaUrlCache.size} media)`);
+      return true;
+
+    } catch (error) {
+      this.log.error(`Preload failed for layout ${layoutId}:`, error);
+      return false;
+    }
+  }
+
+  /**
+   * Swap to a preloaded layout from the pool (instant transition).
+   * Hides the current layout container and shows the preloaded one,
+   * then starts widget cycling and layout timer.
+   *
+   * @param {number} layoutId - Layout ID to swap to
+   */
+  async _swapToPreloadedLayout(layoutId) {
+    const preloaded = this.layoutPool.get(layoutId);
+    if (!preloaded) {
+      this.log.error(`Cannot swap: layout ${layoutId} not in pool`);
+      return;
+    }
+
+    // Stop current layout timers and action listeners (but don't destroy DOM)
+    this.removeActionListeners();
+
+    if (this.layoutTimer) {
+      clearTimeout(this.layoutTimer);
+      this.layoutTimer = null;
+    }
+
+    if (this.preloadTimer) {
+      clearTimeout(this.preloadTimer);
+      this.preloadTimer = null;
+    }
+
+    // Stop region timers on current layout
+    for (const [regionId, region] of this.regions) {
+      if (region.timer) {
+        clearTimeout(region.timer);
+        region.timer = null;
+      }
+    }
+
+    // Emit layoutEnd for the previous layout if it hasn't been emitted
+    if (this.currentLayoutId && !this.layoutEndEmitted) {
+      // Don't emit here - it was already emitted by the timer
+    }
+
+    // Hide current hot layout container
+    if (this.layoutPool.hotLayoutId !== null) {
+      const currentEntry = this.layoutPool.get(this.layoutPool.hotLayoutId);
+      if (currentEntry && currentEntry.container) {
+        currentEntry.container.style.visibility = 'hidden';
+        currentEntry.container.style.zIndex = '-1';
+      }
+    }
+
+    // Show preloaded layout container
+    preloaded.container.style.visibility = 'visible';
+    preloaded.container.style.zIndex = '0';
+    preloaded.container.style.position = 'absolute';
+    preloaded.container.style.top = '0';
+    preloaded.container.style.left = '0';
+
+    // Update renderer state to the preloaded layout
+    this.layoutPool.setHot(layoutId);
+    this.currentLayout = preloaded.layout;
+    this.currentLayoutId = layoutId;
+    this.regions = preloaded.regions;
+    this.mediaUrlCache = preloaded.mediaUrlCache || new Map();
+    this.layoutEndEmitted = false;
+
+    // Update container background to match preloaded layout
+    this.container.style.backgroundColor = preloaded.layout.bgcolor;
+    if (preloaded.container.style.backgroundImage) {
+      this.container.style.backgroundImage = preloaded.container.style.backgroundImage;
+      this.container.style.backgroundSize = preloaded.container.style.backgroundSize;
+      this.container.style.backgroundPosition = preloaded.container.style.backgroundPosition;
+      this.container.style.backgroundRepeat = preloaded.container.style.backgroundRepeat;
+    } else {
+      this.container.style.backgroundImage = '';
+    }
+
+    // Recalculate scale for the preloaded layout
+    this.calculateScale(preloaded.layout);
+
+    // Attach interactive action listeners
+    this.attachActionListeners(preloaded.layout);
+
+    // Emit layout start event
+    this.emit('layoutStart', layoutId, preloaded.layout);
+
+    // Reset all regions and start widget cycling
+    for (const [regionId, region] of this.regions) {
+      region.currentIndex = 0;
+      region.complete = false;
+      this.startRegion(regionId);
+    }
+
+    // Wait for widgets to be ready then start layout timer
+    this.startLayoutTimerWhenReady(layoutId, preloaded.layout);
+
+    // Schedule next preload
+    this._scheduleNextLayoutPreload(preloaded.layout);
+
+    this.log.info(`Swapped to preloaded layout ${layoutId} (instant transition)`);
+  }
+
   /**
    * Check if all regions have completed one full cycle
    * This is informational only - layout timer is authoritative
@@ -1768,31 +2112,44 @@ export class RendererLite {
       this.layoutTimer = null;
     }
 
-    // Revoke all blob URLs for this layout (tracked lifecycle management)
-    if (this.currentLayoutId) {
-      this.revokeBlobUrlsForLayout(this.currentLayoutId);
+    // Clear preload timer
+    if (this.preloadTimer) {
+      clearTimeout(this.preloadTimer);
+      this.preloadTimer = null;
     }
 
-    // Stop all regions
-    for (const [regionId, region] of this.regions) {
-      if (region.timer) {
-        clearTimeout(region.timer);
-        region.timer = null;
+    // Evict current layout from pool (handles blob URL revocation + DOM removal)
+    if (this.currentLayoutId && this.layoutPool.has(this.currentLayoutId)) {
+      this.layoutPool.evict(this.currentLayoutId);
+    } else {
+      // Not in pool - do manual cleanup (legacy path)
+
+      // Revoke all blob URLs for this layout (tracked lifecycle management)
+      if (this.currentLayoutId) {
+        this.revokeBlobUrlsForLayout(this.currentLayoutId);
       }
 
-      // Stop current widget
-      if (region.widgets.length > 0) {
-        this.stopWidget(regionId, region.currentIndex);
+      // Stop all regions
+      for (const [regionId, region] of this.regions) {
+        if (region.timer) {
+          clearTimeout(region.timer);
+          region.timer = null;
+        }
+
+        // Stop current widget
+        if (region.widgets.length > 0) {
+          this.stopWidget(regionId, region.currentIndex);
+        }
+
+        // Remove region element
+        region.element.remove();
       }
 
-      // Remove region element
-      region.element.remove();
-    }
-
-    // Revoke media blob URLs from cache
-    for (const [fileId, blobUrl] of this.mediaUrlCache) {
-      if (blobUrl && blobUrl.startsWith('blob:')) {
-        URL.revokeObjectURL(blobUrl);
+      // Revoke media blob URLs from cache
+      for (const [fileId, blobUrl] of this.mediaUrlCache) {
+        if (blobUrl && blobUrl.startsWith('blob:')) {
+          URL.revokeObjectURL(blobUrl);
+        }
       }
     }
 
@@ -2212,6 +2569,14 @@ export class RendererLite {
   cleanup() {
     this.stopAllOverlays();
     this.stopCurrentLayout();
+
+    // Clear the layout preload pool
+    this.layoutPool.clear();
+
+    if (this.preloadTimer) {
+      clearTimeout(this.preloadTimer);
+      this.preloadTimer = null;
+    }
 
     if (this.resizeObserver) {
       this.resizeObserver.disconnect();

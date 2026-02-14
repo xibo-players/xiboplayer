@@ -225,6 +225,10 @@ describe('DownloadTask', () => {
 });
 
 describe('DownloadQueue', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   describe('Concurrency Control', () => {
     it('should respect concurrency limit', async () => {
       const queue = new DownloadQueue({ concurrency: 2 });
@@ -322,6 +326,13 @@ describe('DownloadQueue', () => {
 
     it('should create different tasks for different URLs', () => {
       const queue = new DownloadQueue();
+      const testBlob = createTestBlob(1024);
+      mockFetch({
+        'HEAD http://test.com/file1.mp4': { headers: { 'Content-Length': '1024' } },
+        'GET http://test.com/file1.mp4': { blob: testBlob },
+        'HEAD http://test.com/file2.mp4': { headers: { 'Content-Length': '1024' } },
+        'GET http://test.com/file2.mp4': { blob: testBlob }
+      });
 
       const task1 = queue.enqueue({ id: '1', type: 'media', path: 'http://test.com/file1.mp4' });
       const task2 = queue.enqueue({ id: '2', type: 'media', path: 'http://test.com/file2.mp4' });
@@ -334,6 +345,11 @@ describe('DownloadQueue', () => {
   describe('getTask()', () => {
     it('should return active task', () => {
       const queue = new DownloadQueue();
+      const testBlob = createTestBlob(1024);
+      mockFetch({
+        'HEAD http://test.com/file.mp4': { headers: { 'Content-Length': '1024' } },
+        'GET http://test.com/file.mp4': { blob: testBlob }
+      });
 
       const task = queue.enqueue({ id: '1', type: 'media', path: 'http://test.com/file.mp4' });
       const retrieved = queue.getTask('http://test.com/file.mp4');
@@ -353,6 +369,15 @@ describe('DownloadQueue', () => {
   describe('clear()', () => {
     it('should clear queue and active tasks', () => {
       const queue = new DownloadQueue();
+      const testBlob = createTestBlob(1024);
+      mockFetch({
+        'HEAD http://test.com/file1.mp4': { headers: { 'Content-Length': '1024' } },
+        'GET http://test.com/file1.mp4': { blob: testBlob },
+        'HEAD http://test.com/file2.mp4': { headers: { 'Content-Length': '1024' } },
+        'GET http://test.com/file2.mp4': { blob: testBlob },
+        'HEAD http://test.com/file3.mp4': { headers: { 'Content-Length': '1024' } },
+        'GET http://test.com/file3.mp4': { blob: testBlob }
+      });
 
       queue.enqueue({ id: '1', type: 'media', path: 'http://test.com/file1.mp4' });
       queue.enqueue({ id: '2', type: 'media', path: 'http://test.com/file2.mp4' });
@@ -370,8 +395,17 @@ describe('DownloadQueue', () => {
 });
 
 describe('DownloadManager', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   describe('API Delegation', () => {
     it('should delegate enqueue to queue', () => {
+      const testBlob = createTestBlob(1024);
+      mockFetch({
+        'HEAD http://test.com/file.mp4': { headers: { 'Content-Length': '1024' } },
+        'GET http://test.com/file.mp4': { blob: testBlob }
+      });
       const manager = new DownloadManager({ concurrency: 4 });
 
       const task = manager.enqueue({ id: '1', type: 'media', path: 'http://test.com/file.mp4' });
@@ -381,6 +415,11 @@ describe('DownloadManager', () => {
     });
 
     it('should delegate getTask to queue', () => {
+      const testBlob = createTestBlob(1024);
+      mockFetch({
+        'HEAD http://test.com/file.mp4': { headers: { 'Content-Length': '1024' } },
+        'GET http://test.com/file.mp4': { blob: testBlob }
+      });
       const manager = new DownloadManager();
 
       const task = manager.enqueue({ id: '1', type: 'media', path: 'http://test.com/file.mp4' });
@@ -390,6 +429,11 @@ describe('DownloadManager', () => {
     });
 
     it('should delegate getProgress to queue', () => {
+      const testBlob = createTestBlob(1024);
+      mockFetch({
+        'HEAD http://test.com/file.mp4': { headers: { 'Content-Length': '1024' } },
+        'GET http://test.com/file.mp4': { blob: testBlob }
+      });
       const manager = new DownloadManager();
 
       manager.enqueue({ id: '1', type: 'media', path: 'http://test.com/file.mp4' });
@@ -401,6 +445,11 @@ describe('DownloadManager', () => {
     });
 
     it('should delegate clear to queue', () => {
+      const testBlob = createTestBlob(1024);
+      mockFetch({
+        'HEAD http://test.com/file.mp4': { headers: { 'Content-Length': '1024' } },
+        'GET http://test.com/file.mp4': { blob: testBlob }
+      });
       const manager = new DownloadManager();
 
       manager.enqueue({ id: '1', type: 'media', path: 'http://test.com/file.mp4' });
