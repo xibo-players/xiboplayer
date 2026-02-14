@@ -6,6 +6,28 @@
  */
 
 /**
+ * Parse criteria child elements from a layout/overlay element.
+ * Criteria are conditions that must be met for the item to display.
+ *
+ * XML format: <criteria metric="dayOfWeek" condition="equals" type="string">Monday</criteria>
+ *
+ * @param {Element} parentEl - Parent XML element containing <criteria> children
+ * @returns {Array<{metric: string, condition: string, type: string, value: string}>}
+ */
+function parseCriteria(parentEl) {
+  const criteria = [];
+  for (const criteriaEl of parentEl.querySelectorAll(':scope > criteria')) {
+    criteria.push({
+      metric: criteriaEl.getAttribute('metric') || '',
+      condition: criteriaEl.getAttribute('condition') || '',
+      type: criteriaEl.getAttribute('type') || 'string',
+      value: criteriaEl.textContent || ''
+    });
+  }
+  return criteria;
+}
+
+/**
  * Parse Schedule XML response into a normalized schedule object.
  *
  * @param {string} xml - Raw XML string from CMS schedule endpoint
@@ -53,7 +75,10 @@ export function parseScheduleResponse(xml) {
         scheduleid: campaign.scheduleid,
         priority: campaign.priority, // Priority at campaign level
         campaignId: campaign.id,
-        maxPlaysPerHour: parseInt(layoutEl.getAttribute('maxPlaysPerHour') || '0')
+        maxPlaysPerHour: parseInt(layoutEl.getAttribute('maxPlaysPerHour') || '0'),
+        isGeoAware: layoutEl.getAttribute('isGeoAware') === '1',
+        geoLocation: layoutEl.getAttribute('geoLocation') || '',
+        criteria: parseCriteria(layoutEl)
       });
     }
 
@@ -71,7 +96,10 @@ export function parseScheduleResponse(xml) {
       scheduleid: layoutEl.getAttribute('scheduleid'),
       priority: parseInt(layoutEl.getAttribute('priority') || '0'),
       campaignId: null, // Standalone layout
-      maxPlaysPerHour: parseInt(layoutEl.getAttribute('maxPlaysPerHour') || '0')
+      maxPlaysPerHour: parseInt(layoutEl.getAttribute('maxPlaysPerHour') || '0'),
+      isGeoAware: layoutEl.getAttribute('isGeoAware') === '1',
+      geoLocation: layoutEl.getAttribute('geoLocation') || '',
+      criteria: parseCriteria(layoutEl)
     });
   }
 
@@ -90,7 +118,8 @@ export function parseScheduleResponse(xml) {
         scheduleId: overlayEl.getAttribute('scheduleid'),
         isGeoAware: overlayEl.getAttribute('isGeoAware') === '1',
         geoLocation: overlayEl.getAttribute('geoLocation') || '',
-        maxPlaysPerHour: parseInt(overlayEl.getAttribute('maxPlaysPerHour') || '0')
+        maxPlaysPerHour: parseInt(overlayEl.getAttribute('maxPlaysPerHour') || '0'),
+        criteria: parseCriteria(overlayEl)
       });
     }
   }

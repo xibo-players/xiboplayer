@@ -298,6 +298,117 @@ describe('Schedule Parsing', () => {
     });
   });
 
+  describe('Criteria Parsing', () => {
+    it('should parse criteria from standalone layout', () => {
+      const xml = `
+        <schedule>
+          <default file="0"/>
+          <layout file="100" priority="5" fromdt="2026-01-30 00:00:00" todt="2026-01-31 23:59:59" scheduleid="1">
+            <criteria metric="dayOfWeek" condition="equals" type="string">Monday</criteria>
+            <criteria metric="temperature" condition="greaterThan" type="number">25</criteria>
+          </layout>
+        </schedule>
+      `;
+
+      const schedule = parseScheduleResponse(xml);
+
+      expect(schedule.layouts).toHaveLength(1);
+      expect(schedule.layouts[0].criteria).toHaveLength(2);
+      expect(schedule.layouts[0].criteria[0]).toEqual({
+        metric: 'dayOfWeek',
+        condition: 'equals',
+        type: 'string',
+        value: 'Monday'
+      });
+      expect(schedule.layouts[0].criteria[1]).toEqual({
+        metric: 'temperature',
+        condition: 'greaterThan',
+        type: 'number',
+        value: '25'
+      });
+    });
+
+    it('should parse criteria from campaign layout', () => {
+      const xml = `
+        <schedule>
+          <default file="0"/>
+          <campaign id="1" priority="10" fromdt="2026-01-30 00:00:00" todt="2026-01-31 23:59:59" scheduleid="2">
+            <layout file="200">
+              <criteria metric="displayProperty" condition="contains" type="string">building-A</criteria>
+            </layout>
+          </campaign>
+        </schedule>
+      `;
+
+      const schedule = parseScheduleResponse(xml);
+
+      expect(schedule.campaigns[0].layouts[0].criteria).toHaveLength(1);
+      expect(schedule.campaigns[0].layouts[0].criteria[0].metric).toBe('displayProperty');
+      expect(schedule.campaigns[0].layouts[0].criteria[0].value).toBe('building-A');
+    });
+
+    it('should parse criteria from overlay', () => {
+      const xml = `
+        <schedule>
+          <default file="0"/>
+          <overlays>
+            <overlay file="300" duration="30" fromdt="2026-01-01 00:00:00" todt="2026-12-31 23:59:59" priority="5" scheduleid="3">
+              <criteria metric="timeOfDay" condition="between" type="string">09:00-17:00</criteria>
+            </overlay>
+          </overlays>
+        </schedule>
+      `;
+
+      const schedule = parseScheduleResponse(xml);
+
+      expect(schedule.overlays[0].criteria).toHaveLength(1);
+      expect(schedule.overlays[0].criteria[0].metric).toBe('timeOfDay');
+      expect(schedule.overlays[0].criteria[0].condition).toBe('between');
+      expect(schedule.overlays[0].criteria[0].value).toBe('09:00-17:00');
+    });
+
+    it('should return empty criteria array when no criteria elements', () => {
+      const xml = `
+        <schedule>
+          <default file="0"/>
+          <layout file="100" priority="5" fromdt="2026-01-30 00:00:00" todt="2026-01-31 23:59:59" scheduleid="1"/>
+        </schedule>
+      `;
+
+      const schedule = parseScheduleResponse(xml);
+
+      expect(schedule.layouts[0].criteria).toEqual([]);
+    });
+
+    it('should parse geoLocation and isGeoAware from layouts', () => {
+      const xml = `
+        <schedule>
+          <default file="0"/>
+          <layout file="100" priority="5" fromdt="2026-01-30 00:00:00" todt="2026-01-31 23:59:59" scheduleid="1" isGeoAware="1" geoLocation="41.3851,2.1734"/>
+        </schedule>
+      `;
+
+      const schedule = parseScheduleResponse(xml);
+
+      expect(schedule.layouts[0].isGeoAware).toBe(true);
+      expect(schedule.layouts[0].geoLocation).toBe('41.3851,2.1734');
+    });
+
+    it('should default isGeoAware to false and geoLocation to empty', () => {
+      const xml = `
+        <schedule>
+          <default file="0"/>
+          <layout file="100" priority="5" fromdt="2026-01-30 00:00:00" todt="2026-01-31 23:59:59" scheduleid="1"/>
+        </schedule>
+      `;
+
+      const schedule = parseScheduleResponse(xml);
+
+      expect(schedule.layouts[0].isGeoAware).toBe(false);
+      expect(schedule.layouts[0].geoLocation).toBe('');
+    });
+  });
+
   describe('Actions and Commands Together', () => {
     it('should parse both actions and commands in same schedule', () => {
       const xml = `
