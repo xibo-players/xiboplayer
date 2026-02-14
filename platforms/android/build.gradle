@@ -1,0 +1,4 @@
+// Top-level build file for Xibo PWA Android TWA Player
+plugins {
+    id 'com.android.application' version '8.2.2' apply false
+}

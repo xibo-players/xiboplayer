@@ -1,0 +1,24 @@
+# Gradle
+.gradle/
+build/
+app/build/
+local.properties
+
+# Android Studio / IDE
+.idea/
+*.iml
+.DS_Store
+
+# APK outputs
+*.apk
+*.aab
+
+# Signing keys
+*.keystore
+*.jks
+!debug.keystore
+
+# Generated wrapper jar (regenerate with: gradle wrapper --gradle-version 8.4)
+# NOTE: In production projects, gradle-wrapper.jar is typically committed.
+# If you don't have it, run: gradle wrapper --gradle-version 8.4
+# gradle/wrapper/gradle-wrapper.jar

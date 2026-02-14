@@ -1,0 +1,54 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.tecman.xiboplayer'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "com.tecman.xiboplayer"
+        minSdk 23
+        targetSdk 34
+        versionCode 1
+        versionName "1.0.0"
+
+        // PWA URL can be overridden via gradle property:
+        //   ./gradlew assembleDebug -PpwaUrl="https://example.com/player/pwa/"
+        def pwaUrl = project.hasProperty('pwaUrl')
+                ? project.property('pwaUrl')
+                : "https://h1.superpantalles.com:8081/player/pwa/"
+        resValue "string", "pwa_url_override", pwaUrl
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+        debug {
+            minifyEnabled false
+            debuggable true
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    lint {
+        abortOnError false
+    }
+}
+
+dependencies {
+    // AndroidX Browser library provides TrustedWebActivityIntentBuilder and CustomTabsIntent
+    implementation 'androidx.browser:browser:1.8.0'
+
+    // AppCompat for backwards-compatible activity
+    implementation 'androidx.appcompat:appcompat:1.6.1'
+
+    // Core KTX utilities
+    implementation 'androidx.core:core:1.12.0'
+}

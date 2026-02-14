@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Xibo Player</string>
+
+    <!-- Default PWA URL. Change this to your CMS instance URL. -->
+    <string name="default_pwa_url">https://h1.superpantalles.com:8081/player/pwa/</string>
+
+    <!-- SharedPreferences key for storing the configured URL -->
+    <string name="pref_pwa_url_key">pwa_url</string>
+    <string name="prefs_name">xibo_player_prefs</string>
+
+    <!--
+        Digital Asset Links statement for TWA verification.
+        Replace the SHA-256 fingerprint with your signing key's fingerprint.
+        Get it with:
+          keytool -list -v -keystore ~/.android/debug.keystore -alias androiddebugkey -storepass android | grep SHA256
+    -->
+    <string name="asset_statements">
+        [{
+            \"relation\": [\"delegate_permission/common.handle_all_urls\"],
+            \"target\": {
+                \"namespace\": \"web\",
+                \"site\": \"https://h1.superpantalles.com:8081\"
+            }
+        }]
+    </string>
+
+    <string name="fallback_title">Xibo Player (WebView)</string>
+</resources>

@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Digital signage: dark theme for minimal distraction -->
+    <color name="colorPrimary">#FF000000</color>
+    <color name="colorPrimaryDark">#FF000000</color>
+    <color name="colorAccent">#FF1976D2</color>
+
+    <!-- Status bar and navigation bar colors (black for kiosk/signage) -->
+    <color name="statusBarColor">#FF000000</color>
+    <color name="navigationBarColor">#FF000000</color>
+
+    <!-- TWA toolbar color (shown briefly during load) -->
+    <color name="twaToolbarColor">#FF000000</color>
+
+    <!-- Background for splash / loading -->
+    <color name="backgroundColor">#FF000000</color>
+</resources>
