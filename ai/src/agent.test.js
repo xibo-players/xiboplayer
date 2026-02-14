@@ -137,8 +137,8 @@ describe('CmsApiClient', () => {
 // ── Tool definitions tests ───────────────────────────────────────
 
 describe('Tool Definitions', () => {
-  it('should export 16 tools', () => {
-    expect(CMS_TOOLS.length).toBe(16);
+  it('should export 31 tools', () => {
+    expect(CMS_TOOLS.length).toBe(31);
   });
 
   it('should have valid Claude tool schema for all tools', () => {
@@ -160,6 +160,7 @@ describe('Tool Definitions', () => {
 
   it('should have all expected tool names', () => {
     const names = getToolDefinitions().map(d => d.name);
+    // Original tools
     expect(names).toContain('list_layouts');
     expect(names).toContain('create_layout');
     expect(names).toContain('add_region');
@@ -176,6 +177,22 @@ describe('Tool Definitions', () => {
     expect(names).toContain('list_displays');
     expect(names).toContain('list_display_groups');
     expect(names).toContain('list_templates');
+    // New widget tools
+    expect(names).toContain('add_webpage_widget');
+    expect(names).toContain('add_hls_widget');
+    expect(names).toContain('add_rss_widget');
+    expect(names).toContain('add_dataset_widget');
+    expect(names).toContain('add_weather_widget');
+    expect(names).toContain('add_countdown_widget');
+    expect(names).toContain('add_audio_widget');
+    expect(names).toContain('add_pdf_widget');
+    expect(names).toContain('add_localvideo_widget');
+    expect(names).toContain('add_subplaylist_widget');
+    expect(names).toContain('add_calendar_widget');
+    expect(names).toContain('add_notification_widget');
+    expect(names).toContain('add_currencies_widget');
+    expect(names).toContain('add_stocks_widget');
+    expect(names).toContain('add_menuboard_widget');
   });
 });
 
@@ -433,7 +450,7 @@ describe('AiAgent', () => {
     expect(claudeCall[1].headers['anthropic-dangerous-direct-browser-access']).toBe('true');
 
     const body = JSON.parse(claudeCall[1].body);
-    expect(body.tools).toHaveLength(16);
+    expect(body.tools).toHaveLength(31);
     expect(body.messages[0].content).toBe('hello');
   });
 
