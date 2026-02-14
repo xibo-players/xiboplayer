@@ -481,6 +481,472 @@ const listTemplates = {
   },
 };
 
+// ── Tool: add_webpage_widget ──────────────────────────────────────
+
+const addWebpageWidget = {
+  definition: {
+    name: 'add_webpage_widget',
+    description: 'Embed a live web page in a region. Useful for dashboards, live menus, or any URL-based content. Supports scaling and manual positioning.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        playlistId: { type: 'number', description: 'Playlist ID of the target region' },
+        url: { type: 'string', description: 'Web page URL to embed (https://...)' },
+        duration: { type: 'number', description: 'Display duration in seconds (default 60)', default: 60 },
+        name: { type: 'string', description: 'Optional widget name' },
+        modeId: { type: 'number', description: '1 = Open natively, 2 = Manual position, 3 = Best fit (default 1)', default: 1 },
+        transparency: { type: 'boolean', description: 'Transparent background (default false)', default: false },
+      },
+      required: ['playlistId', 'url'],
+    },
+  },
+  async handler(cms, input) {
+    const result = await cms.addWidget('webpage', input.playlistId, {
+      uri: input.url,
+      duration: input.duration || 60,
+      useDuration: 1,
+      modeid: input.modeId || 1,
+      transparency: input.transparency ? 1 : 0,
+      name: input.name || '',
+    });
+    return { widgetId: result.widgetId, type: 'webpage', url: input.url };
+  },
+};
+
+// ── Tool: add_hls_widget ─────────────────────────────────────────
+
+const addHlsWidget = {
+  definition: {
+    name: 'add_hls_widget',
+    description: 'Add an HLS (HTTP Live Streaming) video stream widget. For live TV, IPTV, security cameras, or any .m3u8 stream URL.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        playlistId: { type: 'number', description: 'Playlist ID of the target region' },
+        url: { type: 'string', description: 'HLS stream URL (.m3u8)' },
+        duration: { type: 'number', description: 'Display duration in seconds (default 120)', default: 120 },
+        mute: { type: 'boolean', description: 'Mute audio (default true for signage)', default: true },
+        name: { type: 'string', description: 'Optional widget name' },
+      },
+      required: ['playlistId', 'url'],
+    },
+  },
+  async handler(cms, input) {
+    const result = await cms.addWidget('hls', input.playlistId, {
+      uri: input.url,
+      duration: input.duration || 120,
+      useDuration: 1,
+      mute: input.mute !== false ? 1 : 0,
+      name: input.name || '',
+    });
+    return { widgetId: result.widgetId, type: 'hls', url: input.url };
+  },
+};
+
+// ── Tool: add_rss_widget ─────────────────────────────────────────
+
+const addRssWidget = {
+  definition: {
+    name: 'add_rss_widget',
+    description: 'Display an RSS/Atom news feed as a ticker or list. Shows headlines from any RSS feed URL with configurable item count and duration.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        playlistId: { type: 'number', description: 'Playlist ID of the target region' },
+        feedUrl: { type: 'string', description: 'RSS/Atom feed URL' },
+        duration: { type: 'number', description: 'Duration in seconds (default 60)', default: 60 },
+        numItems: { type: 'number', description: 'Number of feed items to show (default 10)', default: 10 },
+        durationIsPerItem: { type: 'boolean', description: 'If true, duration is per item (default false)', default: false },
+        name: { type: 'string', description: 'Optional widget name' },
+      },
+      required: ['playlistId', 'feedUrl'],
+    },
+  },
+  async handler(cms, input) {
+    const result = await cms.addWidget('rss-ticker', input.playlistId, {
+      uri: input.feedUrl,
+      templateId: 'elements',
+      duration: input.duration || 60,
+      useDuration: 1,
+      numItems: input.numItems || 10,
+      durationIsPerItem: input.durationIsPerItem ? 1 : 0,
+      updateInterval: 60,
+      name: input.name || '',
+    });
+    return { widgetId: result.widgetId, type: 'rss-ticker', feedUrl: input.feedUrl };
+  },
+};
+
+// ── Tool: add_dataset_widget ─────────────────────────────────────
+
+const addDatasetWidget = {
+  definition: {
+    name: 'add_dataset_widget',
+    description: 'Display data from a CMS dataset (custom database table). Shows rows as formatted content. Datasets must be created in the CMS first.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        playlistId: { type: 'number', description: 'Playlist ID of the target region' },
+        dataSetId: { type: 'number', description: 'Dataset ID from the CMS' },
+        duration: { type: 'number', description: 'Duration in seconds (default 30)', default: 30 },
+        upperLimit: { type: 'number', description: 'Max rows to display (default 50)', default: 50 },
+        durationIsPerItem: { type: 'boolean', description: 'Duration per row vs total (default false)', default: false },
+        name: { type: 'string', description: 'Optional widget name' },
+      },
+      required: ['playlistId', 'dataSetId'],
+    },
+  },
+  async handler(cms, input) {
+    const result = await cms.addWidget('dataset', input.playlistId, {
+      dataSetId: input.dataSetId,
+      templateId: 'elements',
+      duration: input.duration || 30,
+      useDuration: 1,
+      upperLimit: input.upperLimit || 50,
+      durationIsPerItem: input.durationIsPerItem ? 1 : 0,
+      updateInterval: 5,
+      name: input.name || '',
+    });
+    return { widgetId: result.widgetId, type: 'dataset', dataSetId: input.dataSetId };
+  },
+};
+
+// ── Tool: add_weather_widget ─────────────────────────────────────
+
+const addWeatherWidget = {
+  definition: {
+    name: 'add_weather_widget',
+    description: 'Display current weather and forecast. Uses the display location by default, or specify custom coordinates. Requires weather API key configured in CMS.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        playlistId: { type: 'number', description: 'Playlist ID of the target region' },
+        duration: { type: 'number', description: 'Duration in seconds (default 60)', default: 60 },
+        useDisplayLocation: { type: 'boolean', description: 'Use display configured lat/long (default true)', default: true },
+        latitude: { type: 'number', description: 'Custom latitude (if useDisplayLocation=false)' },
+        longitude: { type: 'number', description: 'Custom longitude (if useDisplayLocation=false)' },
+        units: { type: 'string', description: '"auto", "si" (metric), "us" (imperial), "ca", "uk"', default: 'auto' },
+        lang: { type: 'string', description: 'Language code: "en", "es", "fr", "ca", etc.', default: 'en' },
+        name: { type: 'string', description: 'Optional widget name' },
+      },
+      required: ['playlistId'],
+    },
+  },
+  async handler(cms, input) {
+    const params = {
+      templateId: 'elements',
+      duration: input.duration || 60,
+      useDuration: 1,
+      useDisplayLocation: input.useDisplayLocation !== false ? 1 : 0,
+      units: input.units || 'auto',
+      lang: input.lang || 'en',
+      name: input.name || '',
+    };
+    if (!input.useDisplayLocation && input.latitude != null) params.latitude = input.latitude;
+    if (!input.useDisplayLocation && input.longitude != null) params.longitude = input.longitude;
+    const result = await cms.addWidget('forecastio', input.playlistId, params);
+    return { widgetId: result.widgetId, type: 'weather' };
+  },
+};
+
+// ── Tool: add_countdown_widget ───────────────────────────────────
+
+const addCountdownWidget = {
+  definition: {
+    name: 'add_countdown_widget',
+    description: 'Add a countdown timer to a date/time. Shows days, hours, minutes, seconds remaining. Great for events, sales, or deadlines.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        playlistId: { type: 'number', description: 'Playlist ID of the target region' },
+        targetDate: { type: 'string', description: 'Target date in "DD/MM/YYYY HH:mm:ss" format' },
+        duration: { type: 'number', description: 'Widget duration in seconds (default 60)', default: 60 },
+        style: { type: 'string', description: '"clock" (circular), "days" (big number), "text" (simple text)', default: 'clock' },
+        name: { type: 'string', description: 'Optional widget name' },
+      },
+      required: ['playlistId', 'targetDate'],
+    },
+  },
+  async handler(cms, input) {
+    const typeMap = { clock: 'countdown-clock', days: 'countdown-days', text: 'countdown-text' };
+    const widgetType = typeMap[input.style] || 'countdown-clock';
+    const result = await cms.addWidget(widgetType, input.playlistId, {
+      countdownType: 3, // Use date
+      countdownDate: input.targetDate,
+      duration: input.duration || 60,
+      useDuration: 1,
+      alignmentH: 'center',
+      alignmentV: 'middle',
+      name: input.name || '',
+    });
+    return { widgetId: result.widgetId, type: widgetType, targetDate: input.targetDate };
+  },
+};
+
+// ── Tool: add_audio_widget ───────────────────────────────────────
+
+const addAudioWidget = {
+  definition: {
+    name: 'add_audio_widget',
+    description: 'Add an audio file from the media library to a region playlist. The audio plays its full duration. Search for audio files using list_media first.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        playlistId: { type: 'number', description: 'Playlist ID of the target region' },
+        mediaId: { type: 'number', description: 'Media library ID of the audio file' },
+        loop: { type: 'boolean', description: 'Loop audio (default false)', default: false },
+      },
+      required: ['playlistId', 'mediaId'],
+    },
+  },
+  async handler(cms, input) {
+    const result = await cms.assignMediaToPlaylist(input.playlistId, [input.mediaId]);
+    return { type: 'audio', mediaId: input.mediaId, assigned: true };
+  },
+};
+
+// ── Tool: add_pdf_widget ─────────────────────────────────────────
+
+const addPdfWidget = {
+  definition: {
+    name: 'add_pdf_widget',
+    description: 'Display a PDF document from the media library. Each page is shown for the specified duration. Upload the PDF first, then use its mediaId here.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        playlistId: { type: 'number', description: 'Playlist ID of the target region' },
+        mediaId: { type: 'number', description: 'Media library ID of the PDF file' },
+        duration: { type: 'number', description: 'Duration per page in seconds (default 10)', default: 10 },
+      },
+      required: ['playlistId', 'mediaId'],
+    },
+  },
+  async handler(cms, input) {
+    const result = await cms.assignMediaToPlaylist(input.playlistId, [input.mediaId]);
+    return { type: 'pdf', mediaId: input.mediaId, assigned: true };
+  },
+};
+
+// ── Tool: add_localvideo_widget ──────────────────────────────────
+
+const addLocalVideoWidget = {
+  definition: {
+    name: 'add_localvideo_widget',
+    description: 'Play a video from a URL or RTSP stream (not from the media library). Useful for IP cameras, RTSP streams, or externally hosted videos.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        playlistId: { type: 'number', description: 'Playlist ID of the target region' },
+        url: { type: 'string', description: 'Video URL (http://, rtsp://, etc.)' },
+        duration: { type: 'number', description: 'Display duration in seconds (default 120)', default: 120 },
+        mute: { type: 'boolean', description: 'Mute audio (default true)', default: true },
+        scaleType: { type: 'string', description: '"aspect" (fit) or "stretch" (fill)', default: 'aspect' },
+        name: { type: 'string', description: 'Optional widget name' },
+      },
+      required: ['playlistId', 'url'],
+    },
+  },
+  async handler(cms, input) {
+    const result = await cms.addWidget('localvideo', input.playlistId, {
+      uri: input.url,
+      duration: input.duration || 120,
+      useDuration: 1,
+      mute: input.mute !== false ? 1 : 0,
+      scaleType: input.scaleType || 'aspect',
+      name: input.name || '',
+    });
+    return { widgetId: result.widgetId, type: 'localvideo', url: input.url };
+  },
+};
+
+// ── Tool: add_subplaylist_widget ─────────────────────────────────
+
+const addSubplaylistWidget = {
+  definition: {
+    name: 'add_subplaylist_widget',
+    description: 'Embed one or more playlists inside a region. Playlists can be mixed with round-robin or sequential arrangement. Useful for content zones that cycle through different playlist sources.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        playlistId: { type: 'number', description: 'Playlist ID of the target region' },
+        subPlaylistIds: {
+          type: 'array',
+          items: { type: 'number' },
+          description: 'Array of playlist IDs to embed',
+        },
+        arrangement: { type: 'string', description: '"none" (sequential), "roundrobin", "even"', default: 'none' },
+        duration: { type: 'number', description: 'Total duration in seconds (default 120)', default: 120 },
+        name: { type: 'string', description: 'Optional widget name' },
+      },
+      required: ['playlistId', 'subPlaylistIds'],
+    },
+  },
+  async handler(cms, input) {
+    const subPlaylists = (input.subPlaylistIds || []).map(id => ({ playlistId: id, spots: 5 }));
+    const result = await cms.addWidget('subplaylist', input.playlistId, {
+      subPlaylists: JSON.stringify(subPlaylists),
+      arrangement: input.arrangement || 'none',
+      duration: input.duration || 120,
+      useDuration: 1,
+      name: input.name || '',
+    });
+    return { widgetId: result.widgetId, type: 'subplaylist', subPlaylistIds: input.subPlaylistIds };
+  },
+};
+
+// ── Tool: add_calendar_widget ────────────────────────────────────
+
+const addCalendarWidget = {
+  definition: {
+    name: 'add_calendar_widget',
+    description: 'Display events from an iCalendar (.ics) feed. Shows upcoming events from Google Calendar, Outlook, or any ICS-compatible calendar.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        playlistId: { type: 'number', description: 'Playlist ID of the target region' },
+        feedUrl: { type: 'string', description: 'ICS calendar feed URL' },
+        duration: { type: 'number', description: 'Duration in seconds (default 60)', default: 60 },
+        numItems: { type: 'number', description: 'Number of events to show (default 10)', default: 10 },
+        name: { type: 'string', description: 'Optional widget name' },
+      },
+      required: ['playlistId', 'feedUrl'],
+    },
+  },
+  async handler(cms, input) {
+    const result = await cms.addWidget('ics-calendar', input.playlistId, {
+      uri: input.feedUrl,
+      templateId: 'elements',
+      duration: input.duration || 60,
+      useDuration: 1,
+      numItems: input.numItems || 10,
+      updateInterval: 60,
+      name: input.name || '',
+    });
+    return { widgetId: result.widgetId, type: 'ics-calendar', feedUrl: input.feedUrl };
+  },
+};
+
+// ── Tool: add_notification_widget ────────────────────────────────
+
+const addNotificationWidget = {
+  definition: {
+    name: 'add_notification_widget',
+    description: 'Display CMS notification messages on screen. Shows messages from the Xibo notification drawer, useful for emergency alerts or announcements.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        playlistId: { type: 'number', description: 'Playlist ID of the target region' },
+        duration: { type: 'number', description: 'Duration in seconds (default 60)', default: 60 },
+        name: { type: 'string', description: 'Optional widget name' },
+      },
+      required: ['playlistId'],
+    },
+  },
+  async handler(cms, input) {
+    const result = await cms.addWidget('notificationview', input.playlistId, {
+      templateId: 'elements',
+      duration: input.duration || 60,
+      useDuration: 1,
+      name: input.name || '',
+    });
+    return { widgetId: result.widgetId, type: 'notificationview' };
+  },
+};
+
+// ── Tool: add_currencies_widget ──────────────────────────────────
+
+const addCurrenciesWidget = {
+  definition: {
+    name: 'add_currencies_widget',
+    description: 'Display live currency exchange rates. Useful for airports, banks, or financial displays.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        playlistId: { type: 'number', description: 'Playlist ID of the target region' },
+        base: { type: 'string', description: 'Base currency code (e.g. "EUR", "USD")', default: 'EUR' },
+        items: { type: 'string', description: 'Comma-separated target currencies (e.g. "USD,GBP,JPY")' },
+        duration: { type: 'number', description: 'Duration in seconds (default 60)', default: 60 },
+        name: { type: 'string', description: 'Optional widget name' },
+      },
+      required: ['playlistId'],
+    },
+  },
+  async handler(cms, input) {
+    const result = await cms.addWidget('currencies', input.playlistId, {
+      templateId: 'elements',
+      base: input.base || 'EUR',
+      items: input.items || 'USD,GBP',
+      duration: input.duration || 60,
+      useDuration: 1,
+      updateInterval: 60,
+      name: input.name || '',
+    });
+    return { widgetId: result.widgetId, type: 'currencies' };
+  },
+};
+
+// ── Tool: add_stocks_widget ──────────────────────────────────────
+
+const addStocksWidget = {
+  definition: {
+    name: 'add_stocks_widget',
+    description: 'Display live stock market quotes. Shows stock prices and changes for specified ticker symbols.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        playlistId: { type: 'number', description: 'Playlist ID of the target region' },
+        items: { type: 'string', description: 'Comma-separated stock symbols (e.g. "AAPL,GOOGL,MSFT")' },
+        duration: { type: 'number', description: 'Duration in seconds (default 60)', default: 60 },
+        name: { type: 'string', description: 'Optional widget name' },
+      },
+      required: ['playlistId', 'items'],
+    },
+  },
+  async handler(cms, input) {
+    const result = await cms.addWidget('stocks', input.playlistId, {
+      templateId: 'elements',
+      items: input.items,
+      duration: input.duration || 60,
+      useDuration: 1,
+      updateInterval: 60,
+      name: input.name || '',
+    });
+    return { widgetId: result.widgetId, type: 'stocks' };
+  },
+};
+
+// ── Tool: add_menuboard_widget ───────────────────────────────────
+
+const addMenuboardWidget = {
+  definition: {
+    name: 'add_menuboard_widget',
+    description: 'Display menu board products from the CMS menu board feature. Shows menu items with prices, descriptions, and images. Menu boards must be created in the CMS first.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        playlistId: { type: 'number', description: 'Playlist ID of the target region' },
+        menuId: { type: 'number', description: 'Menu Board ID from the CMS' },
+        categoryId: { type: 'number', description: 'Optional category filter' },
+        duration: { type: 'number', description: 'Duration in seconds (default 60)', default: 60 },
+        name: { type: 'string', description: 'Optional widget name' },
+      },
+      required: ['playlistId', 'menuId'],
+    },
+  },
+  async handler(cms, input) {
+    const params = {
+      menuId: input.menuId,
+      templateId: 'elements',
+      duration: input.duration || 60,
+      useDuration: 1,
+      name: input.name || '',
+    };
+    if (input.categoryId) params.categoryId = input.categoryId;
+    const result = await cms.addWidget('menuboard-product', input.playlistId, params);
+    return { widgetId: result.widgetId, type: 'menuboard', menuId: input.menuId };
+  },
+};
+
 // ── Export all tools ───────────────────────────────────────────────
 
 export const CMS_TOOLS = [
@@ -492,6 +958,21 @@ export const CMS_TOOLS = [
   addVideoWidget,
   addClockWidget,
   addEmbeddedWidget,
+  addWebpageWidget,
+  addHlsWidget,
+  addRssWidget,
+  addDatasetWidget,
+  addWeatherWidget,
+  addCountdownWidget,
+  addAudioWidget,
+  addPdfWidget,
+  addLocalVideoWidget,
+  addSubplaylistWidget,
+  addCalendarWidget,
+  addNotificationWidget,
+  addCurrenciesWidget,
+  addStocksWidget,
+  addMenuboardWidget,
   publishLayout,
   listMedia,
   createCampaign,
