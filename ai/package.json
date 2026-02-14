@@ -1,0 +1,17 @@
+{
+  "name": "@xiboplayer/ai",
+  "version": "0.1.0",
+  "description": "AI Campaign Creator - chat-based signage content creation via Claude tool-use",
+  "type": "module",
+  "main": "src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./agent": "./src/agent.js",
+    "./cms-api": "./src/cms-api-client.js",
+    "./tools": "./src/tools.js",
+    "./chat-ui": "./src/chat-ui.js"
+  },
+  "scripts": {
+    "test": "vitest run src/"
+  }
+}
