@@ -631,6 +631,30 @@ export class PlayerCore extends EventEmitter {
   }
 
   /**
+   * Peek at the next layout in the schedule without advancing the index.
+   * Used by the preload system to know which layout to pre-build.
+   * Returns { layoutId, layoutFile } or null if no next layout or same as current.
+   */
+  peekNextLayout() {
+    const layoutFiles = this.schedule.getCurrentLayouts();
+    if (layoutFiles.length <= 1) {
+      // Single layout or empty schedule - no different layout to preload
+      return null;
+    }
+
+    const nextIndex = (this._currentLayoutIndex + 1) % layoutFiles.length;
+    const layoutFile = layoutFiles[nextIndex];
+    const layoutId = parseInt(layoutFile.replace('.xlf', ''), 10);
+
+    // Don't return if it's the same as current (no point preloading)
+    if (layoutId === this.currentLayoutId) {
+      return null;
+    }
+
+    return { layoutId, layoutFile };
+  }
+
+  /**
    * Advance to the next layout in the schedule (round-robin).
    * Called by platform layer when a layout finishes (layoutEnd event).
    * Increments the index and emits layout-prepare-request for the next layout,

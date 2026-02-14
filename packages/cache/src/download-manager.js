@@ -121,6 +121,7 @@ export class DownloadTask {
 
       // Reject all waiters
       this.promise = Promise.reject(error);
+      this.promise.catch(() => {}); // Prevent unhandled rejection if nobody calls wait()
       for (const waiter of this.waiters) {
         waiter.reject(error);
       }
@@ -304,7 +305,9 @@ export class DownloadQueue {
       console.log('[DownloadQueue] Starting:', task.fileInfo.path, `(${this.running}/${this.concurrency} active)`);
 
       // Start download (don't await - let it run in background)
+      // .catch is safe here: errors are already propagated to waiters inside start()
       task.start()
+        .catch(() => {}) // Suppress — error handled internally via waiters
         .finally(() => {
           this.running--;
           this.active.delete(task.fileInfo.path);
