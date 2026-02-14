@@ -14,6 +14,8 @@ import { PlayerCore } from '@xiboplayer/core';
 // @ts-ignore - JavaScript module
 import { createLogger, isDebug, registerLogSink } from '@xiboplayer/utils';
 import { DownloadOverlay, getDefaultOverlayConfig } from './download-overlay.js';
+// @ts-ignore - JavaScript module
+import { AiCampaignCreator } from '@xiboplayer/ai';
 
 const log = createLogger('PWA');
 
@@ -49,6 +51,7 @@ class PwaPlayer {
   private _screenshotInFlight = false; // Concurrency guard — one capture at a time
   private _html2canvasMod: any = null; // Pre-loaded module
   private _wakeLock: any = null; // Screen Wake Lock sentinel
+  private aiChat: any = null; // AI Campaign Creator overlay
 
   async init() {
     log.info('Initializing player with RendererLite + PlayerCore...');
@@ -196,6 +199,9 @@ class PwaPlayer {
       this.downloadOverlay = new DownloadOverlay(overlayConfig, cacheProxy);
       log.info('Download overlay enabled (hover bottom-right corner)');
     }
+
+    // Initialize AI Campaign Creator if configured via URL params
+    this.initAiChat();
 
     // Request Screen Wake Lock to prevent display sleep
     await this.requestWakeLock();
@@ -1152,6 +1158,72 @@ class PwaPlayer {
   }
 
   /**
+   * Initialize AI Campaign Creator chat overlay.
+   *
+   * Enabled via URL params:
+   *   ?aiChat=true&aiApiKey=sk-ant-...&cmsClientId=...&cmsClientSecret=...
+   *
+   * Or via localStorage:
+   *   localStorage.setItem('aiApiKey', 'sk-ant-...');
+   *   localStorage.setItem('cmsClientId', '...');
+   *   localStorage.setItem('cmsClientSecret', '...');
+   *
+   * The CMS URL is auto-detected from player config.
+   */
+  private initAiChat() {
+    const params = new URLSearchParams(window.location.search);
+    const enabled = params.get('aiChat') === 'true'
+      || localStorage.getItem('aiChat') === 'true';
+
+    if (!enabled) return;
+
+    const apiKey = params.get('aiApiKey')
+      || localStorage.getItem('aiApiKey');
+    const cmsClientId = params.get('cmsClientId')
+      || localStorage.getItem('cmsClientId');
+    const cmsClientSecret = params.get('cmsClientSecret')
+      || localStorage.getItem('cmsClientSecret');
+    const cmsApiToken = params.get('cmsApiToken')
+      || localStorage.getItem('cmsApiToken');
+    const aiApiUrl = params.get('aiApiUrl')
+      || localStorage.getItem('aiApiUrl');
+    const aiModel = params.get('aiModel')
+      || localStorage.getItem('aiModel');
+
+    if (!apiKey) {
+      log.warn('AI Chat enabled but no aiApiKey configured');
+      return;
+    }
+
+    if (!cmsClientId && !cmsClientSecret && !cmsApiToken) {
+      log.warn('AI Chat enabled but no CMS API credentials (cmsClientId/cmsClientSecret or cmsApiToken)');
+      return;
+    }
+
+    try {
+      this.aiChat = new AiCampaignCreator({
+        anthropicApiKey: apiKey,
+        anthropicApiUrl: aiApiUrl || undefined,
+        model: aiModel || undefined,
+        cmsUrl: config.cmsAddress,
+        cmsClientId: cmsClientId || undefined,
+        cmsClientSecret: cmsClientSecret || undefined,
+        cmsApiToken: cmsApiToken || undefined,
+        container: document.body,
+        playerContext: {
+          displayName: config.displayName || config.hardwareKey,
+          cmsUrl: config.cmsAddress,
+        },
+      });
+
+      this.aiChat.start();
+      log.info('AI Campaign Creator chat enabled');
+    } catch (err: any) {
+      log.error('Failed to initialize AI Chat:', err?.message);
+    }
+  }
+
+  /**
    * Submit proof of play stats to CMS
    */
   private async submitStats() {
@@ -1645,6 +1717,10 @@ class PwaPlayer {
 
     if (this.downloadOverlay) {
       this.downloadOverlay.destroy();
+    }
+
+    if (this.aiChat) {
+      this.aiChat.destroy();
     }
   }
 }
