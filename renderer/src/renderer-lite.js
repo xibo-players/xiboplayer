@@ -1264,6 +1264,7 @@ export class RendererLite {
     video.style.objectFit = 'contain';
     video.style.opacity = '1'; // Immediately visible
     video.autoplay = true;
+    video.preload = 'auto'; // Eagerly buffer - chunks are pre-warmed in SW BlobCache
     video.muted = widget.options.mute === '1';
     video.loop = false; // Don't use native loop - we handle it manually to avoid black frames
     video.controls = isDebug(); // Show controls only in debug mode
