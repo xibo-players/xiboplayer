@@ -435,6 +435,36 @@ export class CacheProxy extends EventEmitter {
   }
 
   /**
+   * Pre-warm video chunks into SW BlobCache for faster playback startup.
+   * Loads first and last chunks into memory so moov atom probing is instant.
+   * @param {number[]} mediaIds - Media file IDs to pre-warm
+   * @returns {Promise<{warmed: number, total: number}>}
+   */
+  async prewarmVideoChunks(mediaIds) {
+    if (!mediaIds || mediaIds.length === 0) return { warmed: 0, total: 0 };
+
+    const controller = navigator.serviceWorker?.controller;
+    if (!controller) return { warmed: 0, total: mediaIds.length };
+
+    return new Promise((resolve) => {
+      const channel = new MessageChannel();
+
+      channel.port1.onmessage = (event) => {
+        const { success, warmed, total } = event.data;
+        resolve(success ? { warmed, total } : { warmed: 0, total: mediaIds.length });
+      };
+
+      controller.postMessage(
+        { type: 'PREWARM_VIDEO_CHUNKS', data: { mediaIds } },
+        [channel.port2]
+      );
+
+      // Don't block layout rendering for more than 2s
+      setTimeout(() => resolve({ warmed: 0, total: mediaIds.length }), 2000);
+    });
+  }
+
+  /**
    * Get download progress from Service Worker
    * @returns {Promise<Object>} Progress info for all active downloads
    */

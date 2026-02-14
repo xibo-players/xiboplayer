@@ -158,7 +158,14 @@ export class DownloadTask {
       chunkRanges.push({ start, end, index: chunkRanges.length });
     }
 
-    console.log('[DownloadTask] Downloading', chunkRanges.length, 'chunks in parallel');
+    // Prioritize chunk 0 (ftyp header) and last chunk (moov atom) for video early playback.
+    // Modern browsers seek to end of MP4 for moov, so having both extremes first
+    // lets video start playing while middle chunks are still downloading.
+    if (chunkRanges.length > 2) {
+      const lastChunk = chunkRanges.pop(); // remove last
+      chunkRanges.splice(1, 0, lastChunk); // insert after chunk 0
+    }
+    console.log('[DownloadTask] Downloading', chunkRanges.length, 'chunks (chunk 0 + last prioritized)');
 
     // Download chunks in parallel with concurrency limit
     const chunkMap = new Map();
