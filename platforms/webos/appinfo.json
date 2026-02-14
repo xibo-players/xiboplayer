@@ -1,0 +1,17 @@
+{
+  "id": "com.tecman.xiboplayer",
+  "version": "1.0.0",
+  "vendor": "TecMan",
+  "type": "web",
+  "main": "index.html",
+  "title": "Xibo Player",
+  "icon": "icon.png",
+  "largeIcon": "largeIcon.png",
+  "bgImage": "bgImage.png",
+  "resolution": "1920x1080",
+  "disableBackExitRecent": true,
+  "transparent": false,
+  "handlesRelaunch": true,
+  "splashBackground": "#000000",
+  "bgColor": "#000000"
+}

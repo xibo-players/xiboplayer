@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="80" height="80" viewBox="0 0 80 80">
+  <rect width="80" height="80" rx="12" fill="#1a1a2e"/>
+  <text x="40" y="48" font-family="Arial, sans-serif" font-size="24" font-weight="bold" fill="#e94560" text-anchor="middle">X</text>
+  <text x="40" y="65" font-family="Arial, sans-serif" font-size="10" fill="#aaa" text-anchor="middle">XIBO</text>
+</svg>
