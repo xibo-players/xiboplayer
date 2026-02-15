@@ -22,15 +22,16 @@ export class CmsApiClient {
   /**
    * @param {Object} options
    * @param {string} options.baseUrl - CMS base URL (e.g. https://cms.example.com)
-   * @param {string} options.clientId - OAuth2 application client ID
-   * @param {string} options.clientSecret - OAuth2 application client secret
+   * @param {string} [options.clientId] - OAuth2 application client ID
+   * @param {string} [options.clientSecret] - OAuth2 application client secret
+   * @param {string} [options.apiToken] - Pre-configured bearer token (skips OAuth2 flow)
    */
-  constructor({ baseUrl, clientId, clientSecret }) {
-    this.baseUrl = baseUrl.replace(/\/+$/, '');
-    this.clientId = clientId;
-    this.clientSecret = clientSecret;
-    this.accessToken = null;
-    this.tokenExpiry = 0;
+  constructor({ baseUrl, clientId, clientSecret, apiToken } = {}) {
+    this.baseUrl = (baseUrl || '').replace(/\/+$/, '');
+    this.clientId = clientId || null;
+    this.clientSecret = clientSecret || null;
+    this.accessToken = apiToken || null;
+    this.tokenExpiry = apiToken ? Infinity : 0;
   }
 
   // ── OAuth2 Token Management ─────────────────────────────────────
@@ -69,9 +70,12 @@ export class CmsApiClient {
    * Ensure we have a valid token (auto-refresh if expired)
    */
   async ensureToken() {
-    if (!this.accessToken || Date.now() >= this.tokenExpiry - 60000) {
-      await this.authenticate();
+    if (this.accessToken && Date.now() < this.tokenExpiry - 60000) return;
+    if (!this.clientId || !this.clientSecret) {
+      if (this.accessToken) return; // apiToken with no expiry
+      throw new CmsApiError('AUTH', '/authorize', 0, 'No valid token and no OAuth2 credentials');
     }
+    await this.authenticate();
   }
 
   /**
@@ -114,7 +118,7 @@ export class CmsApiClient {
       } catch (_) {
         errorMsg = text;
       }
-      throw new Error(`CMS API ${method} ${path} failed (${response.status}): ${errorMsg}`);
+      throw new CmsApiError(method, path, response.status, errorMsg);
     }
 
     // Some endpoints return empty body (204)
@@ -124,6 +128,17 @@ export class CmsApiClient {
     }
     return null;
   }
+
+  // ── Convenience methods ────────────────────────────────────────
+
+  /** GET request (path relative to /api/) */
+  get(path, params) { return this.request('GET', path, params); }
+  /** POST request (path relative to /api/) */
+  post(path, body) { return this.request('POST', path, body); }
+  /** PUT request (path relative to /api/) */
+  put(path, body) { return this.request('PUT', path, body); }
+  /** DELETE request (path relative to /api/) */
+  del(path) { return this.request('DELETE', path); }
 
   // ── Display Management ──────────────────────────────────────────
 
@@ -363,13 +378,35 @@ export class CmsApiClient {
 
   /**
    * Add a widget to a playlist
+   *
+   * Xibo CMS v4 uses a two-step process:
+   * 1. POST creates the widget shell (only templateId and displayOrder are processed)
+   * 2. PUT sets all widget properties (uri, duration, mute, etc.)
+   *
    * @param {string} type - Widget type (text, image, video, embedded, clock, etc.)
    * @param {number} playlistId - Target playlist ID (from region.playlists[0].playlistId)
    * @param {Object} [properties] - Widget-specific properties
-   * @returns {Promise<Object>} Created widget
+   * @returns {Promise<Object>} Created widget with properties applied
    */
   async addWidget(type, playlistId, properties = {}) {
-    return this.request('POST', `/playlist/widget/${type}/${playlistId}`, properties);
+    // Step 1: Create the widget (only templateId/displayOrder handled by CMS addWidget)
+    const { templateId, displayOrder, ...editProps } = properties;
+    const createParams = {};
+    if (templateId !== undefined) createParams.templateId = templateId;
+    if (displayOrder !== undefined) createParams.displayOrder = displayOrder;
+
+    const widget = await this.request('POST', `/playlist/widget/${type}/${playlistId}`, createParams);
+
+    // Step 2: Set widget properties via editWidget (CMS processes all module properties here)
+    if (Object.keys(editProps).length > 0) {
+      // useDuration=1 tells CMS to use our custom duration instead of module default
+      if (editProps.duration !== undefined && editProps.useDuration === undefined) {
+        editProps.useDuration = 1;
+      }
+      return this.request('PUT', `/playlist/widget/${widget.widgetId}`, editProps);
+    }
+
+    return widget;
   }
 
   /**
@@ -652,5 +689,76 @@ export class CmsApiClient {
   async listResolutions() {
     const data = await this.request('GET', '/resolution');
     return Array.isArray(data) ? data : [];
+  }
+
+  // ── Template Management ──────────────────────────────────────────
+
+  /**
+   * List available layout templates
+   * @param {Object} [filters] - Filters (layout, tags, etc.)
+   * @returns {Promise<Array>}
+   */
+  async listTemplates(filters = {}) {
+    const data = await this.request('GET', '/template', filters);
+    return Array.isArray(data) ? data : [];
+  }
+
+  // ── Playlist Management ──────────────────────────────────────────
+
+  /**
+   * Assign media library items to a playlist (for file-based widgets: audio, PDF, video)
+   * @param {number} playlistId
+   * @param {number[]} mediaIds - Array of media IDs to assign
+   * @returns {Promise<Object>}
+   */
+  async assignMediaToPlaylist(playlistId, mediaIds) {
+    const ids = Array.isArray(mediaIds) ? mediaIds : [mediaIds];
+    // Xibo API expects media[] repeated keys
+    await this.ensureToken();
+    const url = `${this.baseUrl}/api/playlist/library/assign/${playlistId}`;
+    const urlParams = new URLSearchParams();
+    for (const id of ids) {
+      urlParams.append('media[]', String(id));
+    }
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${this.accessToken}`,
+        'Content-Type': 'application/x-www-form-urlencoded'
+      },
+      body: urlParams
+    });
+    if (!response.ok) {
+      const text = await response.text();
+      throw new CmsApiError('POST', `/playlist/library/assign/${playlistId}`, response.status, text);
+    }
+    const contentType = response.headers.get('Content-Type') || '';
+    return contentType.includes('application/json') ? response.json() : null;
+  }
+
+  // ── Layout Edit ───────────────────────────────────────────────────
+
+  /**
+   * Edit layout properties
+   * @param {number} layoutId
+   * @param {Object} params - Properties to update
+   * @returns {Promise<Object>}
+   */
+  async editLayout(layoutId, params) {
+    return this.request('PUT', `/layout/${layoutId}`, params);
+  }
+}
+
+/**
+ * Structured error for CMS API failures
+ */
+export class CmsApiError extends Error {
+  constructor(method, path, status, detail) {
+    super(`CMS API ${method} ${path} → ${status}: ${detail}`);
+    this.name = 'CmsApiError';
+    this.method = method;
+    this.path = path;
+    this.status = status;
+    this.detail = detail;
   }
 }
