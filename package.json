@@ -4,25 +4,21 @@
   "description": "Multi-platform Xibo-compatible digital signage players",
   "type": "module",
   "private": true,
-  "workspaces": [
-    "packages/*",
-    "platforms/*"
-  ],
-  "scripts": {
-    "build": "npm run build:core && npm run build:platforms",
-    "build:core": "npm run build -w packages/core",
-    "build:platforms": "npm run build:electron && npm run build:chrome",
-    "build:electron": "npm run build -w platforms/electron || echo 'Electron build skipped'",
-    "build:chrome": "npm run build -w platforms/chrome || echo 'Chrome build skipped'",
+"scripts": {
+    "build": "pnpm run build:core && pnpm run build:platforms",
+    "build:core": "pnpm run build -w packages/core",
+    "build:platforms": "pnpm run build:electron && pnpm run build:chrome",
+    "build:electron": "pnpm run build -w platforms/electron || echo 'Electron build skipped'",
+    "build:chrome": "pnpm run build -w platforms/chrome || echo 'Chrome build skipped'",
     "build:android": "cd platforms/android && ./gradlew assembleRelease",
-    "build:webos": "npm run build -w platforms/webos || echo 'webOS build skipped'",
-    "test": "npm run test:license-bypass",
+    "build:webos": "pnpm run build -w platforms/webos || echo 'webOS build skipped'",
+    "test": "pnpm run test:license-bypass",
     "test:license-bypass": "node scripts/test-license-bypass.js",
-    "dev": "npm run dev -w packages/core",
-    "dev:electron": "npm run dev -w platforms/electron",
+    "dev": "pnpm run dev -w packages/core",
+    "dev:electron": "pnpm run dev -w platforms/electron",
     "sync-version": "node scripts/version.js",
     "release": "node scripts/release.js",
-    "prerelease": "npm run sync-version"
+    "prerelease": "pnpm run sync-version"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

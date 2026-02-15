@@ -4,3 +4,6 @@ packages:
 
 onlyBuiltDependencies:
   - "@xibosignage/xibo-layout-renderer"
+  - electron
+  - electron-builder
+  - better-sqlite3
