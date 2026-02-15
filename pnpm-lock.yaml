@@ -131,6 +131,9 @@ importers:
       '@xiboplayer/utils':
         specifier: file:../utils
         version: link:../utils
+      nanoevents:
+        specifier: ^9.1.0
+        version: 9.1.0
       pdfjs-dist:
         specifier: ^4.10.38
         version: 4.10.38
@@ -6865,6 +6868,7 @@ snapshots:
   '@xiboplayer/renderer@file:packages/renderer':
     dependencies:
       '@xiboplayer/utils': file:packages/utils
+      nanoevents: 9.1.0
       pdfjs-dist: 4.10.38
 
   '@xiboplayer/schedule@0.9.0':
