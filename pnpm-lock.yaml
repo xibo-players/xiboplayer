@@ -22,7 +22,11 @@ importers:
         specifier: ^2.0.0
         version: 2.1.9(@types/node@22.19.11)(@vitest/ui@2.1.9)(jsdom@25.0.1)(terser@5.46.0)
 
-  packages/ai: {}
+  packages/ai:
+    dependencies:
+      '@xiboplayer/utils':
+        specifier: file:../utils
+        version: link:../utils
 
   packages/cache:
     dependencies:
