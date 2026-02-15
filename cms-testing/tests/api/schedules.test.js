@@ -17,11 +17,20 @@ describe('Schedule Management', () => {
     await helper.teardown();
   });
 
-  it('should list display groups', async () => {
+  it('should list display groups (or create one)', async () => {
+    const api = helper.getApi();
     // isDisplaySpecific=-1 includes auto-created per-display groups
-    const groups = await helper.getApi().listDisplayGroups({ isDisplaySpecific: -1 });
+    let groups = await api.listDisplayGroups({ isDisplaySpecific: -1 });
 
     expect(Array.isArray(groups)).toBe(true);
+
+    // Fresh CMS may have no display groups yet — create one for testing
+    if (groups.length === 0) {
+      const group = await api.createDisplayGroup(`Test Group ${Date.now()}`);
+      helper.track('displayGroup', group.displayGroupId);
+      groups = await api.listDisplayGroups({ isDisplaySpecific: -1 });
+    }
+
     expect(groups.length).toBeGreaterThan(0);
     expect(groups[0]).toHaveProperty('displayGroupId');
   });

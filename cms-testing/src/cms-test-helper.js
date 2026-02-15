@@ -20,14 +20,14 @@
 
 import { CmsApiClient } from '@xiboplayer/utils';
 import dotenv from 'dotenv';
-import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
+import { join } from 'path';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-
-// Load .env from package root
-dotenv.config({ path: join(__dirname, '..', '.env') });
+// Load .env from package root — use process.cwd() fallback for jsdom environments
+// where fileURLToPath is not available
+const pkgRoot = typeof import.meta.dirname === 'string'
+  ? import.meta.dirname + '/..'
+  : join(process.cwd(), 'packages', 'cms-testing');
+dotenv.config({ path: join(pkgRoot, '.env') });
 
 export class CmsTestHelper {
   /**

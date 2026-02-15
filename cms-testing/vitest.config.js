@@ -6,6 +6,9 @@ export default defineConfig({
     environment: 'node',
     // Don't use the root setup file (mocks fetch, adds jsdom shims)
     setupFiles: [],
+    // Only discover tests in this package
+    include: ['tests/api/**/*.test.js'],
+    root: new URL('.', import.meta.url).pathname,
     // API integration tests run against real CMS — longer timeouts
     testTimeout: 30000,
     hookTimeout: 30000,

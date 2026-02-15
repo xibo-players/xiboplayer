@@ -6,6 +6,7 @@
  */
 import { test, expect } from '@playwright/test';
 import { createTestHelper } from '../../src/cms-test-helper.js';
+import { gotoPlayerAndWaitForRegion } from './e2e-helpers.js';
 
 test.describe('Simple Layout Rendering', () => {
   let helper;
@@ -20,12 +21,11 @@ test.describe('Simple Layout Rendering', () => {
   });
 
   test('should render a text layout', async ({ page }) => {
-    // Create and schedule a layout via API
-    const { layoutId } = await helper.createSimpleLayout({
+    const { layoutId, regionId } = await helper.createSimpleLayout({
       name: `E2E Simple ${Date.now()}`,
       widgetType: 'text',
       widgetProps: {
-        text: '<h1 id="e2e-marker" style="color: #4CAF50; font-size: 72px; text-align: center;">E2E Test Active</h1>',
+        text: '<h1 style="color: #4CAF50; font-size: 72px; text-align: center;">E2E Test Active</h1>',
         duration: 60
       }
     });
@@ -37,18 +37,13 @@ test.describe('Simple Layout Rendering', () => {
 
     await helper.scheduleOnTestDisplay(campaignId, { priority: 10 });
 
-    // Navigate to player
-    await page.goto(process.env.PLAYER_URL || 'https://h1.superpantalles.com/player/pwa/');
+    // Navigate and wait for our region to appear in the DOM
+    await gotoPlayerAndWaitForRegion(page, regionId);
 
-    // Wait for layout to render (player needs to collect and display)
-    // Use generous timeout — player collection interval may be up to 5 min
-    await page.waitForTimeout(10000);
+    // Verify a widget is rendered inside the region
+    const widget = page.locator('.renderer-lite-region .renderer-lite-widget');
+    await expect(widget.first()).toBeAttached();
 
-    // Check that the player container exists
-    const container = await page.locator('#player-container');
-    await expect(container).toBeVisible();
-
-    // Take screenshot for visual verification
     await page.screenshot({ path: 'test-results/simple-layout.png', fullPage: true });
   });
 });
