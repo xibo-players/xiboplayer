@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@xiboplayer/utils": "file:../utils",
+    "nanoevents": "^9.1.0",
     "pdfjs-dist": "^4.10.38"
   },
   "devDependencies": {
