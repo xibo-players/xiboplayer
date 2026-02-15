@@ -11,6 +11,9 @@
     "./tools": "./src/tools.js",
     "./chat-ui": "./src/chat-ui.js"
   },
+  "dependencies": {
+    "@xiboplayer/utils": "file:../utils"
+  },
   "scripts": {
     "test": "vitest run src/"
   }
