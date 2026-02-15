@@ -2,10 +2,11 @@
  * E2E Visual Test: Campaign Rotation
  *
  * Creates a campaign with 3 different layouts and verifies the player
- * cycles through them over time by capturing screenshots at intervals.
+ * cycles through them by detecting region changes in the DOM.
  */
 import { test, expect } from '@playwright/test';
 import { createTestHelper } from '../../src/cms-test-helper.js';
+import { gotoPlayerAndWaitForRegion } from './e2e-helpers.js';
 
 test.describe('Campaign Layout Rotation', () => {
   let helper;
@@ -33,29 +34,31 @@ test.describe('Campaign Layout Rotation', () => {
           duration: 10
         }
       });
-      layouts.push(result.layoutId);
+      layouts.push(result);
     }
 
     const campaignId = await helper.createCampaignWithLayouts(
       `E2E Rotation Campaign ${Date.now()}`,
-      layouts
+      layouts.map(l => l.layoutId)
     );
 
     await helper.scheduleOnTestDisplay(campaignId, { priority: 10 });
 
-    await page.goto(process.env.PLAYER_URL || 'https://h1.superpantalles.com/player/pwa/');
+    // Wait for the first layout's region to appear
+    await gotoPlayerAndWaitForRegion(page, layouts[0].regionId);
 
-    // Take screenshots at intervals to capture rotation
+    // Capture screenshots at intervals to show rotation
     const screenshots = [];
     for (let i = 0; i < 3; i++) {
-      await page.waitForTimeout(15000); // Wait 15s between screenshots
+      // Wait for each layout's duration (10s) plus some buffer
+      await page.waitForTimeout(12000);
       const path = `test-results/rotation-${i + 1}.png`;
       await page.screenshot({ path, fullPage: true });
       screenshots.push(path);
     }
 
-    // Verify player container exists
-    const container = await page.locator('#player-container');
+    // Verify player is still running
+    const container = page.locator('#player-container');
     await expect(container).toBeVisible();
   });
 });

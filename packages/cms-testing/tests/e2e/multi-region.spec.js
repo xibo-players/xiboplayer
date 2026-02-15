@@ -1,11 +1,12 @@
 /**
  * E2E Visual Test: Multi-Region Layout
  *
- * Creates a layout with two regions (left panel text + right panel text),
+ * Creates a layout with two regions (left panel + right panel),
  * schedules it, and verifies both regions render.
  */
 import { test, expect } from '@playwright/test';
 import { createTestHelper } from '../../src/cms-test-helper.js';
+import { gotoPlayerAndWaitForRegion } from './e2e-helpers.js';
 
 test.describe('Multi-Region Layout Rendering', () => {
   let helper;
@@ -49,17 +50,16 @@ test.describe('Multi-Region Layout Rendering', () => {
 
     await helper.scheduleOnTestDisplay(campaignId, { priority: 10 });
 
-    await page.goto(process.env.PLAYER_URL || 'https://h1.superpantalles.com/player/pwa/');
-    await page.waitForTimeout(10000);
+    // Wait for the first region to appear
+    const firstRegionId = result.regions[0].regionId;
+    await gotoPlayerAndWaitForRegion(page, firstRegionId);
 
-    // Verify player container is visible
-    const container = await page.locator('#player-container');
-    await expect(container).toBeVisible();
+    // Wait a moment for all regions to render
+    await page.waitForTimeout(3000);
 
-    // Check that region elements are rendered
+    // Verify regions exist (may be 1 if XLF merges them, or 2+ for multi-region)
     const regions = await page.locator('.renderer-lite-region').count();
-    // May have 2 regions if our schedule is active, or more if other layouts are playing
-    expect(regions).toBeGreaterThanOrEqual(0); // Non-breaking assertion
+    expect(regions).toBeGreaterThanOrEqual(1);
 
     await page.screenshot({ path: 'test-results/multi-region.png', fullPage: true });
   });

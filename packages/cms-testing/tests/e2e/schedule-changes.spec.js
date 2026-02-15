@@ -2,14 +2,13 @@
  * E2E Visual Test: Schedule Changes
  *
  * Tests that the player picks up schedule changes:
- * 1. Schedule layout A
- * 2. Take screenshot (should show A)
- * 3. Replace with layout B (higher priority)
- * 4. Wait for collection
- * 5. Take screenshot (should show B)
+ * 1. Schedule layout A → player renders it
+ * 2. Add layout B with higher priority
+ * 3. Wait for player to collect → should switch to B
  */
 import { test, expect } from '@playwright/test';
 import { createTestHelper } from '../../src/cms-test-helper.js';
+import { gotoPlayerAndWaitForRegion, waitForRegionChange } from './e2e-helpers.js';
 
 test.describe('Schedule Changes', () => {
   let helper;
@@ -24,7 +23,7 @@ test.describe('Schedule Changes', () => {
   });
 
   test('should pick up new schedule content', async ({ page }) => {
-    test.setTimeout(180000); // 3 min
+    test.setTimeout(240000); // 4 min — needs two collection cycles
 
     if (!helper.testDisplay) {
       test.skip();
@@ -47,9 +46,8 @@ test.describe('Schedule Changes', () => {
 
     await helper.scheduleOnTestDisplay(campaignA, { priority: 5 });
 
-    // Navigate and take first screenshot
-    await page.goto(process.env.PLAYER_URL || 'https://h1.superpantalles.com/player/pwa/');
-    await page.waitForTimeout(15000);
+    // Navigate and wait for layout A to render
+    await gotoPlayerAndWaitForRegion(page, layoutA.regionId);
     await page.screenshot({ path: 'test-results/schedule-change-before.png', fullPage: true });
 
     // Now add Schedule B with higher priority (orange)
@@ -69,10 +67,10 @@ test.describe('Schedule Changes', () => {
     await helper.scheduleOnTestDisplay(campaignB, { priority: 20 });
 
     // Wait for player to pick up new schedule (next collection cycle)
-    await page.waitForTimeout(30000);
+    await waitForRegionChange(page, layoutB.regionId, 180000);
     await page.screenshot({ path: 'test-results/schedule-change-after.png', fullPage: true });
 
-    const container = await page.locator('#player-container');
+    const container = page.locator('#player-container');
     await expect(container).toBeVisible();
   });
 });

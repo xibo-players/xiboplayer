@@ -6,6 +6,7 @@
  */
 import { test, expect } from '@playwright/test';
 import { createTestHelper } from '../../src/cms-test-helper.js';
+import { gotoPlayerAndWaitForRegion } from './e2e-helpers.js';
 
 test.describe('Priority Scheduling', () => {
   let helper;
@@ -56,14 +57,13 @@ test.describe('Priority Scheduling', () => {
     );
     await helper.scheduleOnTestDisplay(highCampaign, { priority: 10 });
 
-    // Navigate to player and wait for collection
-    await page.goto(process.env.PLAYER_URL || 'https://h1.superpantalles.com/player/pwa/');
-    await page.waitForTimeout(15000);
+    // Navigate and wait for any region (high priority should win)
+    await gotoPlayerAndWaitForRegion(page, highPriority.regionId);
 
-    // Take screenshot — should show green (high priority)
+    // Verify a region with a widget is visible
+    const region = page.locator('.renderer-lite-region');
+    await expect(region.first()).toBeAttached();
+
     await page.screenshot({ path: 'test-results/priority.png', fullPage: true });
-
-    const container = await page.locator('#player-container');
-    await expect(container).toBeVisible();
   });
 });

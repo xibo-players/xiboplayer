@@ -2,10 +2,11 @@
  * E2E Visual Test: Widget Types
  *
  * Tests rendering of different widget types:
- * text, embedded HTML, clock (if available).
+ * text, embedded HTML.
  */
 import { test, expect } from '@playwright/test';
 import { createTestHelper } from '../../src/cms-test-helper.js';
+import { gotoPlayerAndWaitForRegion } from './e2e-helpers.js';
 
 test.describe('Widget Types Rendering', () => {
   let helper;
@@ -25,7 +26,7 @@ test.describe('Widget Types Rendering', () => {
       return;
     }
 
-    const { layoutId } = await helper.createSimpleLayout({
+    const { layoutId, regionId } = await helper.createSimpleLayout({
       name: `E2E Text Widget ${Date.now()}`,
       widgetType: 'text',
       widgetProps: {
@@ -54,13 +55,13 @@ test.describe('Widget Types Rendering', () => {
 
     await helper.scheduleOnTestDisplay(campaignId, { priority: 10 });
 
-    await page.goto(process.env.PLAYER_URL || 'https://h1.superpantalles.com/player/pwa/');
-    await page.waitForTimeout(10000);
+    await gotoPlayerAndWaitForRegion(page, regionId);
+
+    // Verify widget is rendered inside a region
+    const widget = page.locator('.renderer-lite-region .renderer-lite-widget');
+    await expect(widget.first()).toBeAttached();
 
     await page.screenshot({ path: 'test-results/widget-text.png', fullPage: true });
-
-    const container = await page.locator('#player-container');
-    await expect(container).toBeVisible();
   });
 
   test('should render an embedded HTML widget', async ({ page }) => {
@@ -69,7 +70,7 @@ test.describe('Widget Types Rendering', () => {
       return;
     }
 
-    const { layoutId } = await helper.createSimpleLayout({
+    const { layoutId, regionId } = await helper.createSimpleLayout({
       name: `E2E Embedded ${Date.now()}`,
       widgetType: 'embedded',
       widgetProps: {
@@ -89,8 +90,7 @@ test.describe('Widget Types Rendering', () => {
 
     await helper.scheduleOnTestDisplay(campaignId, { priority: 10 });
 
-    await page.goto(process.env.PLAYER_URL || 'https://h1.superpantalles.com/player/pwa/');
-    await page.waitForTimeout(10000);
+    await gotoPlayerAndWaitForRegion(page, regionId);
 
     await page.screenshot({ path: 'test-results/widget-embedded.png', fullPage: true });
   });
