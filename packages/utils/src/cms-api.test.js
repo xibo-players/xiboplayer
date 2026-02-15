@@ -497,14 +497,26 @@ describe('CmsApiClient', () => {
     beforeEach(() => stubAuth());
 
     it('addWidget() should POST to /playlist/widget/{type}/{playlistId}', async () => {
-      mockFetch.mockResolvedValue(jsonResponse({ widgetId: 77 }));
+      // addWidget() is a two-step process:
+      // Step 1: POST creates the widget shell (only templateId/displayOrder)
+      // Step 2: PUT sets all widget properties (text, duration, etc.)
+      mockFetch
+        .mockResolvedValueOnce(jsonResponse({ widgetId: 77 }))   // POST create
+        .mockResolvedValueOnce(jsonResponse({ widgetId: 77 }));   // PUT edit
 
       const widget = await api.addWidget('text', 100, { text: 'Hello', duration: 10 });
 
-      const [url, opts] = mockFetch.mock.calls[0];
-      expect(url.toString()).toContain('/playlist/widget/text/100');
-      expect(opts.method).toBe('POST');
-      expect(opts.body.get('text')).toBe('Hello');
+      // First call: POST to create the widget
+      const [url1, opts1] = mockFetch.mock.calls[0];
+      expect(url1.toString()).toContain('/playlist/widget/text/100');
+      expect(opts1.method).toBe('POST');
+
+      // Second call: PUT to set properties (text, duration, useDuration)
+      const [url2, opts2] = mockFetch.mock.calls[1];
+      expect(url2.toString()).toContain('/playlist/widget/77');
+      expect(opts2.method).toBe('PUT');
+      expect(opts2.body.get('text')).toBe('Hello');
+      expect(opts2.body.get('duration')).toBe('10');
       expect(widget.widgetId).toBe(77);
     });
 

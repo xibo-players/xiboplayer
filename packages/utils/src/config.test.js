@@ -10,6 +10,7 @@ import { Config } from './config.js';
 describe('Config', () => {
   let config;
   let mockLocalStorage;
+  let mockRandomUUID;
 
   beforeEach(() => {
     // Mock localStorage
@@ -29,16 +30,26 @@ describe('Config', () => {
       }
     };
 
-    global.localStorage = mockLocalStorage;
+    vi.stubGlobal('localStorage', mockLocalStorage);
 
-    // Mock crypto.randomUUID
-    global.crypto = {
-      randomUUID: vi.fn(() => '12345678-1234-4567-8901-234567890abc')
-    };
+    // Mock crypto.randomUUID using vi.stubGlobal (jsdom makes crypto read-only)
+    mockRandomUUID = vi.fn(() => '12345678-1234-4567-8901-234567890abc');
+    vi.stubGlobal('crypto', {
+      randomUUID: mockRandomUUID
+    });
+
+    // Ensure no env vars interfere with localStorage path
+    delete process.env.CMS_ADDRESS;
+    delete process.env.CMS_URL;
+    delete process.env.CMS_KEY;
+    delete process.env.DISPLAY_NAME;
+    delete process.env.HARDWARE_KEY;
+    delete process.env.XMR_CHANNEL;
   });
 
   afterEach(() => {
-    vi.clearAllMocks();
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
 
   describe('Initialization', () => {
@@ -121,12 +132,12 @@ describe('Config', () => {
       const hwKey = config.generateStableHardwareKey();
 
       expect(hwKey).toBe('pwa-1234567812344567890123456789');
-      expect(global.crypto.randomUUID).toHaveBeenCalled();
+      expect(mockRandomUUID).toHaveBeenCalled();
     });
 
     it('should fallback to random hex when crypto.randomUUID unavailable', () => {
-      delete global.crypto.randomUUID;
-      global.Math.random = vi.fn(() => 0.5);
+      vi.stubGlobal('crypto', {});
+      vi.spyOn(Math, 'random').mockReturnValue(0.5);
 
       const hwKey = config.generateStableHardwareKey();
 
@@ -209,10 +220,12 @@ describe('Config', () => {
   });
 
   describe('Canvas Fingerprint', () => {
+    let createElementSpy;
+
     beforeEach(() => {
       config = new Config();
 
-      // Mock canvas
+      // Mock canvas via spying on document.createElement
       const mockCanvas = {
         getContext: vi.fn(() => ({
           textBaseline: '',
@@ -224,16 +237,18 @@ describe('Config', () => {
         toDataURL: vi.fn(() => 'data:image/png;base64,mockdata')
       };
 
-      global.document = {
-        createElement: vi.fn(() => mockCanvas)
-      };
+      createElementSpy = vi.spyOn(document, 'createElement').mockReturnValue(mockCanvas);
+    });
+
+    afterEach(() => {
+      createElementSpy.mockRestore();
     });
 
     it('should generate canvas fingerprint', () => {
       const fingerprint = config.getCanvasFingerprint();
 
       expect(fingerprint).toBe('data:image/png;base64,mockdata');
-      expect(global.document.createElement).toHaveBeenCalledWith('canvas');
+      expect(createElementSpy).toHaveBeenCalledWith('canvas');
     });
 
     it('should return "no-canvas" when canvas context unavailable', () => {
@@ -241,9 +256,7 @@ describe('Config', () => {
         getContext: vi.fn(() => null)
       };
 
-      global.document = {
-        createElement: vi.fn(() => mockCanvas)
-      };
+      createElementSpy.mockReturnValue(mockCanvas);
 
       const fingerprint = config.getCanvasFingerprint();
 
@@ -251,11 +264,9 @@ describe('Config', () => {
     });
 
     it('should return "canvas-error" on exception', () => {
-      global.document = {
-        createElement: vi.fn(() => {
-          throw new Error('Canvas not supported');
-        })
-      };
+      createElementSpy.mockImplementation(() => {
+        throw new Error('Canvas not supported');
+      });
 
       const fingerprint = config.getCanvasFingerprint();
 

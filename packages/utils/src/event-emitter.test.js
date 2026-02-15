@@ -7,7 +7,9 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { EventEmitter } from './event-emitter.js';
-import { createSpy } from './test-utils.js';
+
+/** Simple spy factory — wraps vi.fn() for readability */
+const createSpy = () => vi.fn();
 
 describe('EventEmitter', () => {
   let emitter;

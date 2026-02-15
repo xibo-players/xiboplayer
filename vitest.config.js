@@ -9,6 +9,13 @@ export default defineConfig({
     globals: true,
     environment: 'jsdom',
     setupFiles: './vitest.setup.js',
+    exclude: [
+      '**/node_modules/**',
+      '**/dist/**',
+      'platforms/pwa-xlr/e2e-tests/**',
+      'platforms/pwa/playwright-tests/**',
+      'packages/cms-testing/tests/e2e/**'
+    ],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html', 'lcov'],
@@ -19,6 +26,13 @@ export default defineConfig({
         '**/*.test.js',
         '**/*.spec.js'
       ]
+    }
+  },
+  resolve: {
+    alias: {
+      // hls.js is dynamically imported in renderer-lite.js for HLS streaming.
+      // Mock it in tests since it's a runtime-only dependency.
+      'hls.js': new URL('./vitest.hls-mock.js', import.meta.url).pathname
     }
   }
 });

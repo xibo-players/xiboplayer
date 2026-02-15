@@ -14,119 +14,33 @@ describe('CacheManager', () => {
   let mockDB;
   let mockIndexedDB;
 
-  beforeEach(() => {
-    // Mock Cache API
+  beforeEach(async () => {
+    // Mock Cache API — stores raw text/blob and headers as plain objects
     mockCache = {
       _storage: new Map(),
       async match(key) {
-        const response = this._storage.get(key);
-        if (!response) return undefined;
+        const keyStr = typeof key === 'string' ? key : key.toString();
+        const entry = this._storage.get(keyStr);
+        if (!entry) return undefined;
 
-        // Return cloned response (Cache API behavior)
-        const blob = response._blob;
-        const headers = response._headers;
-        return new Response(blob, { headers });
-      },
-      async put(key, response) {
-        // Store response with blob and headers
-        const blob = await response.blob();
-        this._storage.set(key, {
-          _blob: blob,
-          _headers: new Map(response.headers.entries())
+        // Reconstruct a real Response from stored data
+        return new Response(entry.body, {
+          headers: entry.headers
         });
       },
+      async put(key, response) {
+        const keyStr = typeof key === 'string' ? key : key.toString();
+        // Read the body as text (preserves strings) and store headers as plain object
+        const bodyText = await response.text();
+        const headers = {};
+        response.headers.forEach((value, name) => {
+          headers[name] = value;
+        });
+        this._storage.set(keyStr, { body: bodyText, headers });
+      },
       async delete(key) {
-        return this._storage.delete(key);
-      }
-    };
-
-    // Mock IndexedDB
-    const stores = new Map();
-    stores.set('files', new Map());
-
-    mockDB = {
-      transaction(storeName, mode) {
-        const storeData = stores.get(storeName);
-        return {
-          objectStore(name) {
-            return {
-              get(key) {
-                return {
-                  onsuccess: null,
-                  onerror: null,
-                  result: storeData.get(key),
-                  addEventListener(event, handler) {
-                    if (event === 'success') {
-                      setTimeout(() => {
-                        this.result = storeData.get(key);
-                        handler({ target: this });
-                      }, 0);
-                    }
-                  }
-                };
-              },
-              put(record) {
-                return {
-                  onsuccess: null,
-                  onerror: null,
-                  addEventListener(event, handler) {
-                    if (event === 'success') {
-                      setTimeout(() => {
-                        storeData.set(record.id, record);
-                        handler({ target: this });
-                      }, 0);
-                    }
-                  }
-                };
-              },
-              getAll() {
-                return {
-                  onsuccess: null,
-                  onerror: null,
-                  result: Array.from(storeData.values()),
-                  addEventListener(event, handler) {
-                    if (event === 'success') {
-                      setTimeout(() => {
-                        this.result = Array.from(storeData.values());
-                        handler({ target: this });
-                      }, 0);
-                    }
-                  }
-                };
-              },
-              clear() {
-                return {
-                  onsuccess: null,
-                  onerror: null,
-                  addEventListener(event, handler) {
-                    if (event === 'success') {
-                      setTimeout(() => {
-                        storeData.clear();
-                        handler({ target: this });
-                      }, 0);
-                    }
-                  }
-                };
-              }
-            };
-          }
-        };
-      }
-    };
-
-    mockIndexedDB = {
-      open(name, version) {
-        return {
-          onsuccess: null,
-          onerror: null,
-          onupgradeneeded: null,
-          result: mockDB,
-          addEventListener(event, handler) {
-            if (event === 'success') {
-              setTimeout(() => handler({ target: { result: mockDB } }), 0);
-            }
-          }
-        };
+        const keyStr = typeof key === 'string' ? key : key.toString();
+        return this._storage.delete(keyStr);
       }
     };
 
@@ -140,7 +54,14 @@ describe('CacheManager', () => {
       }
     };
 
-    global.indexedDB = mockIndexedDB;
+    // Use real fake-indexeddb (provided by vitest.setup.js)
+    // Clean the database between tests to avoid data leaking
+    const deleteRequest = indexedDB.deleteDatabase('xibo-player');
+    await new Promise((resolve) => {
+      deleteRequest.onsuccess = resolve;
+      deleteRequest.onerror = resolve;
+      deleteRequest.onblocked = resolve;
+    });
 
     // Mock @xiboplayer/utils config
     vi.mock('@xiboplayer/utils', () => ({
@@ -156,7 +77,8 @@ describe('CacheManager', () => {
     global.window = {
       dispatchEvent: vi.fn(),
       location: {
-        origin: 'https://test.cms.com'
+        origin: 'https://test.cms.com',
+        pathname: '/player/pwa/index.html'
       }
     };
 
@@ -172,6 +94,10 @@ describe('CacheManager', () => {
 
   afterEach(() => {
     vi.clearAllMocks();
+    // Close any open DB connections to allow deleteDatabase in next beforeEach
+    if (manager && manager.db) {
+      manager.db.close();
+    }
   });
 
   describe('Initialization', () => {
@@ -291,24 +217,42 @@ describe('CacheManager', () => {
     beforeEach(async () => {
       await manager.init();
 
+      // Helper: create a mock blob with arrayBuffer() support
+      function createMockBlob(content, type) {
+        const blob = new Blob([content], { type });
+        // Polyfill arrayBuffer() for jsdom environments that lack it
+        if (!blob.arrayBuffer) {
+          blob.arrayBuffer = async () => {
+            const reader = new FileReader();
+            return new Promise((resolve) => {
+              reader.onload = () => resolve(reader.result);
+              reader.readAsArrayBuffer(blob);
+            });
+          };
+        }
+        return blob;
+      }
+
       // Mock successful download
       global.fetch.mockImplementation(async (url, options) => {
         if (options?.method === 'HEAD') {
           return {
             ok: true,
+            status: 200,
             headers: {
               get: (name) => name === 'Content-Length' ? '1024' : null
             }
           };
         }
 
+        const blob = createMockBlob('test data', 'image/jpeg');
         return {
           ok: true,
           status: 200,
           headers: {
             get: (name) => name === 'Content-Type' ? 'image/jpeg' : null
           },
-          blob: async () => new Blob(['test data'], { type: 'image/jpeg' })
+          blob: async () => blob
         };
       });
 
@@ -351,8 +295,10 @@ describe('CacheManager', () => {
         cachedAt: Date.now()
       });
 
+      // Use content >= 100 bytes to avoid "tiny file" corruption check
+      const largeContent = 'x'.repeat(200);
       const cacheKey = manager.getCacheKey('media', '1');
-      await mockCache.put(cacheKey, new Response(new Blob(['cached']), {
+      await mockCache.put(cacheKey, new Response(largeContent, {
         headers: { 'Content-Type': 'image/jpeg' }
       }));
 
@@ -406,9 +352,20 @@ describe('CacheManager', () => {
     });
 
     it('should handle HTTP errors', async () => {
-      global.fetch.mockResolvedValue({
-        ok: false,
-        status: 404
+      global.fetch.mockImplementation(async (url, options) => {
+        if (options?.method === 'HEAD') {
+          return {
+            ok: true,
+            status: 200,
+            headers: { get: (name) => name === 'Content-Length' ? '1024' : null }
+          };
+        }
+        // GET download returns error
+        return {
+          ok: false,
+          status: 404,
+          headers: { get: () => null }
+        };
       });
 
       const fileInfo = {
@@ -468,9 +425,13 @@ describe('CacheManager', () => {
     });
 
     it('should handle HTTP 202 (background download pending)', async () => {
-      global.fetch.mockResolvedValue({
-        ok: true,
-        status: 202
+      // HEAD request returns 202 (background download in progress)
+      global.fetch.mockImplementation(async (url, options) => {
+        return {
+          ok: true,
+          status: 202,
+          headers: { get: () => null }
+        };
       });
 
       const fileInfo = {

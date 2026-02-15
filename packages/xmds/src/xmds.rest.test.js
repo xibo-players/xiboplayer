@@ -120,7 +120,7 @@ describe('RestClient - GET & Caching', () => {
     expect(url.pathname).toContain('/pwa/requiredFiles');
     expect(url.searchParams.get('serverKey')).toBe('test-server-key');
     expect(url.searchParams.get('hardwareKey')).toBe('test-hw-key');
-    expect(url.searchParams.get('v')).toBe('5');
+    expect(url.searchParams.get('v')).toBe('7');
   });
 
   it('should include additional query params', async () => {

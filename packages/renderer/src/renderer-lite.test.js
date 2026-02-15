@@ -600,9 +600,15 @@ describe('RendererLite', () => {
       const layoutEndHandler = vi.fn();
       renderer.on('layoutEnd', layoutEndHandler);
 
-      await renderer.renderLayout(xlf, 1);
+      // Don't await directly — renderLayout waits for widget readiness (image load
+      // or 10s timeout). With fake timers we must advance time to unblock it.
+      const renderPromise = renderer.renderLayout(xlf, 1);
 
-      // Fast-forward 2 seconds
+      // Advance past the 10s image-ready timeout, flushing microtasks
+      await vi.advanceTimersByTimeAsync(10000);
+      await renderPromise;
+
+      // Now advance 2s to trigger the layout duration timer
       vi.advanceTimersByTime(2000);
 
       expect(layoutEndHandler).toHaveBeenCalledWith(1);
@@ -731,7 +737,10 @@ describe('RendererLite', () => {
         </layout>
       `;
 
-      await renderer.renderLayout(xlf, 1);
+      // renderLayout waits for widget readiness — advance past image timeout
+      const renderPromise = renderer.renderLayout(xlf, 1);
+      await vi.advanceTimersByTimeAsync(10000);
+      await renderPromise;
 
       const layoutTimerId = renderer.layoutTimer;
       expect(layoutTimerId).toBeTruthy();
