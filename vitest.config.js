@@ -14,7 +14,8 @@ export default defineConfig({
       '**/dist/**',
       'platforms/pwa-xlr/e2e-tests/**',
       'platforms/pwa/playwright-tests/**',
-      'packages/cms-testing/tests/e2e/**'
+      'packages/cms-testing/tests/e2e/**',
+      'packages/cms-testing/tests/api/**'
     ],
     coverage: {
       provider: 'v8',
