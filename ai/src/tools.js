@@ -57,21 +57,21 @@ const createLayout = {
   },
   async handler(cms, input) {
     // Xibo v4: createLayout creates parent + hidden draft
-    const params = {
-      name: input.name,
-      description: input.description || '',
-    };
-    if (input.resolutionId) {
-      params.resolutionId = input.resolutionId;
-    } else {
-      // Default to 1920x1080 if no resolutionId given
-      params.width = 1920;
-      params.height = 1080;
-    }
-    if (input.backgroundColor) params.backgroundColor = input.backgroundColor;
+    // Shared client signature: createLayout({ name, resolutionId, description })
+    const params = { name: input.name };
+    if (input.resolutionId) params.resolutionId = input.resolutionId;
+    if (input.description) params.description = input.description;
 
-    const result = await cms.createLayout(input.name, params);
+    const result = await cms.createLayout(params);
     const parentId = result.layoutId;
+
+    // Set background color if specified
+    if (input.backgroundColor && input.backgroundColor !== '#000000') {
+      const draft = await cms.getDraftLayout(parentId);
+      if (draft) {
+        await cms.editLayoutBackground(draft.layoutId, { backgroundColor: input.backgroundColor });
+      }
+    }
 
     // Get the auto-created draft (this is the editable copy)
     const draft = await cms.getDraftLayout(parentId);
