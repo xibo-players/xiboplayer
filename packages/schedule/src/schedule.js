@@ -138,6 +138,12 @@ export class ScheduleManager {
     const now = new Date();
     const activeItems = []; // Mix of campaign objects and standalone layouts
 
+    // Track the highest priority of any time-active layout BEFORE rate-limit
+    // filtering.  Used by advanceToNextLayout() to detect when only lower-
+    // priority layouts remain (all high-priority ones are rate-limited) and
+    // replay the current layout instead of downgrading.
+    this._maxActivePriority = 0;
+
     // Find all active campaigns
     if (this.schedule.campaigns) {
       for (const campaign of this.schedule.campaigns) {
@@ -148,6 +154,8 @@ export class ScheduleManager {
         if (!this.isTimeActive(campaign, now)) {
           continue;
         }
+
+        this._maxActivePriority = Math.max(this._maxActivePriority, campaign.priority || 0);
 
         // Campaign is active - add it as a single item with its priority
         activeItems.push({
@@ -185,6 +193,9 @@ export class ScheduleManager {
             continue;
           }
         }
+
+        // Track priority before rate-limit filtering
+        this._maxActivePriority = Math.max(this._maxActivePriority, layout.priority || 0);
 
         // Check max plays per hour - but track that we filtered it
         if (!this.canPlayLayout(layout.id, layout.maxPlaysPerHour)) {
@@ -335,6 +346,15 @@ export class ScheduleManager {
     this.playHistory.set(layoutId, cleaned);
 
     console.log(`[Schedule] Recorded play for layout ${layoutId} (${cleaned.length} plays in last hour)`);
+  }
+
+  /**
+   * Get the max priority of any time-active layout (ignoring rate-limit filtering).
+   * Returns 0 if no layouts are active or if getCurrentLayouts() hasn't been called.
+   * @returns {number}
+   */
+  getMaxActivePriority() {
+    return this._maxActivePriority || 0;
   }
 
   /**

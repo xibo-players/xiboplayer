@@ -224,6 +224,7 @@ export class RendererLite {
     // Layout preload pool (2-layout pool for instant transitions)
     this.layoutPool = new LayoutPool(2);
     this.preloadTimer = null;
+    this._preloadRetryTimer = null;
 
     // Setup container styles
     this.setupContainer();
@@ -574,6 +575,12 @@ export class RendererLite {
       } else {
         this.log.info(`Layout duration updated to ${maxRegionDuration}s (timer not yet started, will use new value)`);
       }
+
+      // Reschedule preload timer — the initial preload was based on the old
+      // duration estimate (e.g. 45s for 60s default).  With the real duration
+      // (e.g. 375s), the preload should fire much later so that schedule
+      // cooldowns (maxPlaysPerHour) have time to expire.
+      this._scheduleNextLayoutPreload(this.currentLayout);
     }
   }
 
@@ -944,16 +951,6 @@ export class RendererLite {
       // Wait for all initial widgets to be ready (videos playing, images loaded)
       // THEN start the layout timer — ensures videos play to their last frame
       this.startLayoutTimerWhenReady(layoutId, layout);
-
-      // Add current layout to preload pool as 'hot'
-      this.layoutPool.add(layoutId, {
-        container: this.container,
-        layout,
-        regions: this.regions,
-        blobUrls: new Set(this.layoutBlobUrls.get(layoutId) || []),
-        mediaUrlCache: new Map(this.mediaUrlCache)
-      });
-      this.layoutPool.setHot(layoutId);
 
       // Schedule preloading of the next layout at 75% of current duration
       this._scheduleNextLayoutPreload(layout);
@@ -1771,9 +1768,14 @@ export class RendererLite {
       clearTimeout(this.preloadTimer);
       this.preloadTimer = null;
     }
+    if (this._preloadRetryTimer) {
+      clearTimeout(this._preloadRetryTimer);
+      this._preloadRetryTimer = null;
+    }
 
     const duration = layout.duration || 60; // seconds
     const preloadDelay = duration * 1000 * 0.75; // 75% through
+    const retryDelay = duration * 1000 * 0.90;   // 90% retry
 
     this.log.info(`Scheduling next layout preload in ${(preloadDelay / 1000).toFixed(1)}s (75% of ${duration}s)`);
 
@@ -1781,6 +1783,14 @@ export class RendererLite {
       this.preloadTimer = null;
       this.emit('request-next-layout-preload');
     }, preloadDelay);
+
+    // Retry at 90% if the 75% attempt couldn't find a layout (e.g. cooldowns
+    // hadn't expired yet).  The platform handler is idempotent — if a layout
+    // is already in the pool it skips, so this is safe even if 75% succeeded.
+    this._preloadRetryTimer = setTimeout(() => {
+      this._preloadRetryTimer = null;
+      this.emit('request-next-layout-preload');
+    }, retryDelay);
   }
 
   /**
@@ -1945,6 +1955,9 @@ export class RendererLite {
       this.mediaUrlCache = savedMediaUrlCache;
       this.currentLayoutId = savedCurrentLayoutId;
 
+      // Pause all videos in preloaded layout (autoplay starts them even when hidden)
+      wrapper.querySelectorAll('video').forEach(v => v.pause());
+
       // Collect any blob URLs tracked during preload
       const trackedBlobUrls = this.layoutBlobUrls.get(layoutId) || new Set();
       trackedBlobUrls.forEach(url => preloadBlobUrls.add(url));
@@ -1987,7 +2000,7 @@ export class RendererLite {
       return;
     }
 
-    // Stop current layout timers and action listeners (but don't destroy DOM)
+    // ── Tear down old layout ──
     this.removeActionListeners();
 
     if (this.layoutTimer) {
@@ -1999,35 +2012,55 @@ export class RendererLite {
       clearTimeout(this.preloadTimer);
       this.preloadTimer = null;
     }
+    if (this._preloadRetryTimer) {
+      clearTimeout(this._preloadRetryTimer);
+      this._preloadRetryTimer = null;
+    }
 
-    // Stop region timers on current layout
-    for (const [regionId, region] of this.regions) {
-      if (region.timer) {
-        clearTimeout(region.timer);
-        region.timer = null;
+    const oldLayoutId = this.currentLayoutId;
+
+    if (oldLayoutId && this.layoutPool.has(oldLayoutId)) {
+      // Old layout was preloaded — evict from pool (safe: removes its wrapper div)
+      this.layoutPool.evict(oldLayoutId);
+    } else {
+      // Old layout was rendered normally — manual cleanup.
+      // Region elements live directly in this.container (not a wrapper),
+      // so we must remove them individually.
+      for (const [regionId, region] of this.regions) {
+        if (region.timer) {
+          clearTimeout(region.timer);
+          region.timer = null;
+        }
+        // Release video resources
+        region.element.querySelectorAll('video').forEach(v => {
+          v.pause();
+          v.removeAttribute('src');
+          v.load();
+        });
+        region.element.remove();
+      }
+      // Revoke blob URLs
+      if (oldLayoutId) {
+        this.revokeBlobUrlsForLayout(oldLayoutId);
+      }
+      for (const [fileId, blobUrl] of this.mediaUrlCache) {
+        if (blobUrl && typeof blobUrl === 'string' && blobUrl.startsWith('blob:')) {
+          URL.revokeObjectURL(blobUrl);
+        }
       }
     }
 
-    // Emit layoutEnd for the previous layout if it hasn't been emitted
-    if (this.currentLayoutId && !this.layoutEndEmitted) {
-      // Don't emit here - it was already emitted by the timer
+    // Emit layoutEnd for old layout if timer hasn't already
+    if (oldLayoutId && !this.layoutEndEmitted) {
+      this.emit('layoutEnd', oldLayoutId);
     }
 
-    // Hide current hot layout container
-    if (this.layoutPool.hotLayoutId !== null) {
-      const currentEntry = this.layoutPool.get(this.layoutPool.hotLayoutId);
-      if (currentEntry && currentEntry.container) {
-        currentEntry.container.style.visibility = 'hidden';
-        currentEntry.container.style.zIndex = '-1';
-      }
-    }
+    this.regions.clear();
+    this.mediaUrlCache.clear();
 
-    // Show preloaded layout container
+    // ── Activate preloaded layout ──
     preloaded.container.style.visibility = 'visible';
     preloaded.container.style.zIndex = '0';
-    preloaded.container.style.position = 'absolute';
-    preloaded.container.style.top = '0';
-    preloaded.container.style.left = '0';
 
     // Update renderer state to the preloaded layout
     this.layoutPool.setHot(layoutId);
@@ -2063,6 +2096,12 @@ export class RendererLite {
       region.complete = false;
       this.startRegion(regionId);
     }
+
+    // Recalculate layout duration from widget durations.
+    // During preload, video loadedmetadata updated widget.duration but
+    // updateLayoutDuration() updated this.currentLayout (the old layout),
+    // so preloaded.layout.duration may still be the XLF default (e.g. 60s).
+    this.updateLayoutDuration();
 
     // Wait for widgets to be ready then start layout timer
     this.startLayoutTimerWhenReady(layoutId, preloaded.layout);
@@ -2112,17 +2151,22 @@ export class RendererLite {
       this.layoutTimer = null;
     }
 
-    // Clear preload timer
+    // Clear preload timers
     if (this.preloadTimer) {
       clearTimeout(this.preloadTimer);
       this.preloadTimer = null;
     }
+    if (this._preloadRetryTimer) {
+      clearTimeout(this._preloadRetryTimer);
+      this._preloadRetryTimer = null;
+    }
 
-    // Evict current layout from pool (handles blob URL revocation + DOM removal)
+    // If layout was preloaded (has its own wrapper div in pool), evict safely.
+    // Normally-rendered layouts are NOT in the pool, so we do manual cleanup.
     if (this.currentLayoutId && this.layoutPool.has(this.currentLayoutId)) {
       this.layoutPool.evict(this.currentLayoutId);
     } else {
-      // Not in pool - do manual cleanup (legacy path)
+      // Normally-rendered layout - manual cleanup (regions are in this.container)
 
       // Revoke all blob URLs for this layout (tracked lifecycle management)
       if (this.currentLayoutId) {
@@ -2576,6 +2620,10 @@ export class RendererLite {
     if (this.preloadTimer) {
       clearTimeout(this.preloadTimer);
       this.preloadTimer = null;
+    }
+    if (this._preloadRetryTimer) {
+      clearTimeout(this._preloadRetryTimer);
+      this._preloadRetryTimer = null;
     }
 
     if (this.resizeObserver) {
