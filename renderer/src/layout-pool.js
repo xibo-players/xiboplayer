@@ -197,6 +197,34 @@ export class LayoutPool {
   }
 
   /**
+   * Clear warm entries NOT in the given set of layout IDs.
+   * Keeps warm entries that are still scheduled.
+   * @param {Set<number>} keepIds - Layout IDs to keep
+   * @returns {number} Number of entries cleared
+   */
+  clearWarmNotIn(keepIds) {
+    let count = 0;
+    const evictIds = [];
+
+    for (const [id, entry] of this.layouts) {
+      if (entry.status === 'warm' && !keepIds.has(id)) {
+        evictIds.push(id);
+      }
+    }
+
+    for (const id of evictIds) {
+      this.evict(id);
+      count++;
+    }
+
+    if (count > 0) {
+      log.info(`Cleared ${count} warm layout(s) no longer in schedule`);
+    }
+
+    return count;
+  }
+
+  /**
    * Clear all entries (both hot and warm).
    */
   clear() {

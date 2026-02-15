@@ -670,9 +670,21 @@ export class PlayerCore extends EventEmitter {
     const layoutFiles = this.schedule.getCurrentLayouts();
     log.info(`Advancing schedule: ${layoutFiles.length} layout(s) available, current index ${this._currentLayoutIndex}`);
 
+    // ── Never-stop guarantee ────────────────────────────────────────
+    // If no layouts are available at all (every layout is rate-limited
+    // or filtered), replay the current layout as a last resort.
+    // maxPlaysPerHour is respected in all other cases — this only fires
+    // when the alternative would be a blank screen.
     if (layoutFiles.length === 0) {
-      log.info('No layouts scheduled during advance');
-      this.emit('no-layouts-scheduled');
+      if (this.currentLayoutId) {
+        log.info(`No layouts available (all rate-limited), replaying ${this.currentLayoutId} to avoid blank screen`);
+        const replayId = this.currentLayoutId;
+        this.currentLayoutId = null;
+        this.emit('layout-prepare-request', replayId);
+      } else {
+        log.info('No layouts scheduled during advance');
+        this.emit('no-layouts-scheduled');
+      }
       return;
     }
 
