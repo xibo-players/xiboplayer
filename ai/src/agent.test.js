@@ -26,9 +26,20 @@ function mockFetchResponse(data, status = 200) {
   return {
     ok: status >= 200 && status < 300,
     status,
+    headers: {
+      get: (name) => {
+        if (name.toLowerCase() === 'content-type' && data !== null) return 'application/json';
+        return null;
+      },
+    },
     text: async () => JSON.stringify(data),
     json: async () => data,
   };
+}
+
+/** Get the URL string from the Nth fetch call (shared client passes URL objects) */
+function fetchUrl(callIndex = 0) {
+  return String(mockFetch.mock.calls[callIndex][0]);
 }
 
 // ── CMS API Client tests ─────────────────────────────────────────
@@ -47,41 +58,31 @@ describe('CmsApiClient', () => {
   it('should make authenticated GET requests', async () => {
     mockFetch.mockResolvedValueOnce(mockFetchResponse([{ layoutId: 1, layout: 'Test' }]));
 
-    const result = await cms.get('/api/layout');
+    const result = await cms.get('/layout');
 
-    expect(mockFetch).toHaveBeenCalledWith(
-      'https://cms.test.com/api/layout',
-      expect.objectContaining({
-        method: 'GET',
-        headers: expect.objectContaining({
-          Authorization: 'Bearer test-token-123',
-        }),
-      })
-    );
+    expect(fetchUrl()).toBe('https://cms.test.com/api/layout');
+    const opts = mockFetch.mock.calls[0][1];
+    expect(opts.method).toBe('GET');
+    expect(opts.headers.Authorization).toBe('Bearer test-token-123');
     expect(result).toEqual([{ layoutId: 1, layout: 'Test' }]);
   });
 
   it('should make POST requests with form-encoded body', async () => {
     mockFetch.mockResolvedValueOnce(mockFetchResponse({ layoutId: 5, layout: 'New Layout' }));
 
-    const result = await cms.post('/api/layout', { name: 'New Layout', width: 1920 });
+    const result = await cms.post('/layout', { name: 'New Layout', width: 1920 });
 
-    expect(mockFetch).toHaveBeenCalledWith(
-      'https://cms.test.com/api/layout',
-      expect.objectContaining({
-        method: 'POST',
-        headers: expect.objectContaining({
-          'Content-Type': 'application/x-www-form-urlencoded',
-        }),
-      })
-    );
+    expect(fetchUrl()).toBe('https://cms.test.com/api/layout');
+    const opts = mockFetch.mock.calls[0][1];
+    expect(opts.method).toBe('POST');
+    expect(opts.headers['Content-Type']).toBe('application/x-www-form-urlencoded');
     expect(result.layoutId).toBe(5);
   });
 
   it('should throw CmsApiError on HTTP errors', async () => {
     mockFetch.mockResolvedValueOnce(mockFetchResponse({ message: 'Not Found' }, 404));
 
-    await expect(cms.get('/api/layout/999')).rejects.toThrow(CmsApiError);
+    await expect(cms.get('/layout/999')).rejects.toThrow(CmsApiError);
   });
 
   it('should request OAuth2 token when no pre-configured token', async () => {
@@ -97,7 +98,7 @@ describe('CmsApiClient', () => {
     }));
     mockFetch.mockResolvedValueOnce(mockFetchResponse([{ layoutId: 1 }]));
 
-    await oauthCms.get('/api/layout');
+    await oauthCms.get('/layout');
 
     expect(mockFetch).toHaveBeenCalledTimes(2);
     const oauthCall = mockFetch.mock.calls[0];
@@ -115,7 +116,7 @@ describe('CmsApiClient', () => {
       status: 1,
     }));
 
-    const result = await cms.createLayout('My Layout');
+    const result = await cms.createLayout({ name: 'My Layout' });
 
     expect(result.layoutId).toBe(10);
   });
@@ -142,10 +143,7 @@ describe('CmsApiClient', () => {
     const draft = await cms.getDraftLayout(10);
 
     expect(draft.layoutId).toBe(42);
-    expect(mockFetch).toHaveBeenCalledWith(
-      expect.stringContaining('parentId=10'),
-      expect.any(Object)
-    );
+    expect(fetchUrl()).toContain('parentId=10');
   });
 
   it('should return null when no draft exists', async () => {
@@ -162,10 +160,8 @@ describe('CmsApiClient', () => {
 
     await cms.deleteLayout(10);
 
-    expect(mockFetch).toHaveBeenCalledWith(
-      'https://cms.test.com/api/layout/10',
-      expect.objectContaining({ method: 'DELETE' })
-    );
+    expect(fetchUrl()).toBe('https://cms.test.com/api/layout/10');
+    expect(mockFetch.mock.calls[0][1].method).toBe('DELETE');
   });
 
   it('should delete a widget', async () => {
@@ -173,10 +169,8 @@ describe('CmsApiClient', () => {
 
     await cms.deleteWidget(42);
 
-    expect(mockFetch).toHaveBeenCalledWith(
-      'https://cms.test.com/api/playlist/widget/42',
-      expect.objectContaining({ method: 'DELETE' })
-    );
+    expect(fetchUrl()).toBe('https://cms.test.com/api/playlist/widget/42');
+    expect(mockFetch.mock.calls[0][1].method).toBe('DELETE');
   });
 
   it('should delete a campaign', async () => {
@@ -184,10 +178,8 @@ describe('CmsApiClient', () => {
 
     await cms.deleteCampaign(7);
 
-    expect(mockFetch).toHaveBeenCalledWith(
-      'https://cms.test.com/api/campaign/7',
-      expect.objectContaining({ method: 'DELETE' })
-    );
+    expect(fetchUrl()).toBe('https://cms.test.com/api/campaign/7');
+    expect(mockFetch.mock.calls[0][1].method).toBe('DELETE');
   });
 
   it('should delete a schedule event', async () => {
@@ -195,10 +187,8 @@ describe('CmsApiClient', () => {
 
     await cms.deleteSchedule(100);
 
-    expect(mockFetch).toHaveBeenCalledWith(
-      'https://cms.test.com/api/schedule/100',
-      expect.objectContaining({ method: 'DELETE' })
-    );
+    expect(fetchUrl()).toBe('https://cms.test.com/api/schedule/100');
+    expect(mockFetch.mock.calls[0][1].method).toBe('DELETE');
   });
 
   // ── Edit operations ────────────────────────────────────────────
@@ -208,10 +198,8 @@ describe('CmsApiClient', () => {
 
     await cms.editWidget(42, { duration: 30, text: 'Updated' });
 
-    expect(mockFetch).toHaveBeenCalledWith(
-      'https://cms.test.com/api/playlist/widget/42',
-      expect.objectContaining({ method: 'PUT' })
-    );
+    expect(fetchUrl()).toBe('https://cms.test.com/api/playlist/widget/42');
+    expect(mockFetch.mock.calls[0][1].method).toBe('PUT');
   });
 
   it('should edit a region', async () => {
@@ -219,10 +207,8 @@ describe('CmsApiClient', () => {
 
     await cms.editRegion(20, { width: 960, height: 540 });
 
-    expect(mockFetch).toHaveBeenCalledWith(
-      'https://cms.test.com/api/region/20',
-      expect.objectContaining({ method: 'PUT' })
-    );
+    expect(fetchUrl()).toBe('https://cms.test.com/api/region/20');
+    expect(mockFetch.mock.calls[0][1].method).toBe('PUT');
   });
 
   // ── Resolution API ──────────────────────────────────────────────
@@ -356,7 +342,7 @@ describe('Tool Execution: Read', () => {
     expect(result[0].layoutId).toBe(1);
     expect(result[0].name).toBe('Welcome');
     // Verify search param sent to CMS
-    const url = mockFetch.mock.calls[0][0];
+    const url = fetchUrl();
     expect(url).toContain('layout=Welcome');
     expect(url).toContain('length=5');
   });
@@ -507,6 +493,9 @@ describe('Tool Execution: Create', () => {
   });
 
   it('should execute add_text_widget', async () => {
+    // Step 1: POST creates widget shell
+    mockFetch.mockResolvedValueOnce(mockFetchResponse({ widgetId: 42 }));
+    // Step 2: PUT sets widget properties
     mockFetch.mockResolvedValueOnce(mockFetchResponse({ widgetId: 42 }));
 
     const result = await executeTool('add_text_widget', cms, {
@@ -516,12 +505,15 @@ describe('Tool Execution: Create', () => {
     expect(result.widgetId).toBe(42);
     expect(result.type).toBe('text');
     expect(result.duration).toBe(15);
-    // Verify API call
-    const url = mockFetch.mock.calls[0][0];
+    // Verify POST call creates widget on correct playlist
+    const url = fetchUrl(0);
     expect(url).toContain('/api/playlist/widget/text/30');
   });
 
   it('should execute add_image_widget with mediaId', async () => {
+    // Step 1: POST creates widget shell
+    mockFetch.mockResolvedValueOnce(mockFetchResponse({ widgetId: 43 }));
+    // Step 2: PUT sets widget properties
     mockFetch.mockResolvedValueOnce(mockFetchResponse({ widgetId: 43 }));
 
     const result = await executeTool('add_image_widget', cms, {
@@ -530,11 +522,14 @@ describe('Tool Execution: Create', () => {
 
     expect(result.widgetId).toBe(43);
     expect(result.mediaId).toBe(5);
-    const url = mockFetch.mock.calls[0][0];
+    const url = fetchUrl(0);
     expect(url).toContain('/api/playlist/widget/image/30');
   });
 
   it('should execute add_video_widget with mute and loop', async () => {
+    // Step 1: POST creates widget shell
+    mockFetch.mockResolvedValueOnce(mockFetchResponse({ widgetId: 44 }));
+    // Step 2: PUT sets widget properties (mute, loop, etc.)
     mockFetch.mockResolvedValueOnce(mockFetchResponse({ widgetId: 44 }));
 
     const result = await executeTool('add_video_widget', cms, {
@@ -542,12 +537,16 @@ describe('Tool Execution: Create', () => {
     });
 
     expect(result.type).toBe('video');
-    const body = mockFetch.mock.calls[0][1].body.toString();
+    // Properties are sent in the PUT call (call index 1)
+    const body = mockFetch.mock.calls[1][1].body.toString();
     expect(body).toContain('mute=1');
     expect(body).toContain('loop=1');
   });
 
   it('should execute add_clock_widget with format', async () => {
+    // Step 1: POST creates widget shell
+    mockFetch.mockResolvedValueOnce(mockFetchResponse({ widgetId: 45 }));
+    // Step 2: PUT sets widget properties
     mockFetch.mockResolvedValueOnce(mockFetchResponse({ widgetId: 45 }));
 
     const result = await executeTool('add_clock_widget', cms, {
@@ -555,11 +554,14 @@ describe('Tool Execution: Create', () => {
     });
 
     expect(result.type).toBe('clock');
-    const url = mockFetch.mock.calls[0][0];
+    const url = fetchUrl(0);
     expect(url).toContain('/api/playlist/widget/clock/30');
   });
 
   it('should execute add_embedded_widget with HTML/CSS/JS', async () => {
+    // Step 1: POST creates widget shell
+    mockFetch.mockResolvedValueOnce(mockFetchResponse({ widgetId: 46 }));
+    // Step 2: PUT sets widget properties
     mockFetch.mockResolvedValueOnce(mockFetchResponse({ widgetId: 46 }));
 
     const result = await executeTool('add_embedded_widget', cms, {
@@ -567,13 +569,17 @@ describe('Tool Execution: Create', () => {
     });
 
     expect(result.type).toBe('embedded');
-    const body = mockFetch.mock.calls[0][1].body.toString();
+    // Properties are sent in the PUT call (call index 1)
+    const body = mockFetch.mock.calls[1][1].body.toString();
     expect(body).toContain('embedHtml=');
     expect(body).toContain('embedStyle=');
     expect(body).toContain('embedScript=');
   });
 
   it('should execute add_webpage_widget', async () => {
+    // Step 1: POST creates widget shell
+    mockFetch.mockResolvedValueOnce(mockFetchResponse({ widgetId: 47 }));
+    // Step 2: PUT sets widget properties
     mockFetch.mockResolvedValueOnce(mockFetchResponse({ widgetId: 47 }));
 
     const result = await executeTool('add_webpage_widget', cms, {
@@ -582,11 +588,15 @@ describe('Tool Execution: Create', () => {
 
     expect(result.type).toBe('webpage');
     expect(result.url).toBe('https://example.com');
-    const body = mockFetch.mock.calls[0][1].body.toString();
+    // Properties are sent in the PUT call (call index 1)
+    const body = mockFetch.mock.calls[1][1].body.toString();
     expect(body).toContain('uri=https');
   });
 
   it('should execute add_hls_widget with mute default', async () => {
+    // Step 1: POST creates widget shell
+    mockFetch.mockResolvedValueOnce(mockFetchResponse({ widgetId: 48 }));
+    // Step 2: PUT sets widget properties
     mockFetch.mockResolvedValueOnce(mockFetchResponse({ widgetId: 48 }));
 
     const result = await executeTool('add_hls_widget', cms, {
@@ -594,12 +604,15 @@ describe('Tool Execution: Create', () => {
     });
 
     expect(result.type).toBe('hls');
-    // Default: muted for signage
-    const body = mockFetch.mock.calls[0][1].body.toString();
+    // Default: muted for signage — properties sent in PUT call (call index 1)
+    const body = mockFetch.mock.calls[1][1].body.toString();
     expect(body).toContain('mute=1');
   });
 
   it('should execute add_rss_widget with feed URL', async () => {
+    // Step 1: POST creates widget shell (templateId goes in create)
+    mockFetch.mockResolvedValueOnce(mockFetchResponse({ widgetId: 49 }));
+    // Step 2: PUT sets widget properties
     mockFetch.mockResolvedValueOnce(mockFetchResponse({ widgetId: 49 }));
 
     const result = await executeTool('add_rss_widget', cms, {
@@ -611,6 +624,9 @@ describe('Tool Execution: Create', () => {
   });
 
   it('should execute add_weather_widget with display location', async () => {
+    // Step 1: POST creates widget shell (templateId goes in create)
+    mockFetch.mockResolvedValueOnce(mockFetchResponse({ widgetId: 50 }));
+    // Step 2: PUT sets widget properties
     mockFetch.mockResolvedValueOnce(mockFetchResponse({ widgetId: 50 }));
 
     const result = await executeTool('add_weather_widget', cms, {
@@ -618,13 +634,17 @@ describe('Tool Execution: Create', () => {
     });
 
     expect(result.type).toBe('weather');
-    const body = mockFetch.mock.calls[0][1].body.toString();
+    // Properties are sent in the PUT call (call index 1)
+    const body = mockFetch.mock.calls[1][1].body.toString();
     expect(body).toContain('useDisplayLocation=1');
-    const url = mockFetch.mock.calls[0][0];
+    const url = fetchUrl(0);
     expect(url).toContain('/api/playlist/widget/forecastio/30');
   });
 
   it('should execute add_countdown_widget with style mapping', async () => {
+    // Step 1: POST creates widget shell
+    mockFetch.mockResolvedValueOnce(mockFetchResponse({ widgetId: 51 }));
+    // Step 2: PUT sets widget properties
     mockFetch.mockResolvedValueOnce(mockFetchResponse({ widgetId: 51 }));
 
     const result = await executeTool('add_countdown_widget', cms, {
@@ -632,7 +652,7 @@ describe('Tool Execution: Create', () => {
     });
 
     expect(result.type).toBe('countdown-days');
-    const url = mockFetch.mock.calls[0][0];
+    const url = fetchUrl(0);
     expect(url).toContain('/api/playlist/widget/countdown-days/30');
   });
 
@@ -645,7 +665,7 @@ describe('Tool Execution: Create', () => {
 
     expect(result.type).toBe('audio');
     expect(result.assigned).toBe(true);
-    const url = mockFetch.mock.calls[0][0];
+    const url = fetchUrl();
     expect(url).toContain('/api/playlist/library/assign/30');
   });
 
@@ -661,6 +681,9 @@ describe('Tool Execution: Create', () => {
   });
 
   it('should execute add_localvideo_widget with RTSP URL', async () => {
+    // Step 1: POST creates widget shell
+    mockFetch.mockResolvedValueOnce(mockFetchResponse({ widgetId: 52 }));
+    // Step 2: PUT sets widget properties
     mockFetch.mockResolvedValueOnce(mockFetchResponse({ widgetId: 52 }));
 
     const result = await executeTool('add_localvideo_widget', cms, {
@@ -672,6 +695,9 @@ describe('Tool Execution: Create', () => {
   });
 
   it('should execute add_subplaylist_widget with arrangement', async () => {
+    // Step 1: POST creates widget shell
+    mockFetch.mockResolvedValueOnce(mockFetchResponse({ widgetId: 53 }));
+    // Step 2: PUT sets widget properties
     mockFetch.mockResolvedValueOnce(mockFetchResponse({ widgetId: 53 }));
 
     const result = await executeTool('add_subplaylist_widget', cms, {
@@ -679,12 +705,16 @@ describe('Tool Execution: Create', () => {
     });
 
     expect(result.type).toBe('subplaylist');
-    const body = mockFetch.mock.calls[0][1].body.toString();
+    // Properties are sent in the PUT call (call index 1)
+    const body = mockFetch.mock.calls[1][1].body.toString();
     expect(body).toContain('arrangement=roundrobin');
     expect(body).toContain('subPlaylists=');
   });
 
   it('should execute add_calendar_widget with ICS feed', async () => {
+    // Step 1: POST creates widget shell (templateId goes in create)
+    mockFetch.mockResolvedValueOnce(mockFetchResponse({ widgetId: 54 }));
+    // Step 2: PUT sets widget properties
     mockFetch.mockResolvedValueOnce(mockFetchResponse({ widgetId: 54 }));
 
     const result = await executeTool('add_calendar_widget', cms, {
@@ -695,6 +725,9 @@ describe('Tool Execution: Create', () => {
   });
 
   it('should execute add_notification_widget', async () => {
+    // Step 1: POST creates widget shell (templateId goes in create)
+    mockFetch.mockResolvedValueOnce(mockFetchResponse({ widgetId: 55 }));
+    // Step 2: PUT sets widget properties
     mockFetch.mockResolvedValueOnce(mockFetchResponse({ widgetId: 55 }));
 
     const result = await executeTool('add_notification_widget', cms, { playlistId: 30 });
@@ -703,6 +736,9 @@ describe('Tool Execution: Create', () => {
   });
 
   it('should execute add_currencies_widget', async () => {
+    // Step 1: POST creates widget shell (templateId goes in create)
+    mockFetch.mockResolvedValueOnce(mockFetchResponse({ widgetId: 56 }));
+    // Step 2: PUT sets widget properties
     mockFetch.mockResolvedValueOnce(mockFetchResponse({ widgetId: 56 }));
 
     const result = await executeTool('add_currencies_widget', cms, {
@@ -713,6 +749,9 @@ describe('Tool Execution: Create', () => {
   });
 
   it('should execute add_stocks_widget', async () => {
+    // Step 1: POST creates widget shell (templateId goes in create)
+    mockFetch.mockResolvedValueOnce(mockFetchResponse({ widgetId: 57 }));
+    // Step 2: PUT sets widget properties
     mockFetch.mockResolvedValueOnce(mockFetchResponse({ widgetId: 57 }));
 
     const result = await executeTool('add_stocks_widget', cms, {
@@ -723,6 +762,9 @@ describe('Tool Execution: Create', () => {
   });
 
   it('should execute add_menuboard_widget with category', async () => {
+    // Step 1: POST creates widget shell (templateId goes in create)
+    mockFetch.mockResolvedValueOnce(mockFetchResponse({ widgetId: 58 }));
+    // Step 2: PUT sets widget properties
     mockFetch.mockResolvedValueOnce(mockFetchResponse({ widgetId: 58 }));
 
     const result = await executeTool('add_menuboard_widget', cms, {
@@ -730,11 +772,15 @@ describe('Tool Execution: Create', () => {
     });
 
     expect(result.type).toBe('menuboard');
-    const body = mockFetch.mock.calls[0][1].body.toString();
+    // Properties are sent in the PUT call (call index 1)
+    const body = mockFetch.mock.calls[1][1].body.toString();
     expect(body).toContain('categoryId=3');
   });
 
   it('should execute add_dataset_widget', async () => {
+    // Step 1: POST creates widget shell (templateId goes in create)
+    mockFetch.mockResolvedValueOnce(mockFetchResponse({ widgetId: 59 }));
+    // Step 2: PUT sets widget properties
     mockFetch.mockResolvedValueOnce(mockFetchResponse({ widgetId: 59 }));
 
     const result = await executeTool('add_dataset_widget', cms, {
@@ -751,7 +797,7 @@ describe('Tool Execution: Create', () => {
     const result = await executeTool('publish_layout', cms, { layoutId: 10 });
 
     expect(result.status).toBe('published');
-    const url = mockFetch.mock.calls[0][0];
+    const url = fetchUrl();
     expect(url).toContain('/api/layout/publish/10');
   });
 
@@ -818,7 +864,7 @@ describe('Tool Execution: Update', () => {
 
     expect(result.widgetId).toBe(42);
     expect(result.updated).toBe(true);
-    const url = mockFetch.mock.calls[0][0];
+    const url = fetchUrl();
     expect(url).toContain('/api/playlist/widget/42');
     const body = mockFetch.mock.calls[0][1].body.toString();
     expect(body).toContain('duration=30');
@@ -924,7 +970,8 @@ describe('Workflow: Layout → Campaign → Schedule', () => {
     });
     expect(region.playlistId).toBe(30);
 
-    // Step 3: add_text_widget to region playlist
+    // Step 3: add_text_widget to region playlist (two-step: POST create + PUT properties)
+    mockFetch.mockResolvedValueOnce(mockFetchResponse({ widgetId: 50 }));
     mockFetch.mockResolvedValueOnce(mockFetchResponse({ widgetId: 50 }));
     await executeTool('add_text_widget', cms, {
       playlistId: region.playlistId, text: '<h1>50% OFF</h1>', duration: 15,
@@ -956,9 +1003,9 @@ describe('Workflow: Layout → Campaign → Schedule', () => {
     expect(schedule.eventId).toBe(200);
     expect(schedule.scheduled).toBe(true);
 
-    // Total API calls: create(1) + getDraft(1) + addRegion(1) + addWidget(1) +
-    // publish(1) + createCampaign(1) + assignLayout(1) + schedule(1) = 8
-    expect(mockFetch).toHaveBeenCalledTimes(8);
+    // Total API calls: create(1) + getDraft(1) + addRegion(1) + addWidget(2: POST+PUT) +
+    // publish(1) + createCampaign(1) + assignLayout(1) + schedule(1) = 9
+    expect(mockFetch).toHaveBeenCalledTimes(9);
   });
 });
 

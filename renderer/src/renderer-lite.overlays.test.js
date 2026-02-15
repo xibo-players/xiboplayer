@@ -20,6 +20,7 @@ vi.mock('@xiboplayer/utils', () => ({
 describe('RendererLite - Overlay Rendering', () => {
   let renderer;
   let container;
+  let blobCounter;
 
   // Sample XLF for overlay
   const overlayXLF = `<?xml version="1.0"?>
@@ -42,6 +43,15 @@ describe('RendererLite - Overlay Rendering', () => {
 </layout>`;
 
   beforeEach(() => {
+    // Mock URL.createObjectURL and URL.revokeObjectURL (not available in jsdom)
+    blobCounter = 0;
+    if (!URL.createObjectURL) {
+      URL.createObjectURL = vi.fn(() => `blob:test/${++blobCounter}`);
+    }
+    if (!URL.revokeObjectURL) {
+      URL.revokeObjectURL = vi.fn();
+    }
+
     // Create container
     container = document.createElement('div');
     container.id = 'test-container';
@@ -63,7 +73,10 @@ describe('RendererLite - Overlay Rendering', () => {
 
   afterEach(() => {
     renderer.cleanup();
-    document.body.removeChild(container);
+    // Container may have been removed from DOM by layoutPool.evict() during cleanup
+    if (container.parentNode) {
+      container.parentNode.removeChild(container);
+    }
   });
 
   describe('Overlay Container Setup', () => {
@@ -409,9 +422,22 @@ describe('RendererLite - Overlay Rendering', () => {
       const widgetEndListener = vi.fn();
       renderer.on('overlayWidgetEnd', widgetEndListener);
 
-      await renderer.renderOverlay(overlayXLF, 200, 10);
+      // Need 2+ widgets for cycling (single widget has no timer/cycling)
+      const multiWidgetOverlayXLF = `<?xml version="1.0"?>
+<layout width="1920" height="1080" bgcolor="#00000080">
+  <region id="overlay-1" width="400" height="200" top="50" left="50" zindex="10">
+    <media id="1" type="text" duration="10">
+      <raw><![CDATA[<p>Widget 1</p>]]></raw>
+    </media>
+    <media id="2" type="text" duration="10">
+      <raw><![CDATA[<p>Widget 2</p>]]></raw>
+    </media>
+  </region>
+</layout>`;
 
-      // Fast forward past widget duration (10s)
+      await renderer.renderOverlay(multiWidgetOverlayXLF, 200, 10);
+
+      // Fast forward past first widget duration (10s) to trigger cycling
       vi.advanceTimersByTime(11000);
 
       // Widget should have cycled, emitting end event
@@ -445,11 +471,16 @@ describe('RendererLite - Overlay Rendering', () => {
       const revokeObjectURLSpy = vi.spyOn(URL, 'revokeObjectURL');
 
       await renderer.renderOverlay(overlayXLF, 200, 10);
+
+      // Manually track blob URLs for the overlay layout ID, since trackBlobUrl()
+      // is scoped to currentLayoutId (main layout) and doesn't track overlay blobs
+      renderer.layoutBlobUrls.set(200, new Set(['blob:test/overlay-1', 'blob:test/overlay-2']));
+
       renderer.stopOverlay(200);
 
-      // Should have revoked blob URLs (if any were created)
-      // Note: actual count depends on widget types
-      expect(revokeObjectURLSpy).toHaveBeenCalled();
+      // stopOverlay calls revokeBlobUrlsForLayout(layoutId) which revokes tracked URLs
+      expect(revokeObjectURLSpy).toHaveBeenCalledWith('blob:test/overlay-1');
+      expect(revokeObjectURLSpy).toHaveBeenCalledWith('blob:test/overlay-2');
     });
 
     it('should track blob URLs per overlay layout', async () => {

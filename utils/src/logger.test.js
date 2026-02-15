@@ -37,7 +37,9 @@ describe('Logger', () => {
       const logger = createLogger('TestModule');
 
       expect(logger.name).toBe('TestModule');
-      expect(logger.level).toBeLessThanOrEqual(LOG_LEVELS.INFO);
+      // When no explicit level is given, logger follows global level (useGlobal=true)
+      // so logger.level is undefined — check getEffectiveLevel() instead
+      expect(logger.getEffectiveLevel()).toBeLessThanOrEqual(LOG_LEVELS.INFO);
     });
 
     it('should create logger with custom level', () => {
@@ -312,6 +314,10 @@ describe('Logger', () => {
     it('should affect new loggers', () => {
       setLogLevel('ERROR');
 
+      // setLogLevel() internally calls console.log() to announce the level change,
+      // so reset the spy before testing actual logger behavior
+      consoleLogSpy.mockClear();
+
       const logger = createLogger('NewLogger');
 
       logger.info('Should not log');
@@ -402,8 +408,9 @@ describe('Logger', () => {
     it('should handle undefined level (use default)', () => {
       const logger = createLogger('Test', undefined);
 
-      // Should use global default
-      expect(logger.level).toBeDefined();
+      // When level is undefined, logger follows global level (useGlobal=true)
+      // so logger.level is undefined — check getEffectiveLevel() instead
+      expect(logger.getEffectiveLevel()).toBeDefined();
     });
 
     it('should handle very long messages', () => {
