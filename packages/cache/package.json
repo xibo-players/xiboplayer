@@ -35,7 +35,7 @@
   "license": "AGPL-3.0-or-later",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/linuxnow/xiboplayer.git",
+    "url": "git+https://github.com/xibo-players/xiboplayer.git",
     "directory": "packages/cache"
   }
 }
