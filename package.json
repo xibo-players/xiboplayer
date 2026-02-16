@@ -1,0 +1,25 @@
+{
+  "name": "xiboplayer",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Xibo Player SDK - modular packages for digital signage",
+  "type": "module",
+  "packageManager": "pnpm@10.27.0",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
+  },
+  "devDependencies": {
+    "vitest": "^2.0.0",
+    "jsdom": "^25.0.0",
+    "fake-indexeddb": "^5.0.2",
+    "@vitest/coverage-v8": "^2.0.0"
+  },
+  "author": "Pau Aliagas <linuxnow@gmail.com>",
+  "license": "AGPL-3.0-or-later",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/linuxnow/xiboplayer.git"
+  }
+}
