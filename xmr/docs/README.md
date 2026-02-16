@@ -345,10 +345,6 @@ See [XMR_TESTING.md](./XMR_TESTING.md#adding-new-commands) for details.
 - [@xiboplayer/xmds](../../xmds/docs/) - XMDS SOAP client
 - [@xiboplayer/schedule](../../schedule/docs/) - Schedule engine
 
-## License
-
-AGPL-3.0-or-later
-
 ## Support
 
 - **GitHub Issues**: https://github.com/xibo/xibo-players/issues
@@ -358,3 +354,7 @@ AGPL-3.0-or-later
 ---
 
 **Package Version**: 0.9.0 | **XMR Library**: 0.0.6
+
+## License
+
+AGPL-3.0-or-later

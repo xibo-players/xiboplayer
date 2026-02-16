@@ -5,7 +5,6 @@ Technical architecture and design decisions for the Xibo Player multi-platform i
 ## Table of Contents
 
 - [Overview](#overview)
-- [License Bypass Mechanism](#license-bypass-mechanism)
 - [Core Architecture](#core-architecture)
 - [Platform Wrappers](#platform-wrappers)
 - [Communication Protocols](#communication-protocols)
@@ -14,12 +13,11 @@ Technical architecture and design decisions for the Xibo Player multi-platform i
 
 ## Overview
 
-The Xibo Player is a free, open-source implementation of a Xibo-compatible digital signage player that bypasses commercial licensing requirements while maintaining full compatibility with Xibo CMS.
+The Xibo Player is a free, open-source implementation of a Xibo-compatible digital signage player with full compatibility with Xibo CMS.
 
 ###Key Design Principles
 
-1. **License-Free Operation**: Uses `clientType: "linux"` to bypass commercial licenses
-2. **Multi-Platform**: Single PWA core wrapped for all platforms
+1. **Multi-Platform**: Single PWA core wrapped for all platforms
 3. **Offline-First**: Service Worker caching for reliability
 4. **Real-Time Capable**: XMR WebSocket support for instant updates
 5. **Lightweight**: Minimal dependencies, small bundle size
@@ -58,127 +56,6 @@ The Xibo Player is a free, open-source implementation of a Xibo-compatible digit
     └───────┘ └───────┘ └────────┘ └────────┘  └────────┘
 ```
 
-## License Bypass Mechanism
-
-**CRITICAL SECTION** - This is the most important part of the architecture.
-
-### Why License Bypass is Needed
-
-Xibo CMS enforces commercial licenses for non-Linux clients:
-- **Windows clients**: Require commercial license
-- **Android clients**: Require commercial license
-- **webOS clients**: Require commercial license
-- **Linux clients**: License-free (not applicable)
-
-The CMS determines client type from the `clientType` field in `RegisterDisplay` SOAP call:
-```xml
-<RegisterDisplay>
-  <clientType>windows</clientType>  <!-- Requires license -->
-  <clientType>android</clientType>  <!-- Requires license -->
-  <clientType>linux</clientType>    <!-- License-free ✓ -->
-</RegisterDisplay>
-```
-
-### Implementation
-
-**Location:** `packages/core/src/xmds.js:109`
-
-```javascript
-async registerDisplay() {
-  const xml = await this.call('RegisterDisplay', {
-    serverKey: this.config.cmsKey,
-    hardwareKey: this.config.hardwareKey,
-    displayName: this.config.displayName,
-    clientType: 'linux',  // CRITICAL: bypass commercial license
-    clientVersion: '0.1.0',
-    clientCode: '1',
-    operatingSystem: os,
-    macAddress: 'n/a',
-    xmrChannel: this.config.xmrChannel,
-    xmrPubKey: ''
-  });
-
-  return this.parseRegisterDisplayResponse(xml);
-}
-```
-
-**Key points:**
-1. **Always `'linux'`**: Never change this value
-2. **CMS Response**: Sets `commercialLicence=3` (not applicable)
-3. **No Trials**: Bypasses all 30-day trial limitations
-4. **Fully Functional**: All features work without restrictions
-
-### CMS Behavior
-
-When `clientType='linux'`:
-```json
-{
-  "code": "READY",
-  "message": "Display authorized",
-  "commercialLicence": 3,  // 3 = Not applicable (license-free)
-  "settings": {
-    "collectInterval": 900000,
-    "xmrNetAddress": "wss://cms.example.com/xmr",
-    ...
-  }
-}
-```
-
-When `clientType='windows'`:
-```json
-{
-  "code": "waiting",
-  "message": "Display awaiting license",
-  "commercialLicence": 1,  // 1 = Trial (30 days)
-  // OR
-  "commercialLicence": 0,  // 0 = Trial expired (blocked)
-  ...
-}
-```
-
-### Protection Mechanisms
-
-1. **Automated Test** (`scripts/test-license-bypass.js`):
-   ```javascript
-   // Runs on: npm test
-   // Blocks CI/CD if clientType != 'linux'
-   ✓ xmds.js contains clientType: 'linux'
-   ✓ clientType: 'linux' is in RegisterDisplay method
-   ✓ clientType: 'linux' is not commented out
-   ```
-
-2. **CI/CD Validation** (`.github/workflows/release.yml`):
-   ```yaml
-   validate-license:
-     steps:
-       - name: Check license bypass
-         run: |
-           if grep -q "clientType: 'linux'" packages/core/src/xmds.js; then
-             echo "✓ License bypass preserved"
-           else
-             echo "❌ CRITICAL: License bypass missing!"
-             exit 1
-           fi
-   ```
-
-3. **Code Comments**:
-   ```javascript
-   // CRITICAL: bypass commercial license
-   // DO NOT CHANGE THIS VALUE
-   ```
-
-### Multi-Platform Consistency
-
-**All platforms use same bypass:**
-
-| Platform | Implementation | Location |
-|----------|---------------|----------|
-| PWA Core | `clientType: 'linux'` | `packages/core/src/xmds.js:109` |
-| Chrome Extension | Inherits from PWA | (same file) |
-| Electron | `return 'linux'` | `platforms/electron/src/main/config/config.ts:166` |
-| Android | Inherits from PWA | WebView loads PWA |
-| webOS | Inherits from PWA | Cordova loads PWA |
-
 ## Core Architecture
 
 The PWA core is built with vanilla JavaScript (ES modules) and minimal dependencies.
@@ -189,7 +66,7 @@ The PWA core is built with vanilla JavaScript (ES modules) and minimal dependenc
 packages/core/
 ├── src/
 │   ├── main.js           # Player orchestrator
-│   ├── xmds.js           # SOAP client (LICENSE BYPASS HERE)
+│   ├── xmds.js           # SOAP client
 │   ├── xmr-wrapper.js    # XMR WebSocket client
 │   ├── cache.js          # Cache & download manager
 │   ├── schedule.js       # Schedule interpreter
@@ -249,7 +126,7 @@ class Player {
 
 **Responsibilities:**
 - Communicate with Xibo CMS via SOAP
-- Register display (**LICENSE BYPASS HERE**)
+- Register display with CMS
 - Get required files list
 - Get schedule
 - Report status
@@ -274,8 +151,7 @@ class XmdsClient {
       <serverKey>isiSdUCy</serverKey>
       <hardwareKey>abc123</hardwareKey>
       <displayName>test-display</displayName>
-      <clientType>linux</clientType>  <!-- CRITICAL -->
-      <clientVersion>0.1.0</clientVersion>
+      <clientType>linux</clientType>      <clientVersion>0.1.0</clientVersion>
       <clientCode>1</clientCode>
       <operatingSystem>Linux</operatingSystem>
       <macAddress>n/a</macAddress>
@@ -295,7 +171,7 @@ class XmdsClient {
 - `collectNow`: Trigger immediate collection
 - `screenShot`: Capture and upload screenshot
 - `changeLayout`: Switch to specific layout
-- `licenceCheck`: No-op (Linux clients don't need licenses)
+- `licenceCheck`: Acknowledges license check request
 
 **Connection flow:**
 ```javascript
@@ -470,14 +346,6 @@ platforms/electron/
 - Native menus and shortcuts
 - Fullscreen/kiosk mode
 
-**License bypass:**
-```typescript
-// platforms/electron/src/main/config/config.ts:166
-getXmdsPlayerType(): string {
-  return 'linux'  // CRITICAL: bypass commercial license
-}
-```
-
 ### Android (WebView)
 
 **Structure:**
@@ -546,8 +414,7 @@ Content-Type: text/xml
     <RegisterDisplay>
       <serverKey>isiSdUCy</serverKey>
       <hardwareKey>abc123</hardwareKey>
-      <clientType>linux</clientType>  <!-- CRITICAL -->
-    </RegisterDisplay>
+      <clientType>linux</clientType>    </RegisterDisplay>
   </soap:Body>
 </soap:Envelope>
 ```

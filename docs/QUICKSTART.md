@@ -4,155 +4,82 @@ Get the PWA player running in 5 minutes.
 
 ## Prerequisites
 
-- Node.js 18+ and npm
+- Node.js 22+ and pnpm
 - Access to a Xibo CMS instance
 - CMS secret key (from CMS Settings → Display Settings)
 
-## Local Testing (With CORS Proxy)
+## Important: Same-Origin Requirement
 
-### 1. Install Dependencies
+The PWA player **must** be served from the same domain as the Xibo CMS.
+All API calls (REST, SOAP, file downloads) go to the CMS origin, and
+browsers block cross-origin requests.
 
-```bash
-cd ~/Devel/tecman/xibo_players/core
-npm install
-```
+For local/kiosk use, use the **Electron wrapper** which handles CORS
+at the Chromium session level.
 
-### 2. Start CORS Proxy
-
-```bash
-# Terminal 1
-CMS_URL=https://displays.superpantalles.com npm run proxy
-```
-
-You should see:
-```
-[Proxy] Running on http://localhost:8080
-[Proxy] Forwarding to https://displays.superpantalles.com
-```
-
-### 3. Start Dev Server
+## Build
 
 ```bash
-# Terminal 2
-npm run dev
+pnpm install              # From monorepo root
+cd platforms/pwa
+pnpm run build            # Production bundle → dist/
 ```
 
-You should see:
-```
-VITE v5.4.11  ready in 123 ms
-
-➜  Local:   http://localhost:5173/player/
-➜  Network: use --host to expose
-```
-
-### 4. Configure Player
-
-1. Open http://localhost:5173/player/
-2. You'll be redirected to setup page
-3. Enter:
-   - **CMS Address:** `http://localhost:8080` (the proxy!)
-   - **CMS Key:** Your actual CMS secret key
-   - **Display Name:** Test Display
-4. Click **Connect**
-
-### 5. Authorize in CMS
-
-1. Open your CMS admin UI: https://displays.superpantalles.com
-2. Go to Displays
-3. Find "Test Display" (status: Waiting)
-4. Click → Authorize
-5. Refresh the player setup page
-
-### 6. Watch It Work
-
-The player should:
-- Redirect to main player page
-- Show "Collection cycle starting..." in console
-- Download required files
-- Display layouts
-
-**Check browser console (F12)** for detailed logs.
-
-## Production Deployment
-
-### 1. Build PWA
-
-```bash
-cd ~/Devel/tecman/xibo_players/core
-npm run build
-```
-
-### 2. Deploy Xibo with Player Volume
+## Deploy to CMS
 
 ```bash
 cd ~/Devel/tecman/tecman_ansible
-
-ansible-playbook playbooks/services/install.yml \
-  -e service=xibo \
-  --become \
-  --become-user=pau
+ansible-playbook playbooks/services/deploy-pwa.yml \
+  -e target_host=your-cms-host.example.com
 ```
 
-### 3. Deploy Player Files
+Or copy `platforms/pwa/dist/*` to the CMS `web/chromeos/` directory manually.
 
-```bash
-ansible-playbook playbooks/services/deploy-player.yml \
-  --become \
-  --become-user=pau
-```
+## Access Player
 
-### 4. Access Player
-
-Open: `https://displays.superpantalles.com/player/`
+Open: `https://your-cms.example.com/pwa/`
 
 Configure with:
-- **CMS Address:** `https://displays.superpantalles.com` (same domain!)
+- **CMS Address:** `https://your-cms.example.com` (same domain)
 - **CMS Key:** Your CMS key
-- **Display Name:** Production Display
+- **Display Name:** Your display name
+
+## Authorize in CMS
+
+1. Open your CMS admin UI
+2. Go to Displays
+3. Find your display (status: Waiting)
+4. Authorize it
+5. Refresh the player page
+
+The player should start downloading files and displaying layouts.
+
+## Alternative: Electron (for kiosk/desktop)
+
+```bash
+cd platforms/electron-pwa
+pnpm install
+npx electron . --dev --no-kiosk
+```
+
+Electron can connect to any remote CMS — no same-origin restriction.
 
 ## Troubleshooting
 
 ### "Connection failed: NetworkError"
-
-**During proxy testing:**
-- Make sure proxy is running on port 8080
-- Use `http://localhost:8080` as CMS address (not the real CMS URL)
-
-**During production:**
-- Use `https://displays.superpantalles.com` as CMS address
-- Check browser console for actual error
-- Verify SWAG is running and proxying to Xibo
+- Verify the CMS address matches the domain the player is served from
+- Check browser console for CORS errors (means player is not same-origin)
+- Use Electron for cross-origin setups
 
 ### "Display not authorized"
-
-- Go to CMS → Displays
-- Find your display name
-- Click Authorize
-- Refresh player page
+- Go to CMS → Displays → Authorize your display
+- Refresh the player page
 
 ### Layouts don't show
-
 - Check browser console for download errors
-- Verify files downloaded (check IndexedDB in browser dev tools)
-- Check layout translation succeeded (console logs)
-- Verify schedule has active layouts (time range)
-
-### Service Worker not working
-
-- Check Application tab in browser dev tools
-- Verify service worker registered
-- Try hard refresh (Ctrl+Shift+R)
-- Clear cache and reload
+- Verify schedule has active layouts assigned to the display
 
 ## Next Steps
 
 - See [DEPLOYMENT.md](./DEPLOYMENT.md) for complete deployment guide
-- See [ARCHITECTURE.md](./ARCHITECTURE.md) for technical details
-- See [free-player-development-reference.md](./free-player-development-reference.md) for XMDS protocol reference
-
-## Getting Help
-
-- Check browser console for errors
-- Check Xibo CMS logs
-- Check SWAG nginx logs
-- Open an issue on GitHub
+- See `platforms/electron-pwa/README.md` for Electron/kiosk setup

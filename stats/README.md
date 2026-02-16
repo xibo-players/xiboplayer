@@ -362,10 +362,6 @@ npm run test:coverage
 - **Browsers**: Chrome 58+, Firefox 52+, Safari 12+, Edge 79+
 - **IndexedDB**: Required for persistent storage
 
-## License
-
-AGPL-3.0-or-later
-
 ## Author
 
 Pau Aliagas <linuxnow@gmail.com>
@@ -373,3 +369,7 @@ Pau Aliagas <linuxnow@gmail.com>
 ## Repository
 
 https://github.com/xibo/xibo-players/tree/main/packages/stats
+
+## License
+
+AGPL-3.0-or-later

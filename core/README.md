@@ -123,12 +123,6 @@ Files are cached using two systems:
 
 Access cached files via `/cache/{type}/{id}` URLs.
 
-## License Bypass
-
-This player uses `clientType: "linux"` in XMDS RegisterDisplay. The CMS automatically assigns `commercialLicence = 3` (not applicable) to Linux clients, bypassing all commercial license checks.
-
-**You only need to authorize the display in your CMS.** No license keys, no activation codes, no 30-day checks.
-
 ## Browser Compatibility
 
 - Chrome/Edge: Full support

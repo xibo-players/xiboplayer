@@ -403,10 +403,6 @@ See main repository [CONTRIBUTING.md](../../../CONTRIBUTING.md).
 - Additional test coverage
 - Performance optimizations
 
-## License
-
-AGPL-3.0-or-later
-
 ## Support
 
 - **Issues**: https://github.com/xibo/xibo-players/issues
@@ -423,3 +419,7 @@ AGPL-3.0-or-later
 - ✅ Integration with @xiboplayer/schedule
 - ✅ Based on upstream electron-player algorithm
 - 🚧 Overlay layout scheduling (rendering not complete)
+
+## License
+
+AGPL-3.0-or-later

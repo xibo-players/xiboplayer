@@ -75,15 +75,15 @@ await player.changeLayout('layout-123');
 
 ### licenceCheck
 
-Validates the commercial license (no-op for Linux clients).
+Validates the display license status.
 
 **Event name**: `licenceCheck`
 
 **Payload**: None
 
-**Action**: No action - Linux clients always report valid license
+**Action**: No action required for open-source players
 
-**Use case**: License validation for commercial (Windows/Android) players
+**Use case**: License validation for CMS-managed displays
 
 **Example**:
 ```javascript
@@ -91,7 +91,7 @@ Validates the commercial license (no-op for Linux clients).
 xmr.send('licenceCheck');
 
 // Player receives - no action needed for Linux
-// Commercial clients would validate and report license status
+// Acknowledge license check
 ```
 
 ---

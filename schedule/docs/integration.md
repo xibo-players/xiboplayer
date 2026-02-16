@@ -273,12 +273,12 @@ This implementation is based on the upstream Xibo Electron player:
 - Simplified API for easier integration
 - More comprehensive test coverage
 
-## License
-
-AGPL-3.0-or-later
-
 ## Support
 
 For issues or questions:
 - GitHub Issues: https://github.com/xibo/xibo-players/issues
 - Documentation: /packages/schedule-advanced/docs/
+
+## License
+
+AGPL-3.0-or-later
