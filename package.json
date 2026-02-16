@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "description": "Multi-platform Xibo-compatible digital signage players",
   "type": "module",
+  "packageManager": "pnpm@10.27.0",
   "private": true,
 "scripts": {
     "build": "pnpm run build:core && pnpm run build:platforms",
