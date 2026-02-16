@@ -416,6 +416,16 @@ export class CacheManager {
       return localPath;
     });
 
+    // Inject CSS default for object-position to suppress CMS template warning
+    // CMS global-elements.xml uses {{alignId}} {{valignId}} which produces
+    // invalid CSS (empty value) when alignment is not configured
+    const cssFixTag = '<style>img,video{object-position:center center}</style>';
+    if (modifiedHtml.includes('</head>')) {
+      modifiedHtml = modifiedHtml.replace('</head>', cssFixTag + '</head>');
+    } else if (modifiedHtml.includes('</HEAD>')) {
+      modifiedHtml = modifiedHtml.replace('</HEAD>', cssFixTag + '</HEAD>');
+    }
+
     // Rewrite Interactive Control hostAddress to SW-interceptable path
     // The IC library uses hostAddress + '/info', '/trigger', etc.
     // Original: hostAddress: "https://cms.example.com" → XHR to /info goes to CMS (fails)
