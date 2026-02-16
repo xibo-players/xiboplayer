@@ -1,9 +1,31 @@
 {
   "name": "@xiboplayer/sync",
   "version": "0.1.0",
+  "description": "Multi-display synchronization for Xibo Player",
   "type": "module",
   "main": "src/sync-manager.js",
   "exports": {
     ".": "./src/sync-manager.js"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "vitest": "^2.0.0"
+  },
+  "keywords": [
+    "xibo",
+    "digital-signage",
+    "sync",
+    "multi-display"
+  ],
+  "author": "Pau Aliagas <linuxnow@gmail.com>",
+  "license": "AGPL-3.0-or-later",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/linuxnow/xiboplayer.git",
+    "directory": "packages/sync"
   }
 }

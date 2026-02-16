@@ -14,7 +14,7 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
-    "@xiboplayer/utils": "file:../utils"
+    "@xiboplayer/utils": "workspace:*"
   },
   "devDependencies": {
     "jsdom": "^25.0.1",
@@ -31,7 +31,7 @@
   "license": "AGPL-3.0-or-later",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/xibo/xibo-players.git",
+    "url": "git+https://github.com/linuxnow/xiboplayer.git",
     "directory": "packages/settings"
   }
 }

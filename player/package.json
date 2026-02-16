@@ -1,6 +1,7 @@
 {
   "name": "@xiboplayer/player",
   "version": "0.1.0",
+  "private": true,
   "description": "Meta package - installs all Xibo Player packages",
   "type": "module",
   "main": "./src/index.js",
@@ -11,14 +12,14 @@
     "test": "echo \"Meta package - no tests\""
   },
   "dependencies": {
-    "@xiboplayer/core": "file:../core",
-    "@xiboplayer/renderer": "file:../renderer",
-    "@xiboplayer/cache": "file:../cache",
-    "@xiboplayer/schedule": "file:../schedule",
-    "@xiboplayer/xmds": "file:../xmds",
-    "@xiboplayer/xmr": "file:../xmr",
-    "@xiboplayer/sw": "file:../sw",
-    "@xiboplayer/utils": "file:../utils"
+    "@xiboplayer/core": "workspace:*",
+    "@xiboplayer/renderer": "workspace:*",
+    "@xiboplayer/cache": "workspace:*",
+    "@xiboplayer/schedule": "workspace:*",
+    "@xiboplayer/xmds": "workspace:*",
+    "@xiboplayer/xmr": "workspace:*",
+    "@xiboplayer/sw": "workspace:*",
+    "@xiboplayer/utils": "workspace:*"
   },
   "keywords": [
     "xibo",
@@ -30,7 +31,7 @@
   "license": "AGPL-3.0-or-later",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/xibo/xibo-players.git",
+    "url": "git+https://github.com/linuxnow/xiboplayer.git",
     "directory": "packages/player"
   }
 }

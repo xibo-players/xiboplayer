@@ -1,6 +1,7 @@
 {
   "name": "@xiboplayer/ai",
   "version": "0.1.0",
+  "private": true,
   "description": "AI Campaign Creator - chat-based signage content creation via Claude tool-use",
   "type": "module",
   "main": "src/index.js",
@@ -12,9 +13,16 @@
     "./chat-ui": "./src/chat-ui.js"
   },
   "dependencies": {
-    "@xiboplayer/utils": "file:../utils"
+    "@xiboplayer/utils": "workspace:*"
   },
   "scripts": {
     "test": "vitest run src/"
+  },
+  "author": "Pau Aliagas <linuxnow@gmail.com>",
+  "license": "AGPL-3.0-or-later",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/linuxnow/xiboplayer.git",
+    "directory": "packages/ai"
   }
 }

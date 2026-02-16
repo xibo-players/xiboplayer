@@ -19,15 +19,15 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
-    "@xiboplayer/utils": "file:../utils",
+    "@xiboplayer/utils": "workspace:*",
     "@xibosignage/xibo-communication-framework": "^0.0.6",
     "nanoevents": "^9.1.0"
   },
   "peerDependencies": {
-    "@xiboplayer/cache": "^0.9.0",
-    "@xiboplayer/renderer": "^0.9.0",
-    "@xiboplayer/schedule": "^0.9.0",
-    "@xiboplayer/xmds": "^0.9.0"
+    "@xiboplayer/cache": "^0.1.0",
+    "@xiboplayer/renderer": "^0.1.0",
+    "@xiboplayer/schedule": "^0.1.0",
+    "@xiboplayer/xmds": "^0.1.0"
   },
   "devDependencies": {
     "vite": "^7.3.1",
@@ -47,7 +47,7 @@
   "license": "AGPL-3.0-or-later",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/xibo/xibo-players.git",
+    "url": "git+https://github.com/linuxnow/xiboplayer.git",
     "directory": "packages/core"
   }
 }
