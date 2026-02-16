@@ -277,6 +277,7 @@ export class PlayerCore extends EventEmitter {
       }
 
       // Register display
+      log.debug('Collection step: registerDisplay');
       const regResult = await this.xmds.registerDisplay();
       log.info('Display registered:', regResult);
 
@@ -319,6 +320,7 @@ export class PlayerCore extends EventEmitter {
       this.emit('register-complete', regResult);
 
       // Initialize XMR if available
+      log.debug('Collection step: initializeXmr');
       await this.initializeXmr(regResult);
 
       // CRC32 skip optimization: only fetch RequiredFiles/Schedule when CMS data changed
@@ -327,6 +329,7 @@ export class PlayerCore extends EventEmitter {
 
       // Get required files (skip if CRC unchanged)
       if (!this._lastCheckRf || this._lastCheckRf !== checkRf) {
+        log.debug('Collection step: requiredFiles');
         const allFiles = await this.xmds.requiredFiles();
         // Separate purge entries from download entries
         const purgeFiles = allFiles.filter(f => f.type === 'purge');
@@ -344,15 +347,18 @@ export class PlayerCore extends EventEmitter {
 
         // Get schedule (skip if CRC unchanged)
         if (!this._lastCheckSchedule || this._lastCheckSchedule !== checkSchedule) {
+          log.debug('Collection step: schedule');
           const schedule = await this.xmds.schedule();
           log.info('Schedule received');
           this._lastCheckSchedule = checkSchedule;
+          log.debug('Collection step: processing schedule');
           this.emit('schedule-received', schedule);
           this.schedule.setSchedule(schedule);
           this.updateDataConnectors();
           this._offlineSave('schedule', schedule);
         }
 
+        log.debug('Collection step: download-request + mediaInventory');
         // Prioritize downloads by layout priority (highest first)
         const currentLayouts = this.schedule.getCurrentLayouts();
         const prioritizedFiles = this.prioritizeFilesByLayout(files, currentLayouts);
@@ -378,6 +384,7 @@ export class PlayerCore extends EventEmitter {
         }
       }
 
+      log.debug('Collection step: evaluateSchedule');
       // Evaluate current schedule
       const layoutFiles = this.schedule.getCurrentLayouts();
       log.info('Current layouts:', layoutFiles);
