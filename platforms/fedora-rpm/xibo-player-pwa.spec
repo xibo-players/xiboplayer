@@ -10,6 +10,7 @@ URL:            https://github.com/linuxnow/xibo_players
 Source0:        %{name}-%{version}.tar.gz
 
 BuildArch:      noarch
+BuildRequires:  systemd-rpm-macros
 
 Requires:       (chromium or google-chrome-stable)
 Requires:       jq
@@ -67,8 +68,8 @@ install -Dm644 %{_sourcedir}/xiboplayer/xiboplayer.desktop \
 echo ""
 echo "  Xibo PWA Player installed."
 echo ""
-echo "  1. Run 'xiboplayer' once — creates ~/.config/xiboplayer/config.env"
-echo "  2. Edit ~/.config/xiboplayer/config.env — set CMS_URL"
+echo "  1. Run 'xiboplayer' once — creates ~/.config/xiboplayer/config.json"
+echo "  2. Edit ~/.config/xiboplayer/config.json — set cmsUrl"
 echo "  3. systemctl --user enable --now xiboplayer-kiosk.service"
 echo ""
 
@@ -78,7 +79,7 @@ if [ "$1" -eq 0 ]; then
 fi
 
 %changelog
-* Sun Feb 16 2026 Pau Aliagas <linuxnow@gmail.com> - 1.0.0-1
+* Mon Feb 16 2026 Pau Aliagas <linuxnow@gmail.com> - 1.0.0-1
 - Renamed to xiboplayer-pwa, proper Fedora FHS paths
 - Launch script in /usr/libexec/xiboplayer/
 - Browser profiles in ~/.local/share/xiboplayer/

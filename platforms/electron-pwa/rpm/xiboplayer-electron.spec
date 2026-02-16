@@ -10,6 +10,7 @@ URL:            https://github.com/linuxnow/xibo_players
 Source0:        xiboplayer-electron-%{version}-linux-unpacked.tar.gz
 
 ExclusiveArch:  x86_64
+BuildRequires:  systemd-rpm-macros
 
 Requires:       gtk3
 Requires:       nss
@@ -108,7 +109,7 @@ if [ $1 -eq 0 ] ; then
 fi
 
 %changelog
-* Sun Feb 16 2026 Pau Aliagas <linuxnow@gmail.com> - 0.9.0-1
+* Mon Feb 16 2026 Pau Aliagas <linuxnow@gmail.com> - 0.9.0-1
 - New RPM spec with proper Fedora FHS paths
 - Electron bundle in /usr/lib64/xiboplayer/
 - Systemd user service for auto-start
