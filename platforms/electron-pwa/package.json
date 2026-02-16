@@ -1,6 +1,6 @@
 {
   "name": "@xiboplayer/electron-pwa",
-  "version": "0.9.0",
+  "version": "0.1.0",
   "description": "Xibo Player - Electron Kiosk Wrapper for PWA",
   "main": "src/main.js",
   "author": "TecMan <pau@tecman.cat>",
@@ -57,13 +57,7 @@
       ],
       "category": "Utility",
       "icon": "resources/icon.png",
-      "executableName": "xiboplayer",
-      "desktop": {
-        "Name": "Xibo Player",
-        "Comment": "Digital Signage Player",
-        "Type": "Application",
-        "Categories": "Utility;AudioVideo;"
-      }
+      "executableName": "xiboplayer"
     },
     "rpm": {
       "depends": []
