@@ -24,10 +24,10 @@
     "nanoevents": "^9.1.0"
   },
   "peerDependencies": {
-    "@xiboplayer/cache": "^0.1.0",
-    "@xiboplayer/renderer": "^0.1.0",
-    "@xiboplayer/schedule": "^0.1.0",
-    "@xiboplayer/xmds": "^0.1.0"
+    "@xiboplayer/cache": "workspace:*",
+    "@xiboplayer/renderer": "workspace:*",
+    "@xiboplayer/schedule": "workspace:*",
+    "@xiboplayer/xmds": "workspace:*"
   },
   "devDependencies": {
     "vite": "^7.3.1",
