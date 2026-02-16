@@ -146,7 +146,7 @@ export class RestClient {
       clientVersion: '0.1.0',
       clientCode: 1,
       operatingSystem: os,
-      macAddress: 'n/a',
+      macAddress: this.config.macAddress || 'n/a',
       xmrChannel: this.config.xmrChannel,
       xmrPubKey: '',
     });
