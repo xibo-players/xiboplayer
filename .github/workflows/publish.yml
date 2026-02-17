@@ -1,0 +1,13 @@
+name: Publish to npm
+
+on:
+  push:
+    tags: ['v*']
+
+jobs:
+  publish:
+    uses: xibo-players/.github/.github/workflows/publish-npm.yml@main
+    with:
+      publish-command: 'pnpm -r publish --no-git-checks --access public'
+    secrets:
+      npm-token: ${{ secrets.NPM_TOKEN }}
