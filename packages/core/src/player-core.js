@@ -378,6 +378,7 @@ export class PlayerCore extends EventEmitter {
           this.schedule.setSchedule(schedule);
           this.updateDataConnectors();
           this._offlineSave('schedule', schedule);
+          this.logUpcomingTimeline();
         }
 
         log.debug('Collection step: download-request + mediaInventory');
@@ -401,6 +402,7 @@ export class PlayerCore extends EventEmitter {
           this.schedule.setSchedule(schedule);
           this.updateDataConnectors();
           this._offlineSave('schedule', schedule);
+          this.logUpcomingTimeline();
         } else if (checkSchedule) {
           log.info('Schedule CRC unchanged, skipping');
         }
