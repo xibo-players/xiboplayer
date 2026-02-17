@@ -3,136 +3,6 @@
  * Based on arexibo layout.rs
  */
 
-// Transition utility functions
-const Transitions = {
-  /**
-   * Apply fade in transition
-   */
-  fadeIn(element, duration) {
-    const keyframes = [
-      { opacity: 0 },
-      { opacity: 1 }
-    ];
-    const timing = {
-      duration: duration,
-      easing: 'linear',
-      fill: 'forwards'
-    };
-    return element.animate(keyframes, timing);
-  },
-
-  /**
-   * Apply fade out transition
-   */
-  fadeOut(element, duration) {
-    const keyframes = [
-      { opacity: 1 },
-      { opacity: 0, zIndex: 0 }
-    ];
-    const timing = {
-      duration: duration,
-      easing: 'linear',
-      fill: 'forwards'
-    };
-    return element.animate(keyframes, timing);
-  },
-
-  /**
-   * Get fly keyframes based on compass direction
-   */
-  getFlyKeyframes(direction, width, height, isIn) {
-    const keyframes = { from: {}, to: {} };
-
-    // Map compass directions to transform values
-    const dirMap = {
-      'N': { x: 0, y: isIn ? -height : height },
-      'NE': { x: isIn ? width : -width, y: isIn ? -height : height },
-      'E': { x: isIn ? width : -width, y: 0 },
-      'SE': { x: isIn ? width : -width, y: isIn ? height : -height },
-      'S': { x: 0, y: isIn ? height : -height },
-      'SW': { x: isIn ? -width : width, y: isIn ? height : -height },
-      'W': { x: isIn ? -width : width, y: 0 },
-      'NW': { x: isIn ? -width : width, y: isIn ? -height : height }
-    };
-
-    const offset = dirMap[direction] || dirMap['N'];
-
-    if (isIn) {
-      keyframes.from = {
-        transform: `translate(${offset.x}px, ${offset.y}px)`,
-        opacity: 0
-      };
-      keyframes.to = {
-        transform: 'translate(0, 0)',
-        opacity: 1
-      };
-    } else {
-      keyframes.from = {
-        transform: 'translate(0, 0)',
-        opacity: 1
-      };
-      keyframes.to = {
-        transform: `translate(${offset.x}px, ${offset.y}px)`,
-        opacity: 0
-      };
-    }
-
-    return keyframes;
-  },
-
-  /**
-   * Apply fly in transition
-   */
-  flyIn(element, duration, direction, regionWidth, regionHeight) {
-    const keyframes = this.getFlyKeyframes(direction, regionWidth, regionHeight, true);
-    const timing = {
-      duration: duration,
-      easing: 'ease-out',
-      fill: 'forwards'
-    };
-    return element.animate([keyframes.from, keyframes.to], timing);
-  },
-
-  /**
-   * Apply fly out transition
-   */
-  flyOut(element, duration, direction, regionWidth, regionHeight) {
-    const keyframes = this.getFlyKeyframes(direction, regionWidth, regionHeight, false);
-    const timing = {
-      duration: duration,
-      easing: 'ease-in',
-      fill: 'forwards'
-    };
-    return element.animate([keyframes.from, keyframes.to], timing);
-  },
-
-  /**
-   * Apply transition based on type
-   */
-  apply(element, transitionConfig, isIn, regionWidth, regionHeight) {
-    if (!transitionConfig || !transitionConfig.type) {
-      return null;
-    }
-
-    const type = transitionConfig.type.toLowerCase();
-    const duration = transitionConfig.duration || 1000;
-    const direction = transitionConfig.direction || 'N';
-
-    switch (type) {
-      case 'fadein':
-        return isIn ? this.fadeIn(element, duration) : null;
-      case 'fadeout':
-        return isIn ? null : this.fadeOut(element, duration);
-      case 'flyin':
-        return isIn ? this.flyIn(element, duration, direction, regionWidth, regionHeight) : null;
-      case 'flyout':
-        return isIn ? null : this.flyOut(element, duration, direction, regionWidth, regionHeight);
-      default:
-        return null;
-    }
-  }
-};
-
 export class LayoutTranslator {
   constructor(xmds) {
     this.xmds = xmds;
@@ -514,6 +384,63 @@ ${mediaJS}
   }
 
   /**
+   * Generate iframe widget JS for text/ticker and generic widget types.
+   * Returns { startFn, stopFn } strings for the media item.
+   */
+  _generateIframeWidgetJS(regionId, mediaId, widgetUrl, transIn, transOut) {
+    const iframeId = `widget_${regionId}_${mediaId}`;
+    const startFn = `() => {
+        const region = document.getElementById('region_${regionId}');
+        let iframe = document.getElementById('${iframeId}');
+        if (!iframe) {
+          iframe = document.createElement('iframe');
+          iframe.id = '${iframeId}';
+          iframe.src = '${widgetUrl}';
+          iframe.style.width = '100%';
+          iframe.style.height = '100%';
+          iframe.style.border = 'none';
+          iframe.scrolling = 'no';
+          iframe.style.opacity = '0';
+          region.innerHTML = '';
+          region.appendChild(iframe);
+
+          // Apply transition after iframe loads
+          iframe.onload = () => {
+            const transIn = ${transIn};
+            if (transIn && window.Transitions) {
+              const regionRect = region.getBoundingClientRect();
+              window.Transitions.apply(iframe, transIn, true, regionRect.width, regionRect.height);
+            } else {
+              iframe.style.opacity = '1';
+            }
+          };
+        } else {
+          iframe.style.display = 'block';
+          iframe.style.opacity = '1';
+        }
+      }`;
+    const stopFn = `() => {
+        const region = document.getElementById('region_${regionId}');
+        const iframe = document.getElementById('${iframeId}');
+        if (iframe) {
+          const transOut = ${transOut};
+          if (transOut && window.Transitions) {
+            const regionRect = region.getBoundingClientRect();
+            const animation = window.Transitions.apply(iframe, transOut, false, regionRect.width, regionRect.height);
+            if (animation) {
+              animation.onfinish = () => {
+                iframe.style.display = 'none';
+              };
+              return;
+            }
+          }
+          iframe.style.display = 'none';
+        }
+      }`;
+    return { startFn, stopFn };
+  }
+
+  /**
    * Generate JavaScript for a single media item
    */
   generateMediaJS(media, regionId) {
@@ -616,63 +543,16 @@ ${mediaJS}
 
       case 'text':
       case 'ticker':
-        // Use cache URL pattern for text/ticker widgets - must be in /player/ scope for SW
+        // Text/ticker widgets use the same iframe pattern as default widgets.
+        // If no widgetCacheKey, fall through to the default case which handles unsupported types.
         if (media.options.widgetCacheKey) {
           const textUrl = `${window.location.origin}/player${media.options.widgetCacheKey}`;
-          const iframeId = `widget_${regionId}_${media.id}`;
-          startFn = `() => {
-        const region = document.getElementById('region_${regionId}');
-        let iframe = document.getElementById('${iframeId}');
-        if (!iframe) {
-          iframe = document.createElement('iframe');
-          iframe.id = '${iframeId}';
-          iframe.src = '${textUrl}';
-          iframe.style.width = '100%';
-          iframe.style.height = '100%';
-          iframe.style.border = 'none';
-          iframe.scrolling = 'no';
-          iframe.style.opacity = '0';
-          region.innerHTML = '';
-          region.appendChild(iframe);
-
-          // Apply transition after iframe loads
-          iframe.onload = () => {
-            const transIn = ${transIn};
-            if (transIn && window.Transitions) {
-              const regionRect = region.getBoundingClientRect();
-              window.Transitions.apply(iframe, transIn, true, regionRect.width, regionRect.height);
-            } else {
-              iframe.style.opacity = '1';
-            }
-          };
-        } else {
-          iframe.style.display = 'block';
-          iframe.style.opacity = '1';
+          const iframe = this._generateIframeWidgetJS(regionId, media.id, textUrl, transIn, transOut);
+          startFn = iframe.startFn;
+          stopFn = iframe.stopFn;
+          break;
         }
-      }`;
-          stopFn = `() => {
-        const region = document.getElementById('region_${regionId}');
-        const iframe = document.getElementById('${iframeId}');
-        if (iframe) {
-          const transOut = ${transOut};
-          if (transOut && window.Transitions) {
-            const regionRect = region.getBoundingClientRect();
-            const animation = window.Transitions.apply(iframe, transOut, false, regionRect.width, regionRect.height);
-            if (animation) {
-              animation.onfinish = () => {
-                iframe.style.display = 'none';
-              };
-              return;
-            }
-          }
-          iframe.style.display = 'none';
-        }
-      }`;
-        } else {
-          console.warn(`[Layout] Text media without widgetCacheKey`);
-          startFn = `() => console.log('Text media without cache key')`;
-        }
-        break;
+        // Fall through to default (handles missing widgetCacheKey as unsupported)
 
       case 'audio':
         const audioSrc = `${window.location.origin}/player/cache/media/${media.options.uri}`;
@@ -1007,55 +887,9 @@ ${mediaJS}
         // Keep widget iframes alive across duration cycles (arexibo behavior)
         if (media.options.widgetCacheKey) {
           const widgetUrl = `${window.location.origin}/player${media.options.widgetCacheKey}`;
-          const iframeId = `widget_${regionId}_${media.id}`;
-          startFn = `() => {
-        const region = document.getElementById('region_${regionId}');
-        let iframe = document.getElementById('${iframeId}');
-        if (!iframe) {
-          iframe = document.createElement('iframe');
-          iframe.id = '${iframeId}';
-          iframe.src = '${widgetUrl}';
-          iframe.style.width = '100%';
-          iframe.style.height = '100%';
-          iframe.style.border = 'none';
-          iframe.scrolling = 'no';
-          iframe.style.opacity = '0';
-          region.innerHTML = '';
-          region.appendChild(iframe);
-
-          // Apply transition after iframe loads
-          iframe.onload = () => {
-            const transIn = ${transIn};
-            if (transIn && window.Transitions) {
-              const regionRect = region.getBoundingClientRect();
-              window.Transitions.apply(iframe, transIn, true, regionRect.width, regionRect.height);
-            } else {
-              iframe.style.opacity = '1';
-            }
-          };
-        } else {
-          iframe.style.display = 'block';
-          iframe.style.opacity = '1';
-        }
-      }`;
-          stopFn = `() => {
-        const region = document.getElementById('region_${regionId}');
-        const iframe = document.getElementById('${iframeId}');
-        if (iframe) {
-          const transOut = ${transOut};
-          if (transOut && window.Transitions) {
-            const regionRect = region.getBoundingClientRect();
-            const animation = window.Transitions.apply(iframe, transOut, false, regionRect.width, regionRect.height);
-            if (animation) {
-              animation.onfinish = () => {
-                iframe.style.display = 'none';
-              };
-              return;
-            }
-          }
-          iframe.style.display = 'none';
-        }
-      }`;
+          const iframe = this._generateIframeWidgetJS(regionId, media.id, widgetUrl, transIn, transOut);
+          startFn = iframe.startFn;
+          stopFn = iframe.stopFn;
         } else {
           console.warn(`[Layout] Unsupported media type: ${media.type}`);
           startFn = `() => console.log('Unsupported media type: ${media.type}')`;
@@ -1070,4 +904,3 @@ ${mediaJS}
   }
 }
 
-export const layoutTranslator = new LayoutTranslator();

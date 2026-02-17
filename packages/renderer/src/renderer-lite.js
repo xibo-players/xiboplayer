@@ -1002,48 +1002,15 @@ export class RendererLite {
    */
   startRegion(regionId) {
     const region = this.regions.get(regionId);
-    if (!region || region.widgets.length === 0) {
-      return;
-    }
-
-    // If only one widget, just render it (no cycling)
-    // Don't set completion timer - layout duration controls ending
-    // Region completion is NOT tracked for single-widget regions
-    // (they display continuously until layout timer expires)
-    if (region.widgets.length === 1) {
-      this.renderWidget(regionId, 0);
-      return;
-    }
-
-    // Multiple widgets - cycle through them
-    const playNext = () => {
-      const widgetIndex = region.currentIndex;
-      const widget = region.widgets[widgetIndex];
-
-      // Render widget
-      this.renderWidget(regionId, widgetIndex);
-
-      // Schedule next widget
-      const duration = widget.duration * 1000;
-      region.timer = setTimeout(() => {
-        this.stopWidget(regionId, widgetIndex);
-
-        // Move to next widget (wraps to 0 if at end)
-        const nextIndex = (region.currentIndex + 1) % region.widgets.length;
-
-        // Check if completing full cycle (wrapped back to 0)
-        if (nextIndex === 0 && !region.complete) {
-          region.complete = true;
-          this.log.info(`Region ${regionId} completed one full cycle`);
-          this.checkLayoutComplete();
-        }
-
-        region.currentIndex = nextIndex;
-        playNext();
-      }, duration);
-    };
-
-    playNext();
+    this._startRegionCycle(
+      region, regionId,
+      (rid, idx) => this.renderWidget(rid, idx),
+      (rid, idx) => this.stopWidget(rid, idx),
+      () => {
+        this.log.info(`Region ${regionId} completed one full cycle`);
+        this.checkLayoutComplete();
+      }
+    );
   }
 
   /**
@@ -1090,48 +1057,31 @@ export class RendererLite {
    * @param {Object} widget - Widget config
    */
   updateMediaElement(element, widget) {
-    // Videos: ALWAYS restart on widget show (even if looping)
-    const videoEl = this.findMediaElement(element, 'VIDEO');
-    if (videoEl) {
-      videoEl.currentTime = 0;
-      // Wait for seek to complete before playing — avoids DOMException
-      // "The play() request was interrupted" when calling play() mid-seek
-      const playAfterSeek = () => {
-        videoEl.removeEventListener('seeked', playAfterSeek);
-        videoEl.play().catch(() => {}); // Silently ignore — autoplay will retry
-      };
-      videoEl.addEventListener('seeked', playAfterSeek);
-      // Fallback: if seeked doesn't fire (already at 0), try play directly
-      if (videoEl.currentTime === 0 && videoEl.readyState >= 2) {
-        videoEl.removeEventListener('seeked', playAfterSeek);
-        videoEl.play().catch(() => {});
-      }
-      this.log.info(`Video restarted: ${widget.fileId || widget.id}`);
-      return;
+    // Restart video or audio on widget show (even if looping)
+    const mediaEl = this.findMediaElement(element, 'VIDEO') || this.findMediaElement(element, 'AUDIO');
+    if (mediaEl) {
+      this._restartMediaElement(mediaEl);
+      this.log.info(`${mediaEl.tagName === 'VIDEO' ? 'Video' : 'Audio'} restarted: ${widget.fileId || widget.id}`);
     }
+  }
 
-    // Audio: ALWAYS restart on widget show (even if looping)
-    const audioEl = this.findMediaElement(element, 'AUDIO');
-    if (audioEl) {
-      audioEl.currentTime = 0;
-      const playAfterSeek = () => {
-        audioEl.removeEventListener('seeked', playAfterSeek);
-        audioEl.play().catch(() => {});
-      };
-      audioEl.addEventListener('seeked', playAfterSeek);
-      if (audioEl.currentTime === 0 && audioEl.readyState >= 2) {
-        audioEl.removeEventListener('seeked', playAfterSeek);
-        audioEl.play().catch(() => {});
-      }
-      this.log.info(`Audio restarted: ${widget.fileId || widget.id}`);
-      return;
+  /**
+   * Restart a media element from the beginning.
+   * Waits for seek to complete before playing — avoids DOMException
+   * "The play() request was interrupted" when calling play() mid-seek.
+   */
+  _restartMediaElement(el) {
+    el.currentTime = 0;
+    const playAfterSeek = () => {
+      el.removeEventListener('seeked', playAfterSeek);
+      el.play().catch(() => {});
+    };
+    el.addEventListener('seeked', playAfterSeek);
+    // Fallback: if seeked doesn't fire (already at 0), try play directly
+    if (el.currentTime === 0 && el.readyState >= 2) {
+      el.removeEventListener('seeked', playAfterSeek);
+      el.play().catch(() => {});
     }
-
-    // Images: Could refresh src if needed (future enhancement)
-    // const imgEl = this.findMediaElement(element, 'IMG');
-
-    // Iframes: Could reload if needed (future enhancement)
-    // const iframeEl = this.findMediaElement(element, 'IFRAME');
   }
 
   /**
@@ -1242,63 +1192,131 @@ export class RendererLite {
    * @param {string} regionId - Region ID
    * @param {number} widgetIndex - Widget index in region
    */
+  /**
+   * Core: show a widget in a region (shared by main layout + overlay)
+   * Returns the widget object on success, null on failure.
+   */
+  async _showWidget(region, widgetIndex) {
+    const widget = region.widgets[widgetIndex];
+    if (!widget) return null;
+
+    let element = region.widgetElements.get(widget.id);
+
+    if (!element) {
+      this.log.warn(`Widget ${widget.id} not pre-created, creating now`);
+      element = await this.createWidgetElement(widget, region);
+      region.widgetElements.set(widget.id, element);
+      region.element.appendChild(element);
+    }
+
+    // Hide all other widgets in region
+    for (const [widgetId, widgetEl] of region.widgetElements) {
+      if (widgetId !== widget.id) {
+        widgetEl.style.visibility = 'hidden';
+        widgetEl.style.opacity = '0';
+      }
+    }
+
+    this.updateMediaElement(element, widget);
+    element.style.visibility = 'visible';
+
+    if (widget.transitions.in) {
+      Transitions.apply(element, widget.transitions.in, true, region.width, region.height);
+    } else {
+      element.style.opacity = '1';
+    }
+
+    return widget;
+  }
+
+  /**
+   * Core: hide a widget in a region (shared by main layout + overlay).
+   * Returns { widget, animPromise } synchronously — callers await animPromise if needed.
+   * NOT async, so callers that don't need the animation stay on the same microtask.
+   */
+  _hideWidget(region, widgetIndex) {
+    const widget = region.widgets[widgetIndex];
+    if (!widget) return { widget: null, animPromise: null };
+
+    const widgetElement = region.widgetElements.get(widget.id);
+    if (!widgetElement) return { widget: null, animPromise: null };
+
+    let animPromise = null;
+    if (widget.transitions.out) {
+      const animation = Transitions.apply(
+        widgetElement, widget.transitions.out, false, region.width, region.height
+      );
+      if (animation) {
+        animPromise = new Promise(resolve => { animation.onfinish = resolve; });
+      }
+    }
+
+    const videoEl = widgetElement.querySelector('video');
+    if (videoEl && widget.options.loop !== '1') videoEl.pause();
+
+    const audioEl = widgetElement.querySelector('audio');
+    if (audioEl && widget.options.loop !== '1') audioEl.pause();
+
+    return { widget, animPromise };
+  }
+
+  /**
+   * Core: cycle through widgets in a region (shared by main layout + overlay)
+   * @param {Object} region - Region state object
+   * @param {string} regionId - Region ID
+   * @param {Function} showFn - (regionId, widgetIndex) => show widget
+   * @param {Function} hideFn - (regionId, widgetIndex) => hide widget
+   * @param {Function} [onCycleComplete] - Called when region completes one full cycle
+   */
+  _startRegionCycle(region, regionId, showFn, hideFn, onCycleComplete) {
+    if (!region || region.widgets.length === 0) return;
+
+    if (region.widgets.length === 1) {
+      showFn(regionId, 0);
+      return;
+    }
+
+    const playNext = () => {
+      const widgetIndex = region.currentIndex;
+      const widget = region.widgets[widgetIndex];
+
+      showFn(regionId, widgetIndex);
+
+      const duration = widget.duration * 1000;
+      region.timer = setTimeout(() => {
+        hideFn(regionId, widgetIndex);
+
+        const nextIndex = (region.currentIndex + 1) % region.widgets.length;
+        if (nextIndex === 0 && !region.complete) {
+          region.complete = true;
+          onCycleComplete?.();
+        }
+
+        region.currentIndex = nextIndex;
+        playNext();
+      }, duration);
+    };
+
+    playNext();
+  }
+
   async renderWidget(regionId, widgetIndex) {
     const region = this.regions.get(regionId);
     if (!region) return;
 
-    const widget = region.widgets[widgetIndex];
-    if (!widget) return;
-
     try {
-      this.log.info(`Showing widget ${widget.type} (${widget.id}) in region ${regionId}`);
-
-      // REUSE: Get existing element instead of creating new one
-      let element = region.widgetElements.get(widget.id);
-
-      if (!element) {
-        // Fallback: create if doesn't exist (shouldn't happen with pre-creation)
-        this.log.warn(`Widget ${widget.id} not pre-created, creating now`);
-        widget.layoutId = this.currentLayoutId;
-        widget.regionId = regionId;
-        element = await this.createWidgetElement(widget, region);
-        region.widgetElements.set(widget.id, element);
-        region.element.appendChild(element);
+      const widget = await this._showWidget(region, widgetIndex);
+      if (widget) {
+        this.log.info(`Showing widget ${widget.type} (${widget.id}) in region ${regionId}`);
+        this.emit('widgetStart', {
+          widgetId: widget.id, regionId, layoutId: this.currentLayoutId,
+          mediaId: parseInt(widget.fileId || widget.id) || null,
+          type: widget.type, duration: widget.duration
+        });
       }
-
-      // Hide all other widgets in region
-      for (const [widgetId, widgetEl] of region.widgetElements) {
-        if (widgetId !== widget.id) {
-          widgetEl.style.visibility = 'hidden';
-          widgetEl.style.opacity = '0';
-        }
-      }
-
-      // Update media element if needed (restart videos)
-      this.updateMediaElement(element, widget);
-
-      // Show this widget
-      element.style.visibility = 'visible';
-
-      // Apply in transition
-      if (widget.transitions.in) {
-        Transitions.apply(element, widget.transitions.in, true, region.width, region.height);
-      } else {
-        element.style.opacity = '1';
-      }
-
-      // Emit widget start event
-      this.emit('widgetStart', {
-        widgetId: widget.id,
-        regionId,
-        layoutId: this.currentLayoutId,
-        mediaId: parseInt(widget.fileId || widget.id) || null,
-        type: widget.type,
-        duration: widget.duration
-      });
-
     } catch (error) {
       this.log.error(`Error rendering widget:`, error);
-      this.emit('error', { type: 'widgetError', error, widgetId: widget.id, regionId });
+      this.emit('error', { type: 'widgetError', error, widgetId: region.widgets[widgetIndex]?.id, regionId });
     }
   }
 
@@ -1311,51 +1329,15 @@ export class RendererLite {
     const region = this.regions.get(regionId);
     if (!region) return;
 
-    const widget = region.widgets[widgetIndex];
-    if (!widget) return;
-
-    // Get widget element from reuse cache
-    const widgetElement = region.widgetElements.get(widget.id);
-    if (!widgetElement) return;
-
-    // Apply out transition
-    if (widget.transitions.out) {
-      const animation = Transitions.apply(
-        widgetElement,
-        widget.transitions.out,
-        false,
-        region.width,
-        region.height
-      );
-
-      if (animation) {
-        await new Promise(resolve => {
-          animation.onfinish = resolve;
-        });
-      }
+    const { widget, animPromise } = this._hideWidget(region, widgetIndex);
+    if (animPromise) await animPromise;
+    if (widget) {
+      this.emit('widgetEnd', {
+        widgetId: widget.id, regionId, layoutId: this.currentLayoutId,
+        mediaId: parseInt(widget.fileId || widget.id) || null,
+        type: widget.type
+      });
     }
-
-    // Pause media elements (but DON'T revoke URLs - element will be reused!)
-    const videoEl = widgetElement.querySelector('video');
-    if (videoEl && widget.options.loop !== '1') {
-      videoEl.pause();
-      // Keep src intact for next cycle
-    }
-
-    const audioEl = widgetElement.querySelector('audio');
-    if (audioEl && widget.options.loop !== '1') {
-      audioEl.pause();
-      // Keep src intact for next cycle
-    }
-
-    // Emit widget end event
-    this.emit('widgetEnd', {
-      widgetId: widget.id,
-      regionId,
-      layoutId: this.currentLayoutId,
-      mediaId: parseInt(widget.fileId || widget.id) || null,
-      type: widget.type
-    });
   }
 
   /**
@@ -2378,44 +2360,12 @@ export class RendererLite {
     if (!overlayState) return;
 
     const region = overlayState.regions.get(regionId);
-    if (!region || region.widgets.length === 0) {
-      return;
-    }
-
-    // If only one widget, just render it (no cycling)
-    if (region.widgets.length === 1) {
-      this.renderOverlayWidget(overlayId, regionId, 0);
-      return;
-    }
-
-    // Multiple widgets - cycle through them
-    const playNext = () => {
-      const widgetIndex = region.currentIndex;
-      const widget = region.widgets[widgetIndex];
-
-      // Render widget
-      this.renderOverlayWidget(overlayId, regionId, widgetIndex);
-
-      // Schedule next widget
-      const duration = widget.duration * 1000;
-      region.timer = setTimeout(() => {
-        this.stopOverlayWidget(overlayId, regionId, widgetIndex);
-
-        // Move to next widget (wraps to 0 if at end)
-        const nextIndex = (region.currentIndex + 1) % region.widgets.length;
-
-        // Check if completing full cycle (wrapped back to 0)
-        if (nextIndex === 0 && !region.complete) {
-          region.complete = true;
-          this.log.info(`Overlay ${overlayId} region ${regionId} completed one full cycle`);
-        }
-
-        region.currentIndex = nextIndex;
-        playNext();
-      }, duration);
-    };
-
-    playNext();
+    this._startRegionCycle(
+      region, regionId,
+      (rid, idx) => this.renderOverlayWidget(overlayId, rid, idx),
+      (rid, idx) => this.stopOverlayWidget(overlayId, rid, idx),
+      () => this.log.info(`Overlay ${overlayId} region ${regionId} completed one full cycle`)
+    );
   }
 
   /**
@@ -2431,55 +2381,18 @@ export class RendererLite {
     const region = overlayState.regions.get(regionId);
     if (!region) return;
 
-    const widget = region.widgets[widgetIndex];
-    if (!widget) return;
-
     try {
-      this.log.info(`Showing overlay widget ${widget.type} (${widget.id}) in overlay ${overlayId} region ${regionId}`);
-
-      // Get existing element (pre-created)
-      let element = region.widgetElements.get(widget.id);
-
-      if (!element) {
-        this.log.warn(`Overlay widget ${widget.id} not pre-created, creating now`);
-        element = await this.createWidgetElement(widget, region);
-        region.widgetElements.set(widget.id, element);
-        region.element.appendChild(element);
+      const widget = await this._showWidget(region, widgetIndex);
+      if (widget) {
+        this.log.info(`Showing overlay widget ${widget.type} (${widget.id}) in overlay ${overlayId} region ${regionId}`);
+        this.emit('overlayWidgetStart', {
+          overlayId, widgetId: widget.id, regionId,
+          type: widget.type, duration: widget.duration
+        });
       }
-
-      // Hide all other widgets in region
-      for (const [widgetId, widgetEl] of region.widgetElements) {
-        if (widgetId !== widget.id) {
-          widgetEl.style.visibility = 'hidden';
-          widgetEl.style.opacity = '0';
-        }
-      }
-
-      // Update media element if needed (restart videos)
-      this.updateMediaElement(element, widget);
-
-      // Show this widget
-      element.style.visibility = 'visible';
-
-      // Apply in transition
-      if (widget.transitions.in) {
-        Transitions.apply(element, widget.transitions.in, true, region.width, region.height);
-      } else {
-        element.style.opacity = '1';
-      }
-
-      // Emit widget start event
-      this.emit('overlayWidgetStart', {
-        overlayId,
-        widgetId: widget.id,
-        regionId,
-        type: widget.type,
-        duration: widget.duration
-      });
-
     } catch (error) {
       this.log.error(`Error rendering overlay widget:`, error);
-      this.emit('error', { type: 'overlayWidgetError', error, widgetId: widget.id, regionId, overlayId });
+      this.emit('error', { type: 'overlayWidgetError', error, widgetId: region.widgets[widgetIndex]?.id, regionId, overlayId });
     }
   }
 
@@ -2496,47 +2409,13 @@ export class RendererLite {
     const region = overlayState.regions.get(regionId);
     if (!region) return;
 
-    const widget = region.widgets[widgetIndex];
-    if (!widget) return;
-
-    const widgetElement = region.widgetElements.get(widget.id);
-    if (!widgetElement) return;
-
-    // Apply out transition
-    if (widget.transitions.out) {
-      const animation = Transitions.apply(
-        widgetElement,
-        widget.transitions.out,
-        false,
-        region.width,
-        region.height
-      );
-
-      if (animation) {
-        await new Promise(resolve => {
-          animation.onfinish = resolve;
-        });
-      }
+    const { widget, animPromise } = this._hideWidget(region, widgetIndex);
+    if (animPromise) await animPromise;
+    if (widget) {
+      this.emit('overlayWidgetEnd', {
+        overlayId, widgetId: widget.id, regionId, type: widget.type
+      });
     }
-
-    // Pause media elements
-    const videoEl = widgetElement.querySelector('video');
-    if (videoEl && widget.options.loop !== '1') {
-      videoEl.pause();
-    }
-
-    const audioEl = widgetElement.querySelector('audio');
-    if (audioEl && widget.options.loop !== '1') {
-      audioEl.pause();
-    }
-
-    // Emit widget end event
-    this.emit('overlayWidgetEnd', {
-      overlayId,
-      widgetId: widget.id,
-      regionId,
-      type: widget.type
-    });
   }
 
   /**
