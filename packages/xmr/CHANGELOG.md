@@ -159,7 +159,7 @@ await xmr.stop(); // Clean shutdown, no reconnection
 
 ## Support
 
-- **Documentation**: [docs/README.md](./docs/README.md)
+- **Documentation**: [README.md](./README.md)
 - **GitHub Issues**: https://github.com/xibo/xibo-players/issues
 - **Community**: https://community.xibo.org.uk
 
