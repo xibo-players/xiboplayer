@@ -204,6 +204,10 @@ export class RendererLite {
     this.regions = new Map(); // regionId => { element, widgets, currentIndex, timer }
     this.layoutTimer = null;
     this.layoutEndEmitted = false; // Prevents double layoutEnd on stop after timer
+    this._paused = false;
+    this._layoutTimerStartedAt = null;  // Date.now() when layout timer started
+    this._layoutTimerDurationMs = null; // Total layout duration in ms
+    this._layoutTimerRemaining = null;  // ms remaining when paused
     this.widgetTimers = new Map(); // widgetId => timer
     this.mediaUrlCache = new Map(); // fileId => blob URL (for parallel pre-fetching)
     this.layoutBlobUrls = new Map(); // layoutId => Set<blobUrl> (for lifecycle tracking)
@@ -1179,6 +1183,8 @@ export class RendererLite {
     const layoutDurationMs = layout.duration * 1000;
     this.log.info(`Layout ${layoutId} will end after ${layout.duration}s`);
 
+    this._layoutTimerStartedAt = Date.now();
+    this._layoutTimerDurationMs = layoutDurationMs;
     this.layoutTimer = setTimeout(() => {
       this.log.info(`Layout ${layoutId} duration expired (${layout.duration}s)`);
       if (this.currentLayoutId) {
@@ -2485,6 +2491,80 @@ export class RendererLite {
    */
   getActiveOverlays() {
     return Array.from(this.activeOverlays.keys());
+  }
+
+  /**
+   * Pause playback: stop layout timer, pause all media, stop widget cycling.
+   * The layout timer's remaining time is saved so resume() can restart it.
+   */
+  pause() {
+    if (this._paused) return;
+    this._paused = true;
+
+    // Save remaining layout time
+    if (this.layoutTimer && this._layoutTimerStartedAt) {
+      const elapsed = Date.now() - this._layoutTimerStartedAt;
+      this._layoutTimerRemaining = Math.max(0, this._layoutTimerDurationMs - elapsed);
+      clearTimeout(this.layoutTimer);
+      this.layoutTimer = null;
+    }
+
+    // Stop all region widget-cycling timers
+    for (const [, region] of this.regions) {
+      if (region.timer) {
+        clearTimeout(region.timer);
+        region.timer = null;
+      }
+    }
+
+    // Pause all video/audio elements
+    this._forEachMedia(el => el.pause());
+
+    this.emit('paused');
+    this.log.info('Playback paused');
+  }
+
+  /**
+   * Resume playback: restart layout timer with remaining time, resume media and widget cycling.
+   */
+  resume() {
+    if (!this._paused) return;
+    this._paused = false;
+
+    // Resume layout timer with remaining time
+    if (this._layoutTimerRemaining != null && this._layoutTimerRemaining > 0) {
+      this._layoutTimerStartedAt = Date.now();
+      this._layoutTimerDurationMs = this._layoutTimerRemaining;
+      const layoutId = this.currentLayoutId;
+      this.layoutTimer = setTimeout(() => {
+        this.log.info(`Layout ${layoutId} duration expired (resumed)`);
+        if (this.currentLayoutId) {
+          this.layoutEndEmitted = true;
+          this.emit('layoutEnd', this.currentLayoutId);
+        }
+      }, this._layoutTimerRemaining);
+      this._layoutTimerRemaining = null;
+    }
+
+    // Resume all video/audio
+    this._forEachMedia(el => el.play().catch(() => {}));
+
+    // Restart region widget cycling (re-enters cycle from current widget)
+    for (const [regionId] of this.regions) {
+      this.startRegion(regionId);
+    }
+
+    this.emit('resumed');
+    this.log.info('Playback resumed');
+  }
+
+  /**
+   * Apply a function to every video/audio element in all regions.
+   */
+  _forEachMedia(fn) {
+    for (const [, region] of this.regions) {
+      region.element?.querySelectorAll('video, audio').forEach(fn);
+    }
   }
 
   /**

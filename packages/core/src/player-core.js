@@ -709,6 +709,37 @@ export class PlayerCore extends EventEmitter {
   }
 
   /**
+   * Go back to the previous layout in the schedule (round-robin, wraps around).
+   * Called by platform layer in response to manual navigation (keyboard/remote).
+   * Skips sync-manager logic — manual navigation is local only.
+   */
+  advanceToPreviousLayout() {
+    if (this._layoutOverride) {
+      log.info('Layout override active, not going back');
+      return;
+    }
+
+    const layoutFiles = this.schedule.getCurrentLayouts();
+    if (layoutFiles.length === 0) return;
+
+    // Decrement index (wrap around)
+    const prevIndex = (this._currentLayoutIndex - 1 + layoutFiles.length) % layoutFiles.length;
+
+    const layoutFile = layoutFiles[prevIndex];
+    const layoutId = parseLayoutFile(layoutFile);
+
+    // No-op if it's the same layout (single-layout schedule) — don't restart
+    if (layoutId === this.currentLayoutId) {
+      log.info('Only one layout in schedule, nothing to go back to');
+      return;
+    }
+
+    this._currentLayoutIndex = prevIndex;
+    log.info(`Going back to layout ${layoutId} (index ${this._currentLayoutIndex}/${layoutFiles.length})`);
+    this.emit('layout-prepare-request', layoutId);
+  }
+
+  /**
    * Notify that a file is ready (called by platform for both layout and media files)
    * Checks if any pending layouts can now be rendered
    */
