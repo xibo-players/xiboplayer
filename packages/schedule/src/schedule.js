@@ -149,6 +149,58 @@ export class ScheduleManager {
   }
 
   /**
+   * Get ALL time-active layouts with metadata, without priority or rate-limit filtering.
+   * Used by calculateTimeline() to simulate real playback with rate limiting and
+   * priority fallback (e.g., when high-priority layouts hit maxPlaysPerHour, lower
+   * priority layouts fill the gap).
+   *
+   * @param {Date} time - The time to evaluate
+   * @returns {Array<{file: string, priority: number, maxPlaysPerHour: number}>}
+   */
+  getAllLayoutsAtTime(time) {
+    if (!this.schedule) return [];
+
+    const now = time;
+    const results = [];
+
+    // Standalone layouts
+    if (this.schedule.layouts) {
+      for (const layout of this.schedule.layouts) {
+        if (!this.isRecurringScheduleActive(layout, now)) continue;
+        if (!this.isTimeActive(layout, now)) continue;
+        if (layout.criteria && layout.criteria.length > 0) {
+          if (!evaluateCriteria(layout.criteria, { now, displayProperties: this.displayProperties })) continue;
+        }
+        if (layout.isGeoAware && layout.geoLocation) {
+          if (!this.isWithinGeoFence(layout.geoLocation)) continue;
+        }
+        results.push({
+          file: layout.file,
+          priority: layout.priority || 0,
+          maxPlaysPerHour: layout.maxPlaysPerHour || 0,
+        });
+      }
+    }
+
+    // Campaign layouts
+    if (this.schedule.campaigns) {
+      for (const campaign of this.schedule.campaigns) {
+        if (!this.isRecurringScheduleActive(campaign, now)) continue;
+        if (!this.isTimeActive(campaign, now)) continue;
+        for (const layout of campaign.layouts) {
+          results.push({
+            file: layout.file,
+            priority: campaign.priority || 0,
+            maxPlaysPerHour: layout.maxPlaysPerHour || 0,
+          });
+        }
+      }
+    }
+
+    return results;
+  }
+
+  /**
    * Internal: evaluate schedule at a given time.
    * @param {Date} now - Time to evaluate
    * @param {Object} [options] - Options
