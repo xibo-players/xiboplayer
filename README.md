@@ -64,6 +64,7 @@ This is a pnpm workspace monorepo. Packages use `workspace:*` internally; pnpm c
 
 | Player | Description |
 |--------|-------------|
+| [xiboplayer-pwa](https://github.com/xibo-players/xiboplayer-pwa) | Progressive Web App player |
 | [xiboplayer-electron](https://github.com/xibo-players/xiboplayer-electron) | Electron kiosk wrapper — RPM for Fedora |
 | [xiboplayer-chromium](https://github.com/xibo-players/xiboplayer-chromium) | Chromium kiosk — RPM for Fedora |
 
