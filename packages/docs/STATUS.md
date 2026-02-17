@@ -1,10 +1,9 @@
-# PWA Player Status - v0.9.0
+# PWA Player Status - v0.1.0
 
 ## Current Status: PRODUCTION READY
 
-**Live URL:** `https://your-cms.example.com/player/pwa/`
 **Feature Parity:** ~95% vs upstream Xibo players
-**Last Updated:** 2026-02-13
+**Last Updated:** 2026-02-17
 
 ## What Works
 
@@ -160,15 +159,6 @@ pnpm run build
 | Safari | 14+ | Expected |
 | Chrome Android | 90+ | Expected |
 | webOS Browser | 3.0+ | Expected |
-
-## Version History
-
-| Version | Date | Milestone |
-|---------|------|-----------|
-| v0.1 | 2026-01-29 | MVP: XMDS, basic XLF rendering, Service Worker offline |
-| v0.5 | 2026-02-03 | Monorepo: PlayerCore, RendererLite, XMR, Stats, Schedule |
-| v0.8 | 2026-02-06 | Performance: parallel chunks, element reuse, blob lifecycle |
-| v0.9 | 2026-02-12 | Feature complete: all 15 planned features, ~95% parity |
 
 ## Related Documentation
 

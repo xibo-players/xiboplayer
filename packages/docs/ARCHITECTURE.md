@@ -1,6 +1,6 @@
-# PWA Player Architecture (v0.9.0)
+# Xibo Player SDK Architecture
 
-Technical architecture of the Xibo PWA player monorepo.
+Technical architecture of the Xibo Player SDK.
 
 ## Design Philosophy
 
