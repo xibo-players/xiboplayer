@@ -11,9 +11,9 @@
  *   - The SERVER_KEY must match the CMS setting
  *
  * Run with:
- *   CMS_URL=https://displays.superpantalles.com \
- *   CMS_KEY=isiSdUCy \
- *   HARDWARE_KEY=pwa-470823315e05422b8d3c761c5274 \
+ *   CMS_URL=https://your-cms.example.com \
+ *   CMS_KEY=your-cms-key \
+ *   HARDWARE_KEY=pwa-your-hardware-key \
  *   npx vitest run src/xmds.rest.integration.test.js
  *
  * Or:
@@ -26,9 +26,9 @@ import { XmdsClient } from './xmds-client.js';
 
 // ─── Configuration ─────────────────────────────────────────────────
 
-const CMS_URL = process.env.CMS_URL || 'https://displays.superpantalles.com';
-const CMS_KEY = process.env.CMS_KEY || 'isiSdUCy';
-const HARDWARE_KEY = process.env.HARDWARE_KEY || 'pwa-470823315e05422b8d3c761c5274';
+const CMS_URL = process.env.CMS_URL || 'https://your-cms.example.com';
+const CMS_KEY = process.env.CMS_KEY || 'your-cms-key';
+const HARDWARE_KEY = process.env.HARDWARE_KEY || 'pwa-your-hardware-key';
 const DISPLAY_NAME = process.env.DISPLAY_NAME || 'REST Integration Test';
 
 // Skip all tests if no CMS_URL is provided and we're not in CI

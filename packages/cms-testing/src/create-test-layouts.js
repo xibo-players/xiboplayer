@@ -96,7 +96,7 @@ async function createTestLayouts() {
     console.log('\n' + '='.repeat(60));
     console.log('✅ All layouts created!');
     console.log('\n📋 Next steps:');
-    console.log('   1. Check layouts in CMS: https://displays.superpantalles.com');
+    console.log(`   1. Check layouts in CMS: ${process.env.CMS_URL || 'your CMS URL'}`);
     console.log('   2. Edit layouts to add background colors and adjust styling');
     console.log('   3. Publish layouts');
     console.log('   4. Run: npm test');

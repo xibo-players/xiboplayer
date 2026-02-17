@@ -66,7 +66,7 @@ if (issues.length > 0) {
 
 console.log('\n💡 Next steps:');
 console.log('   1. Verify the OAuth application exists in CMS');
-console.log('      → Open https://displays.superpantalles.com');
+console.log(`      → Open ${process.env.CMS_URL || 'your CMS URL'}`);
 console.log('      → Go to Applications menu');
 console.log('      → Check if application "Automated Testing" exists');
 console.log('   2. If it exists, try regenerating the secret');

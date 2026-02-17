@@ -7,7 +7,7 @@ export default defineConfig({
   workers: 1, // Serial — shared CMS state
   use: {
     // Player URL from env
-    baseURL: process.env.PLAYER_URL || 'https://xibo-dev.superpantalles.com/player/pwa/',
+    baseURL: process.env.PLAYER_URL || 'https://your-cms.example.com/player/pwa/',
     screenshot: 'only-on-failure',
     video: 'retain-on-failure',
     trace: 'retain-on-failure'

@@ -25,7 +25,7 @@ async function testAuth() {
   if (!clientId || !clientSecret || clientId.includes('your_') || clientSecret.includes('your_')) {
     console.log('\n❌ Error: OAuth credentials not configured!');
     console.log('\nYou need to:');
-    console.log('1. Open https://displays.superpantalles.com');
+    console.log(`1. Open ${process.env.CMS_URL || 'your CMS URL'}`);
     console.log('2. Go to Applications menu');
     console.log('3. Add Application (or check if one exists)');
     console.log('4. Copy Client ID and Client Secret to .env file');

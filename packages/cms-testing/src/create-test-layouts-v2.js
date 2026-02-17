@@ -53,7 +53,7 @@ async function createTestLayouts() {
     created.forEach(l => console.log(`   - ${l.layout || l.name} (ID: ${l.layoutId})`));
     
     console.log('\n⚠️  Layouts need content - Please complete in CMS:');
-    console.log('   1. Open: https://displays.superpantalles.com');
+    console.log(`   1. Open: ${process.env.CMS_URL || 'your CMS URL'}`);
     console.log('   2. Go to Layouts');
     console.log('   3. For each layout (Test Layout A, B, C):');
     console.log('      • Click "Design" button');

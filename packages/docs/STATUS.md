@@ -117,7 +117,7 @@
 
 ## Performance
 
-| Metric | PWA v0.9.0 | XLR v1.0.22 | Windows v4 R406 |
+| Metric | PWA | XLR v1.0.22 | Windows v4 R406 |
 |--------|------------|-------------|-----------------|
 | Initial load | 3-5s | 17-20s | 5-10s |
 | Layout replay | <0.5s | 2-3s | 1-2s |
