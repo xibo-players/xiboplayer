@@ -38,7 +38,7 @@ const CONCURRENT_CHUNKS = 4; // Adjustable 2-6 based on network
 
 ### 2. Parallel Widget HTML Fetching
 
-**File**: `platforms/pwa/src/main.ts`
+**File**: `src/main.ts` (in xiboplayer-pwa)
 **Impact**: 10x faster layout initialization
 
 **What Changed**:
@@ -255,11 +255,8 @@ const CONCURRENT_CHUNKS = 6;
 ### Rebuild After Changes
 
 ```bash
-cd platforms/pwa
-npm run build
-
-# Redeploy using Ansible
-ansible-playbook /path/to/deploy-pwa.yml
+# From xiboplayer-pwa repo
+pnpm run build
 ```
 
 ---
@@ -276,7 +273,7 @@ Videos may not autoplay on first load due to browser policies. User interaction 
 
 Service Worker can interfere with chunk downloads (HTTP 202 caching).
 
-**Current Status**: Service Worker disabled in PWA (see `platforms/pwa/src/main.ts:34`)
+**Current Status**: Service Worker re-enabled in PWA with standalone architecture
 
 ### Memory Ceiling
 
@@ -427,7 +424,7 @@ Key sections:
 
 ## Deployment History
 
-**2026-02-05**: Initial deployment to h1.superpantalles.com
+**2026-02-05**: Initial deployment
 - All 4 optimizations deployed
 - Performance verified in console logs
 - No issues reported
@@ -437,8 +434,7 @@ Key sections:
 ## References
 
 - [Arexibo Player](https://github.com/example/arexibo) - Original pattern source
-- [PERFORMANCE_TESTING.md](PERFORMANCE_TESTING.md) - Detailed test procedures
-- [DEPLOYMENT.md](DEPLOYMENT.md) - Deployment instructions
+- [Deployment Guide](../../docs/DEPLOYMENT.md) - Deployment instructions
 
 ---
 

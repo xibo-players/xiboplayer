@@ -176,10 +176,8 @@ Total: 14/14 passing
 ### Build Verification
 
 ```bash
-cd platforms/pwa && npm run build
-✓ Built in 3.69s
-✓ No errors
-✓ All packages resolved
+# From xiboplayer-pwa repo
+pnpm run build
 ```
 
 ## Performance Metrics
@@ -216,7 +214,7 @@ const layouts = scheduleManager.getCurrentLayouts();
 ### With PWA Platform
 
 ```javascript
-// In platforms/pwa/src/main.ts
+// In the PWA player (xiboplayer-pwa/src/main.ts)
 import { InterruptScheduler } from '@xiboplayer/schedule-advanced';
 
 const interruptScheduler = new InterruptScheduler();
@@ -281,19 +279,8 @@ const scheduleManager = new ScheduleManager({ interruptScheduler });
 cd packages/schedule-advanced
 npm test
 
-# Build PWA
-cd ../../platforms/pwa
-npm run build
-
-# Verify build
-ls -lh dist/
-```
-
-### Deployment
-
-```bash
-# Deploy to production
-./deploy-xlr-test.sh  # Or production deploy script
+# Build PWA (from xiboplayer-pwa repo)
+pnpm run build
 ```
 
 ### Post-deployment Verification

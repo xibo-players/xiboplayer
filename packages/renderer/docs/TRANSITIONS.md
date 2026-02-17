@@ -177,4 +177,4 @@ Possible future improvements:
 
 - [Web Animations API](https://developer.mozilla.org/en-US/docs/Web/API/Web_Animations_API)
 - [Xibo Layout XLF Format](https://xibo.org.uk/docs/developer/xlf-format)
-- [Electron Player Transitions](platforms/electron/node_modules/@xibosignage/xibo-layout-renderer/dist/src/Modules/Transitions/Transitions.d.ts)
+- [Xibo Layout Renderer](https://github.com/xibosignage/xibo-layout-renderer) — upstream transition reference

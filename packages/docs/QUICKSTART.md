@@ -20,24 +20,22 @@ at the Chromium session level.
 ## Build
 
 ```bash
-pnpm install              # From monorepo root
-cd platforms/pwa
-pnpm run build            # Production bundle → dist/
+# From the xiboplayer-pwa repo
+pnpm install
+pnpm run build    # Production bundle → dist/
 ```
 
 ## Deploy to CMS
 
-```bash
-cd ~/Devel/tecman/tecman_ansible
-ansible-playbook playbooks/services/deploy-pwa.yml \
-  -e target_host=your-cms-host.example.com
-```
+Copy `dist/*` to the CMS `web/chromeos/` directory:
 
-Or copy `platforms/pwa/dist/*` to the CMS `web/chromeos/` directory manually.
+```bash
+podman cp dist/. xibo-cms-web:/var/www/cms/web/chromeos/
+```
 
 ## Access Player
 
-Open: `https://your-cms.example.com/pwa/`
+Open: `https://your-cms.example.com/player/pwa/`
 
 Configure with:
 - **CMS Address:** `https://your-cms.example.com` (same domain)
@@ -56,11 +54,7 @@ The player should start downloading files and displaying layouts.
 
 ## Alternative: Electron (for kiosk/desktop)
 
-```bash
-cd platforms/electron-pwa
-pnpm install
-npx electron . --dev --no-kiosk
-```
+See [xiboplayer-electron](https://github.com/xibo-players/xiboplayer-electron).
 
 Electron can connect to any remote CMS — no same-origin restriction.
 
@@ -82,4 +76,4 @@ Electron can connect to any remote CMS — no same-origin restriction.
 ## Next Steps
 
 - See [DEPLOYMENT.md](./DEPLOYMENT.md) for complete deployment guide
-- See `platforms/electron-pwa/README.md` for Electron/kiosk setup
+- See [xiboplayer-electron](https://github.com/xibo-players/xiboplayer-electron) for Electron/kiosk setup

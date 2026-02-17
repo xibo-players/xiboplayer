@@ -356,16 +356,11 @@ async downloadFile(fileInfo) {
 ### Automated Testing
 
 ```bash
-# Build
-cd platforms/pwa
-npm run build
-
-# Deploy
-# Deploy (from the tecman_ansible repo)
-ansible-playbook playbooks/services/deploy-pwa.yml -l h1.superpantalles.com
+# Build (from xiboplayer-pwa repo)
+pnpm run build
 
 # Test in browser
-# Navigate to https://h1.superpantalles.com:8081/player/
+# Navigate to https://your-cms.example.com/player/pwa/
 ```
 
 ## Troubleshooting
@@ -470,10 +465,8 @@ const CONCURRENT_CHUNKS = 4;  // Parallel chunks per file
 
 ## Related Documentation
 
-- `docs/PERFORMANCE_OPTIMIZATIONS.md` - Performance details
-- `docs/BUGFIXES_2026-02-06.md` - Bug fixes
-- `platforms/pwa/src/main.ts` - Client integration
-- `packages/core/src/cache.js` - Fallback cache manager
+- `../../renderer/docs/PERFORMANCE_OPTIMIZATIONS.md` - Performance details
+- `../../cache/src/cache.js` - Fallback cache manager
 
 ## Version History
 

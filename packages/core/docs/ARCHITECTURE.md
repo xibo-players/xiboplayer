@@ -60,24 +60,22 @@ The Xibo Player is a free, open-source implementation of a Xibo-compatible digit
 
 The PWA core is built with vanilla JavaScript (ES modules) and minimal dependencies.
 
-### File Structure
+### Package Structure
+
+The SDK is split into independently published npm packages under `@xiboplayer/*`:
 
 ```
-packages/core/
-├── src/
-│   ├── main.js           # Player orchestrator
-│   ├── xmds.js           # SOAP client
-│   ├── xmr-wrapper.js    # XMR WebSocket client
-│   ├── cache.js          # Cache & download manager
-│   ├── schedule.js       # Schedule interpreter
-│   ├── layout.js         # XLF → HTML translator
-│   └── config.js         # Configuration management
-├── public/
-│   ├── manifest.json     # PWA manifest
-│   └── sw.js             # Service Worker
-├── index.html            # Player page
-├── setup.html            # Configuration page
-└── vite.config.js        # Build configuration
+packages/
+├── core/          # Player orchestration and lifecycle
+├── renderer/      # XLF layout rendering (RendererLite)
+├── cache/         # Cache manager and download manager
+├── schedule/      # Campaign scheduling, dayparting, interrupts
+├── xmds/          # XMDS SOAP + REST clients
+├── xmr/           # XMR WebSocket real-time messaging
+├── stats/         # Proof of play and log reporting
+├── settings/      # CMS display settings management
+├── sw/            # Service Worker toolkit
+└── utils/         # Shared utilities (logger, config, events)
 ```
 
 ### Dependencies
@@ -266,8 +264,8 @@ HTML:
 **Stored in localStorage:**
 ```javascript
 {
-  cmsAddress: "https://displays.superpantalles.com",
-  cmsKey: "isiSdUCy",
+  cmsAddress: "https://your-cms.example.com",
+  cmsKey: "your-cms-key",
   hardwareKey: "abc123-def456",
   displayName: "Lobby Display",
   xmrChannel: "player-abc123-def456"
@@ -307,83 +305,18 @@ if (event.request.url.match(/\\.html$/)) {
 
 Each platform wraps the PWA core with platform-specific functionality.
 
-### Chrome Extension
+### Platform Repositories
 
-**Structure:**
-```
-platforms/chrome/
-├── manifest.json      # Manifest V3
-├── background.js      # Service worker
-├── popup.html/js      # Settings UI
-└── dist/player/       # PWA core (synced)
-```
+Each platform is a separate repository that depends on the SDK packages via npm:
 
-**Key features:**
-- Background service worker (keep-alive)
-- Chrome storage API for config
-- Periodic alarm for backup collection
-- Message passing to/from player
-
-### Electron (Desktop)
-
-**Structure:**
-```
-platforms/electron/
-├── src/
-│   ├── main/          # Main process (Node.js)
-│   │   ├── index.ts
-│   │   └── config/
-│   │       └── config.ts  # clientType='linux' (line 166)
-│   └── renderer/      # Renderer process (PWA)
-│       └── dist/      # PWA core (synced)
-└── electron-forge config
-```
-
-**Key features:**
-- Multi-window support
-- System tray integration
-- Auto-update capability
-- Native menus and shortcuts
-- Fullscreen/kiosk mode
-
-### Android (WebView)
-
-**Structure:**
-```
-platforms/android/
-├── app/
-│   ├── src/main/
-│   │   ├── kotlin/
-│   │   │   ├── MainActivity.kt     # WebView host
-│   │   │   ├── BootReceiver.kt     # Auto-start
-│   │   │   └── KioskHelper.kt      # Kiosk mode
-│   │   └── assets/                 # PWA core (synced)
-│   └── build.gradle
-```
-
-**Key features:**
-- Android WebView (embedded browser)
-- Kiosk mode lock (disable home/back)
-- Auto-start on boot
-- Wake lock (screen stays on)
-- Network change detection
-
-### webOS (Cordova)
-
-**Structure:**
-```
-platforms/webos/
-├── appinfo.json       # App metadata
-├── app/
-│   └── www/           # PWA core (synced)
-└── service/           # Node.js service (optional)
-```
-
-**Key features:**
-- LG TV integration
-- Remote control navigation
-- 4K resolution support
-- Pro:Centric compatibility
+| Platform | Repository | Description |
+|----------|-----------|-------------|
+| PWA | [xiboplayer-pwa](https://github.com/xibo-players/xiboplayer-pwa) | Browser-based, installable PWA |
+| Electron | [xiboplayer-electron](https://github.com/xibo-players/xiboplayer-electron) | Desktop kiosk wrapper with CORS handling |
+| Chromium | [xiboplayer-chromium](https://github.com/xibo-players/xiboplayer-chromium) | Chromium kiosk RPM for Linux |
+| Chrome | [xiboplayer-chrome](https://github.com/xibo-players/xiboplayer-chrome) | Chrome extension |
+| Android | [xiboplayer-android](https://github.com/xibo-players/xiboplayer-android) | TWA wrapper for Android |
+| webOS | [xiboplayer-webos](https://github.com/xibo-players/xiboplayer-webos) | LG webOS signage |
 
 ## Communication Protocols
 

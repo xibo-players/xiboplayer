@@ -2,7 +2,7 @@
 
 ## Current Status: PRODUCTION READY
 
-**Live URL:** https://displays.superpantalles.com/player/pwa/
+**Live URL:** `https://your-cms.example.com/player/pwa/`
 **Feature Parity:** ~95% vs upstream Xibo players
 **Last Updated:** 2026-02-13
 
@@ -136,32 +136,18 @@
 | Tests | ~3,000+ | 12 test files |
 | **Total** | **~12,000** | **~22 files** |
 
-## Deployment
-
-Current deployment uses Ansible:
-```bash
-cd ~/Devel/tecman/tecman_ansible
-ansible-playbook playbooks/services/deploy-pwa-xlr-unified.yml --limit h1.superpantalles.com
-```
-
-Build:
-```bash
-cd ~/Devel/tecman/xibo_players/platforms/pwa
-npm run build
-```
-
-## Testing
+## Build and Test
 
 ```bash
 # Unit tests (all packages)
-npm test
+pnpm test
 
 # Specific package
-cd packages/core && npm test
-cd packages/renderer && npm test
+pnpm test --filter @xiboplayer/core
+pnpm test --filter @xiboplayer/renderer
 
-# PWA platform
-cd platforms/pwa && npm test
+# Build PWA (from xiboplayer-pwa repo)
+pnpm run build
 ```
 
 ## Browser Compatibility
@@ -186,7 +172,6 @@ cd platforms/pwa && npm test
 
 ## Related Documentation
 
-- Feature comparison: `docs/FEATURE_COMPARISON.md`
-- Architecture details: `packages/docs/ARCHITECTURE.md`
-- Implementation plan: `docs/IMPLEMENTATION_PLAN.md`
-- Screenshot capture: `docs/SCREENSHOT_CAPTURE.md`
+- Architecture: `packages/docs/ARCHITECTURE.md`
+- Renderer comparison: `packages/renderer/docs/RENDERER_COMPARISON.md`
+- Deployment guide: `packages/docs/DEPLOYMENT.md`

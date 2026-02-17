@@ -15,10 +15,8 @@ This package provides automated testing for:
 
 ### 1. Install Dependencies
 
-From the monorepo root:
-
 ```bash
-npm install
+pnpm install
 ```
 
 ### 2. Configure OAuth Credentials
@@ -44,7 +42,7 @@ cp .env.example .env
 Edit `.env` and add your credentials:
 
 ```env
-CMS_URL=https://displays.superpantalles.com
+CMS_URL=https://your-cms.example.com
 CLIENT_ID=your_client_id_here
 CLIENT_SECRET=your_client_secret_here
 TEST_DISPLAY_GROUP=Test Displays
@@ -79,8 +77,8 @@ Creating layouts via API is complex. It's easier to create them manually:
 
 ```bash
 npm test
-# or from monorepo root:
-npm run test -w packages/cms-testing
+# or from workspace root:
+pnpm run test --filter @xiboplayer/cms-testing
 ```
 
 This will:
@@ -115,7 +113,7 @@ npm run test:cleanup
 
 After running tests:
 
-1. Open the PWA player: `https://displays.superpantalles.com/player/`
+1. Open the PWA player: `https://your-cms.example.com/player/`
 2. Connect to CMS if not already connected
 3. Select your test display
 4. Verify:
@@ -269,7 +267,7 @@ Key API endpoints used:
 - `POST /api/schedule` - Create schedule event
 - `GET /api/schedule/data/displaygroup` - Get display group schedule
 
-Full API docs: `https://displays.superpantalles.com/swagger.json`
+Full API docs: `https://your-cms.example.com/swagger.json`
 
 ## Contributing
 

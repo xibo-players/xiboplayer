@@ -67,16 +67,7 @@ Build a **platform-independent, modular player** that:
 └──────────────────┘  └──────────────────┘  └────────────────┘
 ```
 
-## Monorepo Package Breakdown
-
-### Platform Layer
-
-| File | Lines | Purpose |
-|------|-------|---------|
-| `platforms/pwa/src/main.ts` | 1,567 | PWA integration: wires all packages, Wake Lock, screenshot capture, SW registration |
-| `platforms/pwa/public/sw-pwa.js` | 1,667 | Service Worker: chunk streaming, Range requests, IC interception, cache-first |
-
-### Core Packages
+## Package Breakdown
 
 | Package | Main File | Lines | Purpose |
 |---------|-----------|-------|---------|
@@ -108,7 +99,7 @@ Build a **platform-independent, modular player** that:
 
 ### 1. Platform-Independent Core
 
-PlayerCore contains all business logic without platform assumptions. The platform layer (`platforms/pwa/main.ts`) wires packages together and provides platform-specific implementations (Wake Lock, screenshot capture, Service Worker registration).
+PlayerCore contains all business logic without platform assumptions. The platform layer (e.g. `main.ts` in xiboplayer-pwa) wires packages together and provides platform-specific implementations (Wake Lock, screenshot capture, Service Worker registration).
 
 This enables code reuse: the same PlayerCore works in Electron, Android WebView, and webOS Cordova.
 
@@ -256,7 +247,7 @@ Database: xibo-player
 | XMR client | @xibosignage/xibo-communication-framework | Official Xibo WebSocket library |
 | Animations | Web Animations API | Built-in, GPU-accelerated |
 | Build tool | Vite | Fast dev server, tree-shaking, minification |
-| Package manager | npm workspaces | Monorepo management |
+| Package manager | pnpm workspaces | Workspace management |
 
 **Runtime dependencies:** spark-md5 (4KB), hls.js (lazy), PDF.js (lazy), xibo-communication-framework
 
@@ -273,7 +264,7 @@ Database: xibo-player
 | Core reuse | Electron-coupled | Monolithic | Monolithic | Platform-independent |
 | Total code | ~15,000 lines | ~50,000 lines | ~8,000 lines | ~12,000 lines |
 
-See `docs/FEATURE_COMPARISON.md` for detailed feature-by-feature comparison.
+See `packages/renderer/docs/RENDERER_COMPARISON.md` for detailed renderer comparison.
 
 ## Performance Characteristics
 
