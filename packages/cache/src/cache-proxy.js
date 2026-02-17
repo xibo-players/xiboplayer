@@ -222,20 +222,13 @@ class ServiceWorkerBackend extends EventEmitter {
   }
 
   /**
-   * Check if file is cached
+   * Check if file is cached (delegates to hasFile for consistent fetchReady handling)
    * @param {string} type - 'media', 'layout', 'widget'
    * @param {string} id - File ID
    * @returns {Promise<boolean>}
    */
   async isCached(type, id) {
-    const cacheUrl = `${BASE}/cache/${type}/${id}`;
-
-    try {
-      const response = await fetch(cacheUrl, { method: 'HEAD' });
-      return response.ok;
-    } catch (error) {
-      return false;
-    }
+    return this.hasFile(type, id);
   }
 
   /**
@@ -384,16 +377,13 @@ export class CacheProxy extends EventEmitter {
   }
 
   /**
-   * Check if file is cached
+   * Check if file is cached (delegates to hasFile for consistent fetchReady handling)
    * @param {string} type - 'media', 'layout', 'widget'
    * @param {string} id - File ID
    * @returns {Promise<boolean>}
    */
   async isCached(type, id) {
-    if (!this.backend) {
-      throw new Error('CacheProxy not initialized');
-    }
-    return await this.backend.isCached(type, id);
+    return this.hasFile(type, id);
   }
 
   /**

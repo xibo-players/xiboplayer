@@ -29,8 +29,6 @@ export class DownloadTask {
     this.downloadedBytes = 0;
     this.totalBytes = 0;
     this.promise = null;
-    this.resolve = null;
-    this.reject = null;
     this.waiters = []; // Promises waiting for completion
     this.state = 'pending'; // pending, downloading, complete, failed
     // Progressive streaming: callback fired for each chunk as it downloads
