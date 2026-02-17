@@ -555,6 +555,7 @@ export class RendererLite {
       this.currentLayout.duration = maxRegionDuration;
 
       this.log.info(`Layout duration updated: ${oldDuration}s → ${maxRegionDuration}s (based on video metadata)`);
+      this.emit('layoutDurationUpdated', this.currentLayoutId, maxRegionDuration);
 
       // Reset layout timer with new duration — but only if a timer is already running.
       // If startLayoutTimerWhenReady() hasn't fired yet (still waiting for widgets),

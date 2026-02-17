@@ -2,7 +2,10 @@
  * Schedule manager - determines which layouts to show
  */
 
+import { createLogger } from '@xiboplayer/utils';
 import { evaluateCriteria } from './criteria.js';
+
+const log = createLogger('Schedule');
 
 export class ScheduleManager {
   constructor(options = {}) {
@@ -131,11 +134,34 @@ export class ScheduleManager {
    * - Interrupts are interleaved with normal layouts
    */
   getCurrentLayouts() {
+    return this._getLayoutsAt(new Date());
+  }
+
+  /**
+   * Get layouts active at a specific time.
+   * Skips rate limiting and interrupt processing (those depend on real-time state).
+   * Used by timeline calculator to predict future playback.
+   * @param {Date} time - The time to evaluate
+   * @returns {string[]} Layout files active at that time
+   */
+  getLayoutsAtTime(time) {
+    return this._getLayoutsAt(time, { skipRateLimiting: true, skipInterrupts: true, quiet: true });
+  }
+
+  /**
+   * Internal: evaluate schedule at a given time.
+   * @param {Date} now - Time to evaluate
+   * @param {Object} [options] - Options
+   * @param {boolean} [options.skipRateLimiting] - Skip maxPlaysPerHour checks
+   * @param {boolean} [options.skipInterrupts] - Skip interrupt/shareOfVoice processing
+   */
+  _getLayoutsAt(now, options = {}) {
     if (!this.schedule) {
       return [];
     }
 
-    const now = new Date();
+    const { skipRateLimiting = false, skipInterrupts = false, quiet = false } = options;
+    const _log = quiet ? () => {} : (...args) => log.info(...args);
     const activeItems = []; // Mix of campaign objects and standalone layouts
 
     // Track the highest priority of any time-active layout BEFORE rate-limit
@@ -181,7 +207,7 @@ export class ScheduleManager {
         // Check criteria conditions (date/time, display properties)
         if (layout.criteria && layout.criteria.length > 0) {
           if (!evaluateCriteria(layout.criteria, { now, displayProperties: this.displayProperties })) {
-            console.log('[Schedule] Layout', layout.id, 'filtered by criteria');
+            _log('[Schedule] Layout', layout.id, 'filtered by criteria');
             continue;
           }
         }
@@ -189,7 +215,7 @@ export class ScheduleManager {
         // Check geo-fencing
         if (layout.isGeoAware && layout.geoLocation) {
           if (!this.isWithinGeoFence(layout.geoLocation)) {
-            console.log('[Schedule] Layout', layout.id, 'filtered by geofence');
+            _log('[Schedule] Layout', layout.id, 'filtered by geofence');
             continue;
           }
         }
@@ -197,9 +223,9 @@ export class ScheduleManager {
         // Track priority before rate-limit filtering
         this._maxActivePriority = Math.max(this._maxActivePriority, layout.priority || 0);
 
-        // Check max plays per hour - but track that we filtered it
-        if (!this.canPlayLayout(layout.id, layout.maxPlaysPerHour)) {
-          console.log('[Schedule] Layout', layout.id, 'filtered by maxPlaysPerHour (limit:', layout.maxPlaysPerHour, ')');
+        // Check max plays per hour (skip for future time queries)
+        if (!skipRateLimiting && !this.canPlayLayout(layout.id, layout.maxPlaysPerHour)) {
+          _log('[Schedule] Layout', layout.id, 'filtered by maxPlaysPerHour (limit:', layout.maxPlaysPerHour, ')');
           // Continue to check other layouts, but don't add this one
           continue;
         }
@@ -220,17 +246,17 @@ export class ScheduleManager {
 
     // Find maximum priority across all items (campaigns and layouts)
     let maxPriority = Math.max(...activeItems.map(item => item.priority));
-    console.log('[Schedule] Max priority:', maxPriority, 'from', activeItems.length, 'active items');
+    _log('[Schedule] Max priority:', maxPriority, 'from', activeItems.length, 'active items');
 
     // Collect all layouts from items with max priority
     let allLayouts = [];
     for (const item of activeItems) {
       if (item.priority === maxPriority) {
-        console.log('[Schedule] Including priority', item.priority, 'layouts:', item.layouts.map(l => l.file));
+        _log('[Schedule] Including priority', item.priority, 'layouts:', item.layouts.map(l => l.file));
         // Add all layouts from this campaign or standalone layout
         allLayouts.push(...item.layouts);
       } else {
-        console.log('[Schedule] Skipping priority', item.priority, '< max', maxPriority);
+        _log('[Schedule] Skipping priority', item.priority, '< max', maxPriority);
       }
     }
 
@@ -245,23 +271,23 @@ export class ScheduleManager {
       });
     }
 
-    // Process interrupts if interrupt scheduler is available
-    if (this.interruptScheduler) {
+    // Process interrupts if interrupt scheduler is available (skip for future time queries)
+    if (!skipInterrupts && this.interruptScheduler) {
       const { normalLayouts, interruptLayouts } = this.interruptScheduler.separateLayouts(allLayouts);
 
       if (interruptLayouts.length > 0) {
-        console.log('[Schedule] Found', interruptLayouts.length, 'interrupt layouts with shareOfVoice');
+        _log('[Schedule] Found', interruptLayouts.length, 'interrupt layouts with shareOfVoice');
         const processedLayouts = this.interruptScheduler.processInterrupts(normalLayouts, interruptLayouts);
         // Extract file IDs from processed layouts
         const result = processedLayouts.map(l => l.file);
-        console.log('[Schedule] Final layouts (with interrupts):', result);
+        _log('[Schedule] Final layouts (with interrupts):', result);
         return result;
       }
     }
 
     // No interrupts, return layout files
     const result = allLayouts.map(l => l.file);
-    console.log('[Schedule] Final layouts:', result);
+    _log('[Schedule] Final layouts:', result);
     return result;
   }
 
@@ -307,7 +333,7 @@ export class ScheduleManager {
 
     // Check 1: Total plays in last hour must be under limit
     if (playsInLastHour.length >= maxPlaysPerHour) {
-      console.log(`[Schedule] Layout ${layoutId} has reached max plays per hour (${playsInLastHour.length}/${maxPlaysPerHour})`);
+      log.info(`Layout ${layoutId} has reached max plays per hour (${playsInLastHour.length}/${maxPlaysPerHour})`);
       return false;
     }
 
@@ -320,7 +346,7 @@ export class ScheduleManager {
 
       if (elapsed < minGapMs) {
         const remainingMin = ((minGapMs - elapsed) / 60000).toFixed(1);
-        console.log(`[Schedule] Layout ${layoutId} spacing: next play in ${remainingMin} min (${playsInLastHour.length}/${maxPlaysPerHour} plays, ${Math.round(minGapMs/60000)} min gap)`);
+        log.info(`Layout ${layoutId} spacing: next play in ${remainingMin} min (${playsInLastHour.length}/${maxPlaysPerHour} plays, ${Math.round(minGapMs/60000)} min gap)`);
         return false;
       }
     }
@@ -345,7 +371,7 @@ export class ScheduleManager {
     const cleaned = history.filter(timestamp => timestamp > oneHourAgo);
     this.playHistory.set(layoutId, cleaned);
 
-    console.log(`[Schedule] Recorded play for layout ${layoutId} (${cleaned.length} plays in last hour)`);
+    log.info(`Recorded play for layout ${layoutId} (${cleaned.length} plays in last hour)`);
   }
 
   /**
@@ -421,7 +447,7 @@ export class ScheduleManager {
    */
   clearPlayHistory() {
     this.playHistory.clear();
-    console.log('[Schedule] Play history cleared');
+    log.info('Play history cleared');
   }
 
   /**
@@ -431,7 +457,7 @@ export class ScheduleManager {
    */
   setLocation(latitude, longitude) {
     this.playerLocation = { latitude, longitude };
-    console.log(`[Schedule] Location set: ${latitude}, ${longitude}`);
+    log.info(`Location set: ${latitude}, ${longitude}`);
   }
 
   /**
@@ -456,7 +482,7 @@ export class ScheduleManager {
   isWithinGeoFence(geoLocation, defaultRadius = 500) {
     if (!this.playerLocation) {
       // No location available — be permissive, show the content
-      console.log('[Schedule] No player location, skipping geofence check');
+      log.debug('No player location, skipping geofence check');
       return true;
     }
 
@@ -465,7 +491,7 @@ export class ScheduleManager {
     // Parse "lat,lng" format
     const parts = geoLocation.split(',').map(s => parseFloat(s.trim()));
     if (parts.length < 2 || isNaN(parts[0]) || isNaN(parts[1])) {
-      console.log('[Schedule] Invalid geoLocation format:', geoLocation);
+      log.warn('Invalid geoLocation format:', geoLocation);
       return true; // Invalid format, be permissive
     }
 
@@ -479,7 +505,7 @@ export class ScheduleManager {
     );
 
     const within = distance <= radius;
-    console.log(`[Schedule] Geofence: ${distance.toFixed(0)}m from (${fenceLat},${fenceLng}), radius ${radius}m → ${within ? 'WITHIN' : 'OUTSIDE'}`);
+    log.info(`Geofence: ${distance.toFixed(0)}m from (${fenceLat},${fenceLng}), radius ${radius}m → ${within ? 'WITHIN' : 'OUTSIDE'}`);
     return within;
   }
 

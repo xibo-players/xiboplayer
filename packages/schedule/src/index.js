@@ -18,3 +18,9 @@ export { InterruptScheduler } from './interrupts.js';
  * @module @xiboplayer/schedule/overlays
  */
 export { OverlayScheduler } from './overlays.js';
+
+/**
+ * Offline timeline calculator — duration parser + timeline simulator
+ * @module @xiboplayer/schedule/timeline
+ */
+export { calculateTimeline, parseLayoutDuration } from './timeline.js';

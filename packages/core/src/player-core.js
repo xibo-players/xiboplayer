@@ -43,6 +43,7 @@
  */
 
 import { EventEmitter, createLogger, applyCmsLogLevel } from '@xiboplayer/utils';
+import { calculateTimeline, parseLayoutDuration } from '@xiboplayer/schedule';
 import { DataConnectorManager } from './data-connectors.js';
 
 const log = createLogger('PlayerCore');
@@ -51,6 +52,11 @@ const log = createLogger('PlayerCore');
 const OFFLINE_DB_NAME = 'xibo-offline-cache';
 const OFFLINE_DB_VERSION = 1;
 const OFFLINE_STORE = 'cache';
+
+/** Extract layout ID from a schedule filename like "123.xlf" */
+function parseLayoutFile(f) {
+  return parseInt(String(f).replace('.xlf', ''), 10);
+}
 
 /** Open the offline cache IndexedDB (creates store on first use) */
 function openOfflineDb() {
@@ -106,6 +112,9 @@ export class PlayerCore extends EventEmitter {
     // Multi-display sync configuration (from RegisterDisplay syncGroup settings)
     this.syncConfig = null;
     this.syncManager = null; // Optional: set via setSyncManager() after RegisterDisplay
+
+    // Layout durations for timeline calculation (layoutFile/layoutId → seconds)
+    this._layoutDurations = new Map();
 
     // In-memory offline cache (populated from IndexedDB on first load)
     this._offlineCache = { schedule: null, settings: null, requiredFiles: null };
@@ -195,48 +204,61 @@ export class PlayerCore extends EventEmitter {
       this.emit('schedule-received', cachedSchedule);
     }
 
-    // Evaluate current schedule (same logic as online path)
+    // Evaluate current schedule
     const layoutFiles = this.schedule.getCurrentLayouts();
     log.info('Offline layouts:', layoutFiles);
     this.emit('layouts-scheduled', layoutFiles);
 
+    this._evaluateAndSwitchLayout(layoutFiles, 'Offline');
+
+    this.emit('collection-complete');
+  }
+
+  /**
+   * Evaluate the current schedule and switch layouts if needed.
+   * Shared by both collect() and collectOffline() after emitting 'layouts-scheduled'.
+   * @param {string[]} layoutFiles - Currently scheduled layout filenames
+   * @param {string} context - Log context label (e.g. 'Offline' or '')
+   */
+  async _evaluateAndSwitchLayout(layoutFiles, context) {
+    const prefix = context ? `${context}: ` : '';
+
     if (layoutFiles.length > 0) {
-      // If a layout is currently playing and still in the schedule, don't interrupt
       if (this.currentLayoutId) {
         const currentStillScheduled = layoutFiles.some(f =>
-          parseInt(String(f).replace('.xlf', ''), 10) === this.currentLayoutId
+          parseLayoutFile(f) === this.currentLayoutId
         );
         if (currentStillScheduled) {
           const idx = layoutFiles.findIndex(f =>
-            parseInt(String(f).replace('.xlf', ''), 10) === this.currentLayoutId
+            parseLayoutFile(f) === this.currentLayoutId
           );
           if (idx >= 0) this._currentLayoutIndex = idx;
-          log.debug(`Layout ${this.currentLayoutId} still in schedule (offline), continuing playback`);
+          log.debug(`Layout ${this.currentLayoutId} still in schedule${context ? ` (${context.toLowerCase()})` : ''}, continuing playback`);
           this.emit('layout-already-playing', this.currentLayoutId);
         } else {
-          // Current layout not in schedule — switch
           this._currentLayoutIndex = 0;
           const next = this.getNextLayout();
           if (next) {
-            log.info(`Offline: switching to layout ${next.layoutId}`);
+            log.info(`${prefix}switching to layout ${next.layoutId}${!context ? ` (from ${this.currentLayoutId})` : ''}`);
             this.emit('layout-prepare-request', next.layoutId);
           }
         }
       } else {
-        // No current layout — start the first one
         this._currentLayoutIndex = 0;
         const next = this.getNextLayout();
         if (next) {
-          log.info(`Offline: switching to layout ${next.layoutId}`);
+          log.info(`${prefix}switching to layout ${next.layoutId}`);
           this.emit('layout-prepare-request', next.layoutId);
         }
       }
     } else {
-      log.info('Offline: no layouts in cached schedule');
+      log.info(`${context ? `${context}: n` : 'N'}o layouts${context ? ' in cached schedule' : ' scheduled, falling back to default'}`);
       this.emit('no-layouts-scheduled');
     }
 
-    this.emit('collection-complete');
+    // Build layout durations and log upcoming timeline
+    await this._buildLayoutDurations();
+    this.logUpcomingTimeline();
   }
 
   /**
@@ -390,51 +412,15 @@ export class PlayerCore extends EventEmitter {
       log.info('Current layouts:', layoutFiles);
       this.emit('layouts-scheduled', layoutFiles);
 
-      if (layoutFiles.length > 0) {
-        // If a layout is currently playing and it's still in the schedule, don't interrupt it.
-        // Let it finish its natural duration — advanceToNextLayout() handles the transition.
-        if (this.currentLayoutId) {
-          const currentStillScheduled = layoutFiles.some(f =>
-            parseInt(String(f).replace('.xlf', ''), 10) === this.currentLayoutId
-          );
-          if (currentStillScheduled) {
-            // Update round-robin index to match current layout's position
-            const idx = layoutFiles.findIndex(f =>
-              parseInt(String(f).replace('.xlf', ''), 10) === this.currentLayoutId
-            );
-            if (idx >= 0) this._currentLayoutIndex = idx;
-            log.debug(`Layout ${this.currentLayoutId} still in schedule, continuing playback`);
-            this.emit('layout-already-playing', this.currentLayoutId);
-          } else {
-            // Current layout is not in the schedule (unscheduled or filtered) — switch
-            this._currentLayoutIndex = 0;
-            const next = this.getNextLayout();
-            if (next) {
-              log.info(`Switching to layout ${next.layoutId} (from ${this.currentLayoutId})`);
-              this.emit('layout-prepare-request', next.layoutId);
-            }
-          }
-        } else {
-          // No current layout — start the first one
-          this._currentLayoutIndex = 0;
-          const next = this.getNextLayout();
-          if (next) {
-            log.info(`Switching to layout ${next.layoutId}`);
-            this.emit('layout-prepare-request', next.layoutId);
-          }
-        }
-      } else {
-        log.info('No layouts scheduled, falling back to default');
-        this.emit('no-layouts-scheduled');
+      this._evaluateAndSwitchLayout(layoutFiles, '');
 
-        // If we're currently playing a layout but schedule says no layouts (e.g., maxPlaysPerHour filtered it),
-        // force switch to default layout if available
-        if (this.currentLayoutId && this.schedule.schedule?.default) {
-          const defaultLayoutId = parseInt(this.schedule.schedule.default.replace('.xlf', ''), 10);
-          log.info(`Current layout filtered by schedule, switching to default layout ${defaultLayoutId}`);
-          this.currentLayoutId = null; // Clear to force switch
-          this.emit('layout-prepare-request', defaultLayoutId);
-        }
+      // If no layouts scheduled and we're playing one that was filtered (e.g., maxPlaysPerHour),
+      // force switch to default layout if available
+      if (layoutFiles.length === 0 && this.currentLayoutId && this.schedule.schedule?.default) {
+        const defaultLayoutId = parseLayoutFile(this.schedule.schedule.default);
+        log.info(`Current layout filtered by schedule, switching to default layout ${defaultLayoutId}`);
+        this.currentLayoutId = null; // Clear to force switch
+        this.emit('layout-prepare-request', defaultLayoutId);
       }
 
       // Submit stats if enabled and collector is available
@@ -538,18 +524,7 @@ export class PlayerCore extends EventEmitter {
       ? this.displaySettings.getCollectInterval()
       : parseInt(settings.collectInterval || '300', 10);
 
-    const collectIntervalMs = collectIntervalSeconds * 1000;
-
-    log.info(`Setting up collection interval: ${collectIntervalSeconds}s`);
-
-    this.collectionInterval = setInterval(() => {
-      log.debug('Running scheduled collection cycle...');
-      this.collect().catch(error => {
-        log.error('Collection error:', error);
-        this.emit('collection-error', error);
-      });
-    }, collectIntervalMs);
-
+    this._setCollectionTimer(collectIntervalSeconds);
     this.emit('collection-interval-set', collectIntervalSeconds);
   }
 
@@ -559,21 +534,22 @@ export class PlayerCore extends EventEmitter {
    */
   updateCollectionInterval(newIntervalSeconds) {
     if (this.collectionInterval) {
-      clearInterval(this.collectionInterval);
-      log.info(`Updating collection interval: ${newIntervalSeconds}s`);
-
-      const collectIntervalMs = newIntervalSeconds * 1000;
-
-      this.collectionInterval = setInterval(() => {
-        log.debug('Running scheduled collection cycle...');
-        this.collect().catch(error => {
-          log.error('Collection error:', error);
-          this.emit('collection-error', error);
-        });
-      }, collectIntervalMs);
-
+      this._setCollectionTimer(newIntervalSeconds);
       this.emit('collection-interval-updated', newIntervalSeconds);
     }
+  }
+
+  /** Internal: (re)create the collection setInterval timer */
+  _setCollectionTimer(seconds) {
+    if (this.collectionInterval) clearInterval(this.collectionInterval);
+    log.info(`Collection interval: ${seconds}s`);
+    this.collectionInterval = setInterval(() => {
+      log.debug('Running scheduled collection cycle...');
+      this.collect().catch(error => {
+        log.error('Collection error:', error);
+        this.emit('collection-error', error);
+      });
+    }, seconds * 1000);
   }
 
   /**
@@ -597,6 +573,8 @@ export class PlayerCore extends EventEmitter {
     this.currentLayoutId = layoutId;
     this.pendingLayouts.delete(layoutId);
     this.emit('layout-current', layoutId);
+    // Re-log timeline from current time on each layout change
+    this.logUpcomingTimeline();
   }
 
   /**
@@ -633,7 +611,7 @@ export class PlayerCore extends EventEmitter {
     }
 
     const layoutFile = layoutFiles[this._currentLayoutIndex];
-    const layoutId = parseInt(layoutFile.replace('.xlf', ''), 10);
+    const layoutId = parseLayoutFile(layoutFile);
     return { layoutId, layoutFile };
   }
 
@@ -651,7 +629,7 @@ export class PlayerCore extends EventEmitter {
 
     const nextIndex = (this._currentLayoutIndex + 1) % layoutFiles.length;
     const layoutFile = layoutFiles[nextIndex];
-    const layoutId = parseInt(layoutFile.replace('.xlf', ''), 10);
+    const layoutId = parseLayoutFile(layoutFile);
 
     // Don't return if it's the same as current (no point preloading)
     if (layoutId === this.currentLayoutId) {
@@ -699,7 +677,7 @@ export class PlayerCore extends EventEmitter {
     this._currentLayoutIndex = (this._currentLayoutIndex + 1) % layoutFiles.length;
 
     const layoutFile = layoutFiles[this._currentLayoutIndex];
-    const layoutId = parseInt(layoutFile.replace('.xlf', ''), 10);
+    const layoutId = parseLayoutFile(layoutFile);
 
     // Multi-display sync: if this is a sync event and we have a SyncManager,
     // delegate layout transitions to the sync protocol
@@ -808,7 +786,7 @@ export class PlayerCore extends EventEmitter {
     const layoutFiles = this.schedule.getCurrentLayouts();
     if (layoutFiles.length > 0) {
       const layoutFile = layoutFiles[0];
-      const layoutId = parseInt(layoutFile.replace('.xlf', ''), 10);
+      const layoutId = parseLayoutFile(layoutFile);
       this.emit('layout-prepare-request', layoutId);
     } else {
       this.emit('no-layouts-scheduled');
@@ -1029,6 +1007,74 @@ export class PlayerCore extends EventEmitter {
     return this.syncConfig;
   }
 
+  // ── Timeline (offline schedule prediction) ─────────────────────────
+
+  /**
+   * Parse all cached layout XLFs to extract durations for timeline calculation.
+   * Called after collection completes and layouts are known.
+   */
+  async _buildLayoutDurations() {
+    if (!this.cache?.getFile) return; // Cache doesn't support direct file access
+
+    const layoutFiles = this.schedule.getCurrentLayouts();
+    const defaultFile = this.schedule.schedule?.default;
+    const allFiles = [...new Set([...layoutFiles, ...(defaultFile ? [defaultFile] : [])])];
+
+    let parsed = 0;
+    for (const file of allFiles) {
+      const layoutId = parseLayoutFile(file);
+      try {
+        const xlfXml = await this.cache.getFile('layout', layoutId);
+        if (xlfXml) {
+          const duration = parseLayoutDuration(xlfXml);
+          this._layoutDurations.set(file, duration);
+          this._layoutDurations.set(String(layoutId), duration);
+          parsed++;
+        }
+      } catch (e) {
+        log.debug(`Could not parse duration for layout ${layoutId}:`, e.message);
+      }
+    }
+    if (parsed > 0) {
+      log.info(`[Timeline] Parsed durations for ${parsed} layouts`);
+    }
+  }
+
+  /**
+   * Calculate and log the upcoming playback timeline (next 2 hours).
+   * Emits 'timeline-updated' with the full timeline array.
+   */
+  logUpcomingTimeline() {
+    if (this._layoutDurations.size === 0) return;
+    if (!this.schedule.getLayoutsAtTime) return; // Schedule doesn't support time queries
+
+    const timeline = calculateTimeline(this.schedule, this._layoutDurations);
+    if (timeline.length === 0) return;
+
+    const lines = timeline.slice(0, 20).map(e => {
+      const s = e.startTime.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      const end = e.endTime.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      return `  ${s}-${end}  Layout ${e.layoutFile} (${e.duration}s)${e.isDefault ? ' [default]' : ''}`;
+    });
+    log.info(`[Timeline] Next ${timeline.length} plays:\n${lines.join('\n')}`);
+    this.emit('timeline-updated', timeline);
+  }
+
+  /**
+   * Record/correct a layout's actual duration (e.g., from video loadedmetadata).
+   * Updates the durations map and re-logs the timeline if it changed.
+   * @param {string} file - Layout file or layout ID string
+   * @param {number} duration - Actual duration in seconds
+   */
+  recordLayoutDuration(file, duration) {
+    const prev = this._layoutDurations.get(file);
+    if (prev === duration) return; // No change
+
+    this._layoutDurations.set(file, duration);
+    log.debug(`[Timeline] Duration corrected: layout ${file} ${prev || '?'}s → ${duration}s`);
+    this.logUpcomingTimeline();
+  }
+
   /**
    * Cleanup
    */
@@ -1091,7 +1137,7 @@ export class PlayerCore extends EventEmitter {
   prioritizeFilesByLayout(files, currentLayouts) {
     const currentLayoutIds = new Set();
     currentLayouts.forEach((layoutFile) => {
-      currentLayoutIds.add(parseInt(String(layoutFile).replace('.xlf', ''), 10));
+      currentLayoutIds.add(parseLayoutFile(layoutFile));
     });
 
     // Assign priority tiers
