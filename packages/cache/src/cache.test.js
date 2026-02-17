@@ -217,7 +217,7 @@ describe('CacheManager', () => {
     beforeEach(async () => {
       await manager.init();
 
-      // Helper: create a mock blob with arrayBuffer() support
+      // Helper: create a mock blob with arrayBuffer()/stream() support
       function createMockBlob(content, type) {
         const blob = new Blob([content], { type });
         // Polyfill arrayBuffer() for jsdom environments that lack it
@@ -229,6 +229,15 @@ describe('CacheManager', () => {
               reader.readAsArrayBuffer(blob);
             });
           };
+        }
+        // Polyfill stream() for jsdom environments that lack it
+        if (!blob.stream) {
+          blob.stream = () => new ReadableStream({
+            start(controller) {
+              controller.enqueue(new TextEncoder().encode(content));
+              controller.close();
+            }
+          });
         }
         return blob;
       }

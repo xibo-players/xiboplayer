@@ -13,7 +13,8 @@ export default defineConfig({
       '**/node_modules/**',
       '**/dist/**',
       'packages/cms-testing/tests/e2e/**',
-      'packages/cms-testing/tests/api/**'
+      'packages/cms-testing/tests/api/**',
+      '**/*.integration.test.*'
     ],
     coverage: {
       provider: 'v8',
