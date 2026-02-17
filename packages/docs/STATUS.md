@@ -107,7 +107,7 @@
 - Drawer regions (XLR-specific UI feature)
 - RSA key pair for XMR encryption (plain WebSocket works)
 - Geo-fencing enforcement (parsed but not filtered)
-- Criteria enforcement (framework exists, enforcement TODO)
+- Criteria enforcement (implemented via evaluateCriteria)
 - Multi-display sync events (very rare use case)
 - BroadcastChannel stats (stats go direct to CMS)
 

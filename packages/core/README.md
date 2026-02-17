@@ -10,9 +10,13 @@ Free, open-source Xibo-compatible digital signage player built as a Progressive 
 - ✅ Schedule management with priorities
 - ✅ Offline caching (Cache API + IndexedDB)
 - ✅ Service Worker for offline operation
-- ⏳ XMR real-time push (TODO)
-- ⏳ XMDS chunked downloads (TODO)
-- ⏳ Statistics and log submission (TODO)
+- ✅ XMR real-time push (WebSocket)
+- ✅ Chunked downloads with progressive streaming
+- ✅ Statistics and log submission
+- ✅ Screenshot capture and submission
+- ✅ Layout transitions (fade, fly)
+- ✅ Dynamic criteria (dayparting, display properties)
+- ✅ Multi-display sync (BroadcastChannel)
 
 ## Quick Start
 
@@ -146,17 +150,6 @@ Output: `dist/` directory with minified bundle.
 ```bash
 npm run preview
 ```
-
-## TODO
-
-- [ ] XMR real-time push (WebSocket)
-- [ ] XMDS GetFile chunked downloads
-- [ ] SubmitLog, SubmitStats
-- [ ] SubmitScreenShot
-- [ ] MediaInventory reporting
-- [ ] Dynamic criteria (weather, geolocation)
-- [ ] Layout transitions
-- [ ] Multi-display sync
 
 ## License
 

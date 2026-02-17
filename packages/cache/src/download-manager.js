@@ -159,18 +159,19 @@ export class DownloadTask {
       chunkRanges.push({ start, end, index: chunkRanges.length });
     }
 
-    // Prioritize chunk 0 (ftyp header) and last chunk (moov atom) for video early playback.
-    // Modern browsers seek to end of MP4 for moov, so having both extremes first
-    // lets video start playing while middle chunks are still downloading.
-    if (chunkRanges.length > 2) {
-      const lastChunk = chunkRanges.pop(); // remove last
-      chunkRanges.splice(1, 0, lastChunk); // insert after chunk 0
+    // Phase 1: Download chunk 0 (ftyp header) and last chunk (moov atom) in parallel.
+    // Browsers need both extremes to start MP4 playback.
+    const priorityChunks = [chunkRanges[0]];
+    if (chunkRanges.length > 1) {
+      priorityChunks.push(chunkRanges[chunkRanges.length - 1]);
     }
-    console.log('[DownloadTask] Downloading', chunkRanges.length, 'chunks (chunk 0 + last prioritized)');
 
-    // Download chunks in parallel with concurrency limit
+    // Remaining chunks in sequential order (1, 2, 3, ..., N-2) for gap-free playback
+    const remainingChunks = chunkRanges.slice(1, chunkRanges.length > 1 ? -1 : 1);
+
+    console.log('[DownloadTask] Downloading', chunkRanges.length, 'chunks: phase 1 (chunk 0 + last parallel), phase 2 (sequential)');
+
     const chunkMap = new Map();
-    let nextChunkIndex = 0;
 
     const downloadChunk = async (range) => {
       const rangeHeader = `bytes=${range.start}-${range.end}`;
@@ -213,20 +214,13 @@ export class DownloadTask {
       }
     };
 
-    // Download with concurrency control
-    const downloadNext = async () => {
-      while (nextChunkIndex < chunkRanges.length) {
-        const range = chunkRanges[nextChunkIndex++];
-        await downloadChunk(range);
-      }
-    };
+    // Phase 1: chunk 0 + last chunk in parallel (both needed for playback start)
+    await Promise.all(priorityChunks.map(range => downloadChunk(range)));
 
-    // Start concurrent downloaders
-    const downloaders = [];
-    for (let i = 0; i < concurrentChunks; i++) {
-      downloaders.push(downloadNext());
+    // Phase 2: remaining chunks strictly sequential (guarantees gap-free playback)
+    for (const range of remainingChunks) {
+      await downloadChunk(range);
     }
-    await Promise.all(downloaders);
 
     // If progressive caching was used, skip reassembly (chunks are already cached)
     if (this.onChunkDownloaded) {
@@ -293,37 +287,81 @@ export class DownloadQueue {
   }
 
   /**
-   * Process queue - start downloads up to concurrency limit
+   * Prioritize files for the current layout — reorder queue and hold other downloads.
+   * All prioritized files must complete (including all chunks) before others start.
+   * @param {Array<string|number>} fileIds - Media IDs to prioritize
+   */
+  prioritizeLayoutFiles(fileIds) {
+    const idSet = new Set(fileIds.map(String));
+    this._layoutHoldIds = idSet;
+
+    // Reorder queue: matching IDs first, rest after
+    const prioritized = [];
+    const rest = [];
+    for (const task of this.queue) {
+      if (idSet.has(String(task.fileInfo.id))) {
+        prioritized.push(task);
+      } else {
+        rest.push(task);
+      }
+    }
+    this.queue = [...prioritized, ...rest];
+    console.log('[DownloadQueue] Layout hold:', idSet.size, 'files prioritized,', rest.length, 'held back');
+  }
+
+  /**
+   * Process queue - start downloads up to concurrency limit.
+   * When layout hold is active, only starts held files until all complete.
    */
   async processQueue() {
-    console.log('[DownloadQueue] processQueue:', this.running, 'running,', this.queue.length, 'queued');
+    // Layout hold: only start held files while any are still pending/active
+    if (this._layoutHoldIds?.size > 0) {
+      const hasHeldInQueue = this.queue.some(t => this._layoutHoldIds.has(String(t.fileInfo.id)));
+      const hasHeldActive = [...this.active.values()].some(t =>
+        this._layoutHoldIds.has(String(t.fileInfo.id))
+      );
 
+      if (hasHeldInQueue || hasHeldActive) {
+        // Only start held files
+        while (this.running < this.concurrency && this.queue.length > 0) {
+          const idx = this.queue.findIndex(t => this._layoutHoldIds.has(String(t.fileInfo.id)));
+          if (idx === -1) break;
+          const task = this.queue.splice(idx, 1)[0];
+          this._startTask(task);
+        }
+        return;
+      }
+      // All held files done — clear hold
+      console.log('[DownloadQueue] Layout hold cleared, resuming normal downloads');
+      this._layoutHoldIds = null;
+    }
+
+    // Normal FIFO processing
     while (this.running < this.concurrency && this.queue.length > 0) {
       const task = this.queue.shift();
-      this.running++;
-
-      console.log('[DownloadQueue] Starting:', task.fileInfo.path, `(${this.running}/${this.concurrency} active)`);
-
-      // Start download (don't await - let it run in background)
-      // .catch is safe here: errors are already propagated to waiters inside start()
-      task.start()
-        .catch(() => {}) // Suppress — error handled internally via waiters
-        .finally(() => {
-          this.running--;
-          this.active.delete(task.fileInfo.path);
-          console.log('[DownloadQueue] Complete:', task.fileInfo.path, `(${this.running} active, ${this.queue.length} pending)`);
-
-          // Process next in queue
-          this.processQueue();
-        });
+      this._startTask(task);
     }
 
-    if (this.running >= this.concurrency) {
-      console.log('[DownloadQueue] Concurrency limit reached:', this.running, '/', this.concurrency);
-    }
     if (this.queue.length === 0 && this.running === 0) {
       console.log('[DownloadQueue] All downloads complete');
     }
+  }
+
+  /**
+   * Start a download task (extracted to avoid duplication between hold and normal paths)
+   */
+  _startTask(task) {
+    this.running++;
+    console.log('[DownloadQueue] Starting:', task.fileInfo.path, `(${this.running}/${this.concurrency} active)`);
+
+    task.start()
+      .catch(() => {}) // Suppress — error handled internally via waiters
+      .finally(() => {
+        this.running--;
+        this.active.delete(task.fileInfo.path);
+        console.log('[DownloadQueue] Complete:', task.fileInfo.path, `(${this.running} active, ${this.queue.length} pending)`);
+        this.processQueue();
+      });
   }
 
   /**
@@ -423,6 +461,14 @@ export class DownloadManager {
    */
   getProgress() {
     return this.queue.getProgress();
+  }
+
+  /**
+   * Prioritize layout files — reorder queue and hold other downloads
+   */
+  prioritizeLayoutFiles(fileIds) {
+    this.queue.prioritizeLayoutFiles(fileIds);
+    this.queue.processQueue();
   }
 
   /**

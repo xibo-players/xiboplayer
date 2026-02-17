@@ -237,6 +237,15 @@ class ServiceWorkerBackend extends EventEmitter {
       return false;
     }
   }
+
+  /**
+   * Prioritize layout files — reorder queue and hold other downloads until done.
+   * @param {string[]} mediaIds - Media IDs needed by the current layout
+   */
+  async prioritizeLayoutFiles(mediaIds) {
+    if (!this.controller) return;
+    this.controller.postMessage({ type: 'PRIORITIZE_LAYOUT_FILES', data: { mediaIds } });
+  }
 }
 
 // DirectCacheBackend removed - Service Worker only architecture
@@ -385,6 +394,15 @@ export class CacheProxy extends EventEmitter {
       throw new Error('CacheProxy not initialized');
     }
     return await this.backend.isCached(type, id);
+  }
+
+  /**
+   * Prioritize layout files — reorder queue and hold other downloads until done.
+   * @param {string[]} mediaIds - Media IDs needed by the current layout
+   */
+  async prioritizeLayoutFiles(mediaIds) {
+    if (!this.backend?.prioritizeLayoutFiles) return;
+    return await this.backend.prioritizeLayoutFiles(mediaIds);
   }
 
   /**
