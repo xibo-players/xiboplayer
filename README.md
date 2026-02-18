@@ -2,6 +2,8 @@
 
 Modular JavaScript SDK for building [Xibo](https://xibosignage.com) digital signage players. Each package handles one concern — combine them to build a full player, or use individual packages in your own projects.
 
+> **Note:** This is an independent open-source project and is **not affiliated with, endorsed by, or supported by [Xibo Signage Ltd](https://xibosignage.com)**. These are community-built players provided as-is, with no warranty. Use at your own risk.
+
 All packages are published to npm under the [`@xiboplayer`](https://www.npmjs.com/org/xiboplayer) scope.
 
 [![npm](https://img.shields.io/npm/v/@xiboplayer/core?label=%40xiboplayer%2Fcore&color=0097D8)](https://www.npmjs.com/package/@xiboplayer/core)
