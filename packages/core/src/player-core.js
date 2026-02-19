@@ -382,11 +382,18 @@ export class PlayerCore extends EventEmitter {
         }
 
         log.debug('Collection step: download-request + mediaInventory');
-        // Prioritize downloads by layout priority (highest first)
         const currentLayouts = this.schedule.getCurrentLayouts();
-        const prioritizedFiles = this.prioritizeFilesByLayout(files, currentLayouts);
+
+        // Layout IDs in playback order (rotated from current index)
+        const layoutIds = currentLayouts.map(f => parseLayoutFile(f));
+        const layoutOrder = [];
+        for (let i = 0; i < layoutIds.length; i++) {
+          const idx = (this._currentLayoutIndex + i) % layoutIds.length;
+          layoutOrder.push(layoutIds[idx]);
+        }
+
         this._lastRequiredFiles = files;
-        this.emit('download-request', prioritizedFiles);
+        this.emit('download-request', { layoutOrder, files });
 
         // Submit media inventory to CMS (reports cached files)
         this.submitMediaInventory(files);
@@ -1157,43 +1164,4 @@ export class PlayerCore extends EventEmitter {
     return Array.from(this.pendingLayouts.keys());
   }
 
-  /**
-   * Prioritize file downloads for fastest playback start:
-   *   1. Layout XLFs for currently scheduled layouts (tiny, needed for parsing)
-   *   2. Other layout XLFs (also tiny)
-   *   3. Resource files (fonts, bundle.min.js — small, needed by widgets)
-   *   4. Media files sorted by ascending size (small files complete faster)
-   *
-   * This ensures layouts are parseable ASAP so prepareAndRenderLayout() can
-   * call prioritizeDownload() for the specific media the current layout needs.
-   */
-  prioritizeFilesByLayout(files, currentLayouts) {
-    const currentLayoutIds = new Set();
-    currentLayouts.forEach((layoutFile) => {
-      currentLayoutIds.add(parseLayoutFile(layoutFile));
-    });
-
-    // Assign priority tiers
-    const tiered = files.map(f => {
-      let tier;
-      if (f.type === 'layout') {
-        const layoutId = parseInt(f.id);
-        tier = currentLayoutIds.has(layoutId) ? 0 : 1; // Current layouts first
-      } else if (f.type === 'resource' || f.code === 'fonts.css' ||
-                 (f.path && (f.path.includes('bundle.min') || f.path.includes('fonts')))) {
-        tier = 2; // Resources (fonts, bundle.min.js)
-      } else {
-        tier = 3; // Media
-      }
-      return { file: f, tier };
-    });
-
-    // Sort by tier, then by ascending size within each tier
-    tiered.sort((a, b) => {
-      if (a.tier !== b.tier) return a.tier - b.tier;
-      return (a.file.size || 0) - (b.file.size || 0);
-    });
-
-    return tiered.map(t => t.file);
-  }
 }

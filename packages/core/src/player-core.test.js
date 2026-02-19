@@ -151,13 +151,19 @@ describe('PlayerCore', () => {
       ]));
     });
 
-    it('should emit download-request with files', async () => {
+    it('should emit download-request with layoutOrder and files', async () => {
       const spy = createSpy();
       core.on('download-request', spy);
 
       await core.collect();
 
-      expect(spy).toHaveBeenCalledWith(expect.arrayContaining([
+      // download-request emits { layoutOrder: number[], files: Array }
+      const payload = spy.mock.calls[0][0];
+      expect(payload).toHaveProperty('layoutOrder');
+      expect(payload).toHaveProperty('files');
+      expect(Array.isArray(payload.layoutOrder)).toBe(true);
+      expect(Array.isArray(payload.files)).toBe(true);
+      expect(payload.files).toEqual(expect.arrayContaining([
         expect.objectContaining({ id: '1', type: 'media' })
       ]));
     });
@@ -835,10 +841,10 @@ describe('PlayerCore', () => {
       await core.collect();
 
       // download-request should only contain non-purge files
-      const downloadedFiles = downloadSpy.mock.calls[0][0];
-      expect(downloadedFiles.every(f => f.type !== 'purge')).toBe(true);
-      expect(downloadedFiles).toHaveLength(1);
-      expect(downloadedFiles[0].id).toBe('1');
+      const payload = downloadSpy.mock.calls[0][0];
+      expect(payload.files.every(f => f.type !== 'purge')).toBe(true);
+      expect(payload.files).toHaveLength(1);
+      expect(payload.files[0].id).toBe('1');
     });
   });
 
@@ -1673,124 +1679,4 @@ describe('PlayerCore', () => {
     });
   });
 
-  // ============================================================================
-  // Download Priority / File Prioritization Tests
-  // ============================================================================
-
-  describe('prioritizeFilesByLayout()', () => {
-    it('should put current layout XLFs first (tier 0)', () => {
-      const files = [
-        { id: '100', type: 'media', size: 500 },
-        { id: '87', type: 'layout', size: 1000 },
-        { id: '78', type: 'layout', size: 800 }
-      ];
-      const currentLayouts = ['87.xlf'];
-
-      const result = core.prioritizeFilesByLayout(files, currentLayouts);
-
-      // Layout 87 is the current layout → tier 0 (first)
-      expect(result[0].id).toBe('87');
-      expect(result[0].type).toBe('layout');
-    });
-
-    it('should put other layout XLFs in tier 1 (after current)', () => {
-      const files = [
-        { id: '78', type: 'layout', size: 800 },
-        { id: '87', type: 'layout', size: 1000 },
-        { id: '81', type: 'layout', size: 900 }
-      ];
-      const currentLayouts = ['87.xlf'];
-
-      const result = core.prioritizeFilesByLayout(files, currentLayouts);
-
-      // Tier 0: layout 87 (current)
-      expect(result[0].id).toBe('87');
-      // Tier 1: other layouts (78, 81 sorted by size within tier)
-      expect(result[1].type).toBe('layout');
-      expect(result[2].type).toBe('layout');
-    });
-
-    it('should put resources (fonts, bundle) in tier 2', () => {
-      const files = [
-        { id: '100', type: 'media', size: 50000 },
-        { id: 'fonts', type: 'resource', code: 'fonts.css', size: 100 },
-        { id: '87', type: 'layout', size: 1000 }
-      ];
-      const currentLayouts = ['87.xlf'];
-
-      const result = core.prioritizeFilesByLayout(files, currentLayouts);
-
-      // Order: layout (tier 0) → resource (tier 2) → media (tier 3)
-      expect(result[0].type).toBe('layout');
-      expect(result[1].type).toBe('resource');
-      expect(result[2].type).toBe('media');
-    });
-
-    it('should put bundle.min.js in tier 2 (resource tier)', () => {
-      const files = [
-        { id: '100', type: 'media', size: 50000 },
-        { id: 'bundle', type: 'media', path: 'http://cms/xmds.php?file=bundle.min.js', size: 200 },
-        { id: '87', type: 'layout', size: 1000 }
-      ];
-      const currentLayouts = ['87.xlf'];
-
-      const result = core.prioritizeFilesByLayout(files, currentLayouts);
-
-      // bundle.min.js path match → tier 2 (before regular media)
-      expect(result[0].type).toBe('layout');
-      expect(result[1].path).toContain('bundle.min');
-      expect(result[2].type).toBe('media');
-    });
-
-    it('should sort media by ascending size within tier 3', () => {
-      const files = [
-        { id: '10', type: 'media', size: 272000000 }, // 272MB video
-        { id: '11', type: 'media', size: 1000 },      // 1KB image
-        { id: '12', type: 'media', size: 50000 }       // 50KB image
-      ];
-      const currentLayouts = [];
-
-      const result = core.prioritizeFilesByLayout(files, currentLayouts);
-
-      // All tier 3 → sorted by size ascending
-      expect(result[0].size).toBe(1000);
-      expect(result[1].size).toBe(50000);
-      expect(result[2].size).toBe(272000000);
-    });
-
-    it('should handle multiple current layouts', () => {
-      const files = [
-        { id: '78', type: 'layout', size: 800 },
-        { id: '87', type: 'layout', size: 1000 },
-        { id: '81', type: 'layout', size: 900 },
-        { id: '99', type: 'layout', size: 700 }
-      ];
-      const currentLayouts = ['87.xlf', '81.xlf', '78.xlf'];
-
-      const result = core.prioritizeFilesByLayout(files, currentLayouts);
-
-      // Tier 0: current layouts (87, 81, 78)
-      // Tier 1: other layouts (99)
-      const currentIds = result.slice(0, 3).map(f => f.id).sort();
-      expect(currentIds).toEqual(['78', '81', '87']);
-      expect(result[3].id).toBe('99');
-    });
-
-    it('should maintain complete file list (no files lost)', () => {
-      const files = [
-        { id: '1', type: 'media', size: 100 },
-        { id: '2', type: 'layout', size: 200 },
-        { id: '3', type: 'resource', code: 'fonts.css', size: 50 },
-        { id: '4', type: 'media', size: 300 },
-        { id: '5', type: 'layout', size: 150 }
-      ];
-      const currentLayouts = ['2.xlf'];
-
-      const result = core.prioritizeFilesByLayout(files, currentLayouts);
-
-      expect(result.length).toBe(files.length);
-      const resultIds = result.map(f => f.id).sort();
-      expect(resultIds).toEqual(['1', '2', '3', '4', '5']);
-    });
-  });
 });
