@@ -6,14 +6,16 @@
   "main": "./src/index.js",
   "exports": {
     ".": "./src/index.js",
-    "./worker": "./src/worker.js"
+    "./utils": "./src/sw-utils.js"
   },
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage"
   },
-  "dependencies": {},
+  "dependencies": {
+    "@xiboplayer/cache": "workspace:*"
+  },
   "devDependencies": {
     "vitest": "^2.0.0"
   },

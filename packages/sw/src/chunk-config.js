@@ -1,0 +1,111 @@
+/**
+ * Service Worker logger and chunk configuration
+ */
+
+/**
+ * Simple logger for Service Worker context.
+ * Uses console but can be configured via self.swLogLevel.
+ */
+export class SWLogger {
+  constructor(name) {
+    this.name = name;
+    // Default level: INFO (can be changed via self.swLogLevel = 'DEBUG')
+    this.level = (typeof self !== 'undefined' && self.swLogLevel) || 'INFO';
+  }
+
+  debug(...args) {
+    if (this.level === 'DEBUG') {
+      console.log(`[${this.name}] DEBUG:`, ...args);
+    }
+  }
+
+  info(...args) {
+    if (this.level === 'DEBUG' || this.level === 'INFO') {
+      console.log(`[${this.name}]`, ...args);
+    }
+  }
+
+  warn(...args) {
+    console.warn(`[${this.name}]`, ...args);
+  }
+
+  error(...args) {
+    console.error(`[${this.name}]`, ...args);
+  }
+}
+
+/**
+ * Calculate optimal chunk size based on available device memory.
+ * Returns configuration for chunk streaming, blob caching, and download concurrency.
+ *
+ * @param {{ info: Function }} [log] - Optional logger (created internally if not provided)
+ * @returns {{ chunkSize: number, blobCacheSize: number, threshold: number, concurrency: number }}
+ */
+export function calculateChunkConfig(log) {
+  if (!log) log = new SWLogger('ChunkConfig');
+
+  // Try to detect device memory (Chrome only for now)
+  const deviceMemoryGB = (typeof navigator !== 'undefined' && navigator.deviceMemory) || null;
+
+  // Fallback: estimate from user agent
+  let estimatedRAM_GB = 4; // Default assumption
+
+  if (deviceMemoryGB) {
+    estimatedRAM_GB = deviceMemoryGB;
+    log.info('Detected device memory:', deviceMemoryGB, 'GB');
+  } else if (typeof navigator !== 'undefined') {
+    // Parse user agent for hints
+    const ua = navigator.userAgent.toLowerCase();
+    if (ua.includes('raspberry pi') || ua.includes('armv6')) {
+      estimatedRAM_GB = 0.5; // Pi Zero
+      log.info('Detected Pi Zero (512 MB RAM estimated)');
+    } else if (ua.includes('armv7')) {
+      estimatedRAM_GB = 1; // Pi 3/4
+      log.info('Detected ARM device (1 GB RAM estimated)');
+    } else {
+      log.info('Using default RAM estimate:', estimatedRAM_GB, 'GB');
+    }
+  }
+
+  // Configure based on RAM - chunk size, cache, threshold, AND concurrency
+  let chunkSize, blobCacheSize, threshold, concurrency;
+
+  if (estimatedRAM_GB <= 0.5) {
+    // Pi Zero (512 MB) - very conservative
+    chunkSize = 10 * 1024 * 1024;
+    blobCacheSize = 25;
+    threshold = 25 * 1024 * 1024;
+    concurrency = 1;
+    log.info('Low-memory config: 10 MB chunks, 25 MB cache, 1 concurrent download');
+  } else if (estimatedRAM_GB <= 1) {
+    // 1 GB RAM (Pi 3) - conservative
+    chunkSize = 20 * 1024 * 1024;
+    blobCacheSize = 50;
+    threshold = 50 * 1024 * 1024;
+    concurrency = 2;
+    log.info('1GB-RAM config: 20 MB chunks, 50 MB cache, 2 concurrent downloads');
+  } else if (estimatedRAM_GB <= 2) {
+    // 2 GB RAM - moderate
+    chunkSize = 30 * 1024 * 1024;
+    blobCacheSize = 100;
+    threshold = 75 * 1024 * 1024;
+    concurrency = 2;
+    log.info('2GB-RAM config: 30 MB chunks, 100 MB cache, 2 concurrent downloads');
+  } else if (estimatedRAM_GB <= 4) {
+    // 4 GB RAM - default
+    chunkSize = 50 * 1024 * 1024;
+    blobCacheSize = 200;
+    threshold = 100 * 1024 * 1024;
+    concurrency = 4;
+    log.info('4GB-RAM config: 50 MB chunks, 200 MB cache, 4 concurrent downloads');
+  } else {
+    // 8+ GB RAM - generous
+    chunkSize = 100 * 1024 * 1024;
+    blobCacheSize = 500;
+    threshold = 200 * 1024 * 1024;
+    concurrency = 6;
+    log.info('High-RAM config: 100 MB chunks, 500 MB cache, 6 concurrent downloads');
+  }
+
+  return { chunkSize, blobCacheSize, threshold, concurrency };
+}

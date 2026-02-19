@@ -192,6 +192,10 @@ importers:
         version: 2.1.9(@vitest/ui@2.1.9)(jsdom@25.0.1)
 
   packages/sw:
+    dependencies:
+      '@xiboplayer/cache':
+        specifier: workspace:*
+        version: link:../cache
     devDependencies:
       vitest:
         specifier: ^2.0.0
