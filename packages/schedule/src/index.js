@@ -1,5 +1,7 @@
 // @xiboplayer/schedule - Campaign scheduling and advanced features
 // Basic scheduling, interrupts, overlays, and dayparting
+import pkg from '../package.json' with { type: 'json' };
+export const VERSION = pkg.version;
 
 /**
  * Core schedule manager for basic scheduling and dayparting

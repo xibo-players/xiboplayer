@@ -1,4 +1,6 @@
 // @xiboplayer/stats - Proof of play and statistics reporting
+import pkg from '../package.json' with { type: 'json' };
+export const VERSION = pkg.version;
 
 /**
  * Stats collector for proof of play tracking
