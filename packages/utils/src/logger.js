@@ -7,7 +7,10 @@
  *   1. URL param ?logLevel=DEBUG
  *   2. localStorage xibo_log_level
  *   3. CMS setting via RegisterDisplay (call applyCmsLogLevel())
- *   4. Default: DEBUG on localhost, INFO in production
+ *   4. Default: WARNING (production-safe)
+ *
+ * For development, pass ?logLevel=DEBUG in the URL.
+ * Electron's --dev flag does this automatically.
  *
  * Loggers created without an explicit level are REACTIVE — they follow
  * the global level at call time, so setLogLevel() affects all of them.
@@ -93,7 +96,7 @@ class Logger {
 
 // Global log level configuration
 const globalConfig = {
-  level: LOG_LEVELS.INFO, // Default: INFO and above
+  level: LOG_LEVELS.WARNING, // Default: WARNING (production-safe)
 
   setGlobalLevel(level) {
     if (typeof level === 'string') {
@@ -114,6 +117,8 @@ const globalConfig = {
 let hasLocalOverride = false;
 
 // Set global level from environment or localStorage
+// Default: WARNING (production-safe). Use ?logLevel=DEBUG for development,
+// or let the CMS override via applyCmsLogLevel().
 if (typeof window !== 'undefined') {
   const urlParams = new URLSearchParams(window.location.search);
   const urlLevel = urlParams.get('logLevel');
@@ -125,12 +130,8 @@ if (typeof window !== 'undefined') {
   } else if (storageLevel) {
     globalConfig.setGlobalLevel(storageLevel);
     hasLocalOverride = true;
-  } else if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
-    // Development mode - debug logging
-    globalConfig.setGlobalLevel('DEBUG');
   } else {
-    // Production mode - INFO by default (CMS can override later)
-    globalConfig.setGlobalLevel('INFO');
+    globalConfig.setGlobalLevel('WARNING');
   }
 }
 

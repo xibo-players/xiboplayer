@@ -33,13 +33,13 @@ describe('Logger', () => {
   });
 
   describe('Logger Creation', () => {
-    it('should create logger with default INFO level', () => {
+    it('should create logger with default WARNING level', () => {
       const logger = createLogger('TestModule');
 
       expect(logger.name).toBe('TestModule');
       // When no explicit level is given, logger follows global level (useGlobal=true)
       // so logger.level is undefined — check getEffectiveLevel() instead
-      expect(logger.getEffectiveLevel()).toBeLessThanOrEqual(LOG_LEVELS.INFO);
+      expect(logger.getEffectiveLevel()).toBeLessThanOrEqual(LOG_LEVELS.WARNING);
     });
 
     it('should create logger with custom level', () => {
