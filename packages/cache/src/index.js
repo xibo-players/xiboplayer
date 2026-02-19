@@ -1,4 +1,6 @@
 // @xiboplayer/cache - Offline caching and downloads
+import pkg from '../package.json' with { type: 'json' };
+export const VERSION = pkg.version;
 export { CacheManager, cacheManager } from './cache.js';
 export { CacheProxy } from './cache-proxy.js';
-export { DownloadManager } from './download-manager.js';
+export { DownloadManager, FileDownload, LayoutTaskBuilder, isUrlExpired } from './download-manager.js';

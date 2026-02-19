@@ -1,343 +1,811 @@
 /**
- * DownloadManager - Standalone file download orchestration
+ * DownloadManager - Flat queue download orchestration
  *
  * Works in both browser and Service Worker contexts.
  * Handles download queue, concurrency control, parallel chunks, and MD5 verification.
  *
- * Architecture:
- * - DownloadQueue: Manages download queue with concurrency control
- * - DownloadTask: Handles individual file download with parallel chunks
- * - MD5Calculator: Calculates MD5 hash (optional, uses SparkMD5 if available)
+ * Architecture (flat queue):
+ * - DownloadTask: Single HTTP fetch unit (one GET request — full file or one chunk)
+ * - FileDownload: Orchestrator that creates DownloadTasks for a file (HEAD + chunks)
+ * - DownloadQueue: Flat queue where every download unit competes equally for connection slots
+ * - DownloadManager: Public facade
+ *
+ * BEFORE:  Queue[File, File, File] → each File internally spawns N chunk fetches
+ * AFTER:   Queue[chunk, chunk, file, chunk, chunk, file, chunk] → flat, 1 fetch per slot
+ *
+ * This eliminates the two-layer concurrency problem where N files × M chunks per file
+ * could exceed Chromium's 6-per-host connection limit, causing head-of-line blocking.
+ *
+ * Per-file chunk limit (maxChunksPerFile) prevents one large file from hogging all
+ * connection slots, ensuring bandwidth is shared fairly and chunk 0 arrives fast.
  *
  * Usage:
- *   const dm = new DownloadManager({ concurrency: 4, chunkSize: 50MB });
- *   const task = dm.enqueue({ id, type, path, md5 });
- *   const blob = await task.wait();
+ *   const dm = new DownloadManager({ concurrency: 6, chunkSize: 50MB, chunksPerFile: 2 });
+ *   const file = dm.enqueue({ id, type, path, md5 });
+ *   const blob = await file.wait();
  */
 
-const DEFAULT_CONCURRENCY = 4; // Max concurrent file downloads
+const DEFAULT_CONCURRENCY = 6; // Max concurrent HTTP connections (matches Chromium per-host limit)
 const DEFAULT_CHUNK_SIZE = 50 * 1024 * 1024; // 50MB chunks
-const DEFAULT_CHUNKS_PER_FILE = 4; // Parallel chunks per file
+const DEFAULT_MAX_CHUNKS_PER_FILE = 3; // Max parallel chunk downloads per file
+const CHUNK_THRESHOLD = 100 * 1024 * 1024; // Files > 100MB get chunked
+const MAX_RETRIES = 3;
+const RETRY_DELAY_MS = 500; // Fast: 500ms, 1s, 1.5s → total ~3s
+const URGENT_CONCURRENCY = 2; // Slots when urgent chunk is active (bandwidth focus)
+const FETCH_TIMEOUT_MS = 600_000; // 10 minutes — 100MB chunk at ~2 Mbps
+const HEAD_TIMEOUT_MS = 15_000; // 15 seconds for HEAD requests
 
 /**
- * DownloadTask - Handles individual file download
+ * Infer Content-Type from file path extension.
+ * Used when we skip HEAD (size already known from RequiredFiles).
  */
-export class DownloadTask {
-  constructor(fileInfo, options = {}) {
-    this.fileInfo = fileInfo;
-    this.options = options;
-    this.downloadedBytes = 0;
-    this.totalBytes = 0;
-    this.promise = null;
-    this.waiters = []; // Promises waiting for completion
-    this.state = 'pending'; // pending, downloading, complete, failed
-    // Progressive streaming: callback fired for each chunk as it downloads
-    // Set externally before download starts: (chunkIndex, chunkBlob, totalChunks) => Promise
-    this.onChunkDownloaded = null;
-  }
+function inferContentType(fileInfo) {
+  const path = fileInfo.path || fileInfo.code || '';
+  const ext = path.split('.').pop()?.split('?')[0]?.toLowerCase();
+  const types = {
+    mp4: 'video/mp4', webm: 'video/webm', mp3: 'audio/mpeg',
+    png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg',
+    gif: 'image/gif', svg: 'image/svg+xml', webp: 'image/webp',
+    css: 'text/css', js: 'application/javascript',
+    ttf: 'font/ttf', otf: 'font/otf', woff: 'font/woff', woff2: 'font/woff2',
+    xml: 'application/xml', xlf: 'application/xml',
+  };
+  return types[ext] || 'application/octet-stream';
+}
 
-  /**
-   * Wait for download to complete
-   * Returns blob when ready
-   */
-  async wait() {
-    if (this.promise) {
-      return this.promise;
-    }
+// Priority levels — higher number = starts first
+export const PRIORITY = { normal: 0, layout: 1, high: 2, urgent: 3 };
 
-    if (this.state === 'complete') {
-      return this.promise;
-    }
+/**
+ * BARRIER sentinel — hard gate in the download queue.
+ *
+ * When processQueue() encounters a BARRIER:
+ * - If tasks are still in-flight above it → STOP (slots stay empty)
+ * - If running === 0 → remove barrier, continue with tasks below
+ *
+ * Used by LayoutQueueBuilder to separate critical chunks (chunk-0, chunk-last)
+ * from remaining bulk chunks. Ensures video playback can start before all
+ * chunks finish downloading.
+ */
+export const BARRIER = Symbol('BARRIER');
 
-    // Create waiter promise
-    return new Promise((resolve, reject) => {
-      this.waiters.push({ resolve, reject });
-    });
-  }
-
-  /**
-   * Start download with parallel chunks
-   */
-  async start() {
-    const { id, type, path, md5 } = this.fileInfo;
-
-    try {
-      this.state = 'downloading';
-      console.log('[DownloadTask] Starting:', path);
-
-      // HEAD request to get file size
-      const headResponse = await fetch(path, { method: 'HEAD' });
-      if (!headResponse.ok) {
-        throw new Error(`HEAD request failed: ${headResponse.status}`);
-      }
-
-      this.totalBytes = parseInt(headResponse.headers.get('Content-Length') || '0');
-      const contentType = headResponse.headers.get('Content-Type') || 'application/octet-stream';
-
-      console.log('[DownloadTask] File size:', (this.totalBytes / 1024 / 1024).toFixed(1), 'MB');
-
-      // Download in chunks if large file
-      let blob;
-      const chunkSize = this.options.chunkSize || DEFAULT_CHUNK_SIZE;
-      const chunksPerFile = this.options.chunksPerFile || DEFAULT_CHUNKS_PER_FILE;
-
-      if (this.totalBytes > 100 * 1024 * 1024) { // > 100MB
-        blob = await this.downloadChunks(path, contentType, chunkSize, chunksPerFile);
-      } else {
-        blob = await this.downloadFull(path);
-      }
-
-      // Verify MD5 if provided and MD5 calculator available
-      if (md5 && this.options.calculateMD5) {
-        const calculatedMd5 = await this.options.calculateMD5(blob);
-        if (calculatedMd5 && calculatedMd5 !== md5) {
-          console.warn('[DownloadTask] MD5 mismatch:', path);
-          console.warn('[DownloadTask]   Expected:', md5);
-          console.warn('[DownloadTask]   Got:', calculatedMd5);
-          // Continue anyway (kiosk mode)
-        }
-      }
-
-      console.log('[DownloadTask] Complete:', path, `(${blob.size} bytes)`);
-
-      // Mark complete
-      this.state = 'complete';
-      this.blob = blob;
-
-      // Resolve all waiters
-      this.promise = Promise.resolve(blob);
-      for (const waiter of this.waiters) {
-        waiter.resolve(blob);
-      }
-      this.waiters = [];
-
-      return blob;
-
-    } catch (error) {
-      console.error('[DownloadTask] Failed:', path, error);
-      this.state = 'failed';
-
-      // Reject all waiters
-      this.promise = Promise.reject(error);
-      this.promise.catch(() => {}); // Prevent unhandled rejection if nobody calls wait()
-      for (const waiter of this.waiters) {
-        waiter.reject(error);
-      }
-      this.waiters = [];
-
-      throw error;
-    }
-  }
-
-  /**
-   * Download full file (for small files)
-   */
-  async downloadFull(url) {
-    const response = await fetch(url);
-    if (!response.ok) {
-      throw new Error(`Download failed: ${response.status}`);
-    }
-
-    const blob = await response.blob();
-    this.downloadedBytes = blob.size;
-    return blob;
-  }
-
-  /**
-   * Download file in parallel chunks (for large files)
-   * If onChunkDownloaded callback is set, fires it for each chunk as it arrives
-   * so the caller can cache chunks progressively (enabling streaming before
-   * the entire file is downloaded).
-   */
-  async downloadChunks(url, contentType, chunkSize, concurrentChunks) {
-    // Calculate chunk ranges
-    const chunkRanges = [];
-    for (let start = 0; start < this.totalBytes; start += chunkSize) {
-      const end = Math.min(start + chunkSize - 1, this.totalBytes - 1);
-      chunkRanges.push({ start, end, index: chunkRanges.length });
-    }
-
-    // Phase 1: Download chunk 0 (ftyp header) and last chunk (moov atom) in parallel.
-    // Browsers need both extremes to start MP4 playback.
-    const priorityChunks = [chunkRanges[0]];
-    if (chunkRanges.length > 1) {
-      priorityChunks.push(chunkRanges[chunkRanges.length - 1]);
-    }
-
-    // Remaining chunks in sequential order (1, 2, 3, ..., N-2) for gap-free playback
-    const remainingChunks = chunkRanges.slice(1, chunkRanges.length > 1 ? -1 : 1);
-
-    console.log('[DownloadTask] Downloading', chunkRanges.length, 'chunks: phase 1 (chunk 0 + last parallel), phase 2 (sequential)');
-
-    const chunkMap = new Map();
-
-    const downloadChunk = async (range) => {
-      const rangeHeader = `bytes=${range.start}-${range.end}`;
-
-      try {
-        const response = await fetch(url, {
-          headers: { 'Range': rangeHeader }
-        });
-
-        if (!response.ok && response.status !== 206) {
-          throw new Error(`Chunk ${range.index} failed: ${response.status}`);
-        }
-
-        const chunkBlob = await response.blob();
-        chunkMap.set(range.index, chunkBlob);
-
-        this.downloadedBytes += chunkBlob.size;
-        const progress = (this.downloadedBytes / this.totalBytes * 100).toFixed(1);
-        console.log('[DownloadTask] Chunk', range.index + 1, '/', chunkRanges.length, `(${progress}%)`);
-
-        // Progressive streaming: notify caller to cache this chunk immediately
-        if (this.onChunkDownloaded) {
-          try {
-            await this.onChunkDownloaded(range.index, chunkBlob, chunkRanges.length);
-          } catch (e) {
-            console.warn('[DownloadTask] onChunkDownloaded callback error:', e);
-          }
-        }
-
-        // Notify progress if callback provided
-        if (this.options.onProgress) {
-          this.options.onProgress(this.downloadedBytes, this.totalBytes);
-        }
-
-        return chunkBlob;
-
-      } catch (error) {
-        console.error('[DownloadTask] Chunk', range.index, 'failed:', error);
-        throw error;
-      }
-    };
-
-    // Phase 1: chunk 0 + last chunk in parallel (both needed for playback start)
-    await Promise.all(priorityChunks.map(range => downloadChunk(range)));
-
-    // Phase 2: remaining chunks strictly sequential (guarantees gap-free playback)
-    for (const range of remainingChunks) {
-      await downloadChunk(range);
-    }
-
-    // If progressive caching was used, skip reassembly (chunks are already cached)
-    if (this.onChunkDownloaded) {
-      // Return a lightweight marker — the real data is already in cache
-      return new Blob([], { type: contentType });
-    }
-
-    // Reassemble chunks in order (traditional path for small chunked downloads)
-    const orderedChunks = [];
-    for (let i = 0; i < chunkRanges.length; i++) {
-      orderedChunks.push(chunkMap.get(i));
-    }
-
-    return new Blob(orderedChunks, { type: contentType });
+/**
+ * Parse the X-Amz-Expires absolute timestamp from a signed URL.
+ * Returns the expiry as a Unix timestamp (seconds), or Infinity if not found.
+ */
+function getUrlExpiry(url) {
+  try {
+    const match = url.match(/X-Amz-Expires=(\d+)/);
+    return match ? parseInt(match[1], 10) : Infinity;
+  } catch {
+    return Infinity;
   }
 }
 
 /**
- * DownloadQueue - Manages download queue with concurrency control
+ * Check if a signed URL has expired (or will expire within a grace period).
+ * @param {string} url - Signed URL with X-Amz-Expires parameter
+ * @param {number} graceSeconds - Seconds before actual expiry to consider it expired (default: 30)
+ * @returns {boolean}
+ */
+export function isUrlExpired(url, graceSeconds = 30) {
+  const expiry = getUrlExpiry(url);
+  if (expiry === Infinity) return false;
+  return (Date.now() / 1000) >= (expiry - graceSeconds);
+}
+
+/**
+ * DownloadTask - Single HTTP fetch unit
+ *
+ * Handles exactly one HTTP request: either a full small file GET or a single Range GET
+ * for one chunk of a larger file. Includes retry logic with exponential backoff.
+ */
+export class DownloadTask {
+  constructor(fileInfo, options = {}) {
+    this.fileInfo = fileInfo;
+    this.chunkIndex = options.chunkIndex ?? null;
+    this.rangeStart = options.rangeStart ?? null;
+    this.rangeEnd = options.rangeEnd ?? null;
+    this.state = 'pending';
+    this.blob = null;
+    this._parentFile = null;
+    this._priority = PRIORITY.normal;
+  }
+
+  getUrl() {
+    const url = this.fileInfo.path;
+    if (isUrlExpired(url)) {
+      throw new Error(`URL expired for ${this.fileInfo.type}/${this.fileInfo.id} — waiting for fresh URL from next collection cycle`);
+    }
+    return url;
+  }
+
+  async start() {
+    this.state = 'downloading';
+    const headers = {};
+    if (this.rangeStart != null) {
+      headers['Range'] = `bytes=${this.rangeStart}-${this.rangeEnd}`;
+    }
+
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      const ac = new AbortController();
+      const timer = setTimeout(() => ac.abort(), FETCH_TIMEOUT_MS);
+      try {
+        const url = this.getUrl();
+        const fetchOpts = { signal: ac.signal };
+        if (Object.keys(headers).length > 0) fetchOpts.headers = headers;
+        const response = await fetch(url, fetchOpts);
+
+        if (!response.ok && response.status !== 206) {
+          throw new Error(`Fetch failed: ${response.status}`);
+        }
+
+        this.blob = await response.blob();
+        this.state = 'complete';
+        return this.blob;
+
+      } catch (error) {
+        const msg = ac.signal.aborted ? `Timeout after ${FETCH_TIMEOUT_MS / 1000}s` : error.message;
+        if (attempt < MAX_RETRIES) {
+          const delay = RETRY_DELAY_MS * attempt;
+          const chunkLabel = this.chunkIndex != null ? ` chunk ${this.chunkIndex}` : '';
+          console.warn(`[DownloadTask] ${this.fileInfo.type}/${this.fileInfo.id}${chunkLabel} attempt ${attempt}/${MAX_RETRIES} failed: ${msg}. Retrying in ${delay / 1000}s...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+        } else {
+          this.state = 'failed';
+          throw ac.signal.aborted ? new Error(msg) : error;
+        }
+      } finally {
+        clearTimeout(timer);
+      }
+    }
+  }
+}
+
+/**
+ * FileDownload - Orchestrates downloading a single file
+ *
+ * Does the HEAD request to determine file size, then:
+ * - Small file (≤ 100MB): creates 1 DownloadTask for the full file
+ * - Large file (> 100MB): creates N DownloadTasks, one per chunk
+ *
+ * All tasks are enqueued into the flat DownloadQueue where they compete
+ * equally for HTTP connection slots with tasks from other files.
+ *
+ * Provides wait() that resolves when ALL tasks for this file complete.
+ * Supports progressive caching via onChunkDownloaded callback.
+ */
+export class FileDownload {
+  constructor(fileInfo, options = {}) {
+    this.fileInfo = fileInfo;
+    this.options = options;
+    this.state = 'pending';
+    this.tasks = [];
+    this.completedChunks = 0;
+    this.totalChunks = 0;
+    this.totalBytes = 0;
+    this.downloadedBytes = 0;
+    this.onChunkDownloaded = null;
+    this.skipChunks = fileInfo.skipChunks || new Set();
+    this._contentType = 'application/octet-stream';
+    this._chunkBlobs = new Map();
+    this._runningCount = 0; // Currently running tasks for this file
+    this._resolve = null;
+    this._reject = null;
+    this._promise = new Promise((res, rej) => {
+      this._resolve = res;
+      this._reject = rej;
+    });
+    this._promise.catch(() => {});
+  }
+
+  getUrl() {
+    const url = this.fileInfo.path;
+    if (isUrlExpired(url)) {
+      throw new Error(`URL expired for ${this.fileInfo.type}/${this.fileInfo.id} — waiting for fresh URL from next collection cycle`);
+    }
+    return url;
+  }
+
+  wait() {
+    return this._promise;
+  }
+
+  /**
+   * Determine file size and create DownloadTasks.
+   * Uses RequiredFiles size when available (instant, no network).
+   * Falls back to HEAD request only when size is unknown.
+   */
+  async prepare(queue) {
+    try {
+      this.state = 'preparing';
+      const { id, type, size } = this.fileInfo;
+      console.log('[FileDownload] Starting:', `${type}/${id}`);
+
+      // Use declared size from RequiredFiles — no HEAD needed for queue building
+      this.totalBytes = (size && size > 0) ? parseInt(size) : 0;
+      this._contentType = inferContentType(this.fileInfo);
+
+      if (this.totalBytes === 0) {
+        // No size declared — HEAD fallback (rare: only for files without CMS size)
+        const url = this.getUrl();
+        const ac = new AbortController();
+        const timer = setTimeout(() => ac.abort(), HEAD_TIMEOUT_MS);
+        try {
+          const head = await fetch(url, { method: 'HEAD', signal: ac.signal });
+          if (head.ok) {
+            this.totalBytes = parseInt(head.headers.get('Content-Length') || '0');
+            this._contentType = head.headers.get('Content-Type') || this._contentType;
+          }
+        } finally {
+          clearTimeout(timer);
+        }
+      }
+
+      console.log('[FileDownload] File size:', (this.totalBytes / 1024 / 1024).toFixed(1), 'MB');
+
+      const chunkSize = this.options.chunkSize || DEFAULT_CHUNK_SIZE;
+
+      if (this.totalBytes > CHUNK_THRESHOLD) {
+        const ranges = [];
+        for (let start = 0; start < this.totalBytes; start += chunkSize) {
+          ranges.push({
+            start,
+            end: Math.min(start + chunkSize - 1, this.totalBytes - 1),
+            index: ranges.length
+          });
+        }
+        this.totalChunks = ranges.length;
+
+        const needed = ranges.filter(r => !this.skipChunks.has(r.index));
+        const skippedCount = ranges.length - needed.length;
+
+        for (const r of ranges) {
+          if (this.skipChunks.has(r.index)) {
+            this.downloadedBytes += (r.end - r.start + 1);
+          }
+        }
+
+        if (needed.length === 0) {
+          console.log('[FileDownload] All chunks already cached, nothing to download');
+          this.state = 'complete';
+          this._resolve(new Blob([], { type: this._contentType }));
+          return;
+        }
+
+        if (skippedCount > 0) {
+          console.log(`[FileDownload] Resuming: ${skippedCount} chunks cached, ${needed.length} to download`);
+        }
+
+        const isResume = skippedCount > 0;
+
+        if (isResume) {
+          const sorted = needed.sort((a, b) => a.index - b.index);
+          for (const r of sorted) {
+            const task = new DownloadTask(this.fileInfo, {
+              chunkIndex: r.index, rangeStart: r.start, rangeEnd: r.end
+            });
+            task._parentFile = this;
+            task._priority = PRIORITY.normal;
+            this.tasks.push(task);
+          }
+        } else {
+          for (const r of needed) {
+            const task = new DownloadTask(this.fileInfo, {
+              chunkIndex: r.index, rangeStart: r.start, rangeEnd: r.end
+            });
+            task._parentFile = this;
+            task._priority = (r.index === 0 || r.index === ranges.length - 1) ? PRIORITY.high : PRIORITY.normal;
+            this.tasks.push(task);
+          }
+        }
+
+        const highCount = this.tasks.filter(t => t._priority >= PRIORITY.high).length;
+        console.log(`[FileDownload] ${type}/${id}: ${this.tasks.length} chunks` +
+          (highCount > 0 ? ` (${highCount} priority)` : '') +
+          (isResume ? ' (resume)' : ''));
+
+      } else {
+        this.totalChunks = 1;
+        const task = new DownloadTask(this.fileInfo, {});
+        task._parentFile = this;
+        this.tasks.push(task);
+      }
+
+      queue.enqueueChunkTasks(this.tasks);
+      this.state = 'downloading';
+
+    } catch (error) {
+      console.error('[FileDownload] Prepare failed:', `${this.fileInfo.type}/${this.fileInfo.id}`, error);
+      this.state = 'failed';
+      this._reject(error);
+    }
+  }
+
+  async onTaskComplete(task) {
+    this.completedChunks++;
+    this.downloadedBytes += task.blob.size;
+
+    if (task.chunkIndex != null) {
+      this._chunkBlobs.set(task.chunkIndex, task.blob);
+    }
+
+    if (this.options.onProgress) {
+      this.options.onProgress(this.downloadedBytes, this.totalBytes);
+    }
+
+    // Fire progressive chunk callback
+    if (this.onChunkDownloaded && task.chunkIndex != null) {
+      try {
+        await this.onChunkDownloaded(task.chunkIndex, task.blob, this.totalChunks);
+      } catch (e) {
+        console.warn('[FileDownload] onChunkDownloaded callback error:', e);
+      }
+    }
+
+    if (this.completedChunks === this.tasks.length && this.state !== 'complete') {
+      this.state = 'complete';
+      const { type, id } = this.fileInfo;
+
+      if (task.chunkIndex == null) {
+        console.log('[FileDownload] Complete:', `${type}/${id}`, `(${task.blob.size} bytes)`);
+        this._resolve(task.blob);
+      } else if (this.onChunkDownloaded) {
+        console.log('[FileDownload] Complete:', `${type}/${id}`, `(progressive, ${this.totalChunks} chunks)`);
+        this._resolve(new Blob([], { type: this._contentType }));
+      } else {
+        const ordered = [];
+        for (let i = 0; i < this.totalChunks; i++) {
+          const blob = this._chunkBlobs.get(i);
+          if (blob) ordered.push(blob);
+        }
+        const assembled = new Blob(ordered, { type: this._contentType });
+        console.log('[FileDownload] Complete:', `${type}/${id}`, `(${assembled.size} bytes, reassembled)`);
+        this._resolve(assembled);
+      }
+
+      this._chunkBlobs.clear();
+    }
+  }
+
+  onTaskFailed(task, error) {
+    if (this.state === 'complete' || this.state === 'failed') return;
+
+    // URL expiration is transient — drop this task, don't fail the file.
+    // Already-downloaded chunks are safe in cache. Next collection cycle
+    // provides fresh URLs and the resume logic (skipChunks) fills the gaps.
+    if (error.message?.includes('URL expired')) {
+      const chunkLabel = task.chunkIndex != null ? ` chunk ${task.chunkIndex}` : '';
+      console.warn(`[FileDownload] URL expired, dropping${chunkLabel}:`, `${this.fileInfo.type}/${this.fileInfo.id}`);
+      this.tasks = this.tasks.filter(t => t !== task);
+      // If all remaining tasks completed, resolve as partial
+      if (this.tasks.length === 0 || this.completedChunks >= this.tasks.length) {
+        this.state = 'complete';
+        this._urlExpired = true;
+        this._resolve(new Blob([], { type: this._contentType }));
+      }
+      return;
+    }
+
+    console.error('[FileDownload] Failed:', `${this.fileInfo.type}/${this.fileInfo.id}`, error);
+    this.state = 'failed';
+    this._reject(error);
+  }
+}
+
+/**
+ * LayoutTaskBuilder — Smart builder that produces a sorted, barrier-embedded
+ * task list for a single layout.
+ *
+ * Usage:
+ *   const builder = new LayoutTaskBuilder(queue);
+ *   builder.addFile(fileInfo);
+ *   const orderedTasks = await builder.build();
+ *   queue.enqueueOrderedTasks(orderedTasks);
+ *
+ * The builder runs HEAD requests (throttled), collects the resulting
+ * DownloadTasks, sorts them optimally, and embeds BARRIERs between
+ * critical chunks (chunk-0, chunk-last) and bulk chunks.
+ *
+ * Duck-typing: implements enqueueChunkTasks() so FileDownload.prepare()
+ * works unchanged — it just collects tasks instead of processing them.
+ */
+export class LayoutTaskBuilder {
+  constructor(queue) {
+    this.queue = queue;           // Main DownloadQueue (for dedup via active map)
+    this._filesToPrepare = [];    // FileDownloads needing HEAD requests
+    this._tasks = [];             // Collected DownloadTasks (from prepare callbacks)
+    this._maxPreparing = 2;       // HEAD request throttle
+  }
+
+  /**
+   * Register a file. Uses queue.active for dedup/URL refresh.
+   * Does NOT trigger prepare — that happens in build().
+   */
+  addFile(fileInfo) {
+    const key = DownloadQueue.stableKey(fileInfo);
+
+    if (this.queue.active.has(key)) {
+      const existing = this.queue.active.get(key);
+      // URL refresh (same logic as queue.enqueue)
+      if (fileInfo.path && fileInfo.path !== existing.fileInfo.path) {
+        const oldExpiry = getUrlExpiry(existing.fileInfo.path);
+        const newExpiry = getUrlExpiry(fileInfo.path);
+        if (newExpiry > oldExpiry) {
+          existing.fileInfo.path = fileInfo.path;
+        }
+      }
+      return existing;
+    }
+
+    const file = new FileDownload(fileInfo, {
+      chunkSize: this.queue.chunkSize,
+      calculateMD5: this.queue.calculateMD5,
+      onProgress: this.queue.onProgress
+    });
+
+    this.queue.active.set(key, file);
+    this._filesToPrepare.push(file);
+    return file;
+  }
+
+  /**
+   * Duck-type interface for FileDownload.prepare().
+   * Collects tasks instead of processing them.
+   */
+  enqueueChunkTasks(tasks) {
+    this._tasks.push(...tasks);
+  }
+
+  /**
+   * Run all HEAD requests (throttled) and return sorted tasks with barriers.
+   */
+  async build() {
+    await this._prepareAll();
+    return this._sortWithBarriers();
+  }
+
+  async _prepareAll() {
+    await new Promise((resolve) => {
+      let running = 0;
+      let idx = 0;
+      const next = () => {
+        while (running < this._maxPreparing && idx < this._filesToPrepare.length) {
+          const file = this._filesToPrepare[idx++];
+          running++;
+          file.prepare(this).finally(() => {
+            running--;
+            if (idx >= this._filesToPrepare.length && running === 0) {
+              resolve();
+            } else {
+              next();
+            }
+          });
+        }
+      };
+      if (this._filesToPrepare.length === 0) resolve();
+      else next();
+    });
+  }
+
+  _sortWithBarriers() {
+    const nonChunked = [];
+    const chunk0s = [];
+    const chunkLasts = [];
+    const remaining = [];
+
+    for (const t of this._tasks) {
+      if (t.chunkIndex == null) {
+        nonChunked.push(t);
+      } else if (t.chunkIndex === 0) {
+        chunk0s.push(t);
+      } else {
+        const total = t._parentFile?.totalChunks || 0;
+        if (total > 1 && t.chunkIndex === total - 1) {
+          chunkLasts.push(t);
+        } else {
+          remaining.push(t);
+        }
+      }
+    }
+
+    nonChunked.sort((a, b) => (a._parentFile?.totalBytes || 0) - (b._parentFile?.totalBytes || 0));
+    remaining.sort((a, b) => a.chunkIndex - b.chunkIndex);
+
+    // Build: small files + critical chunks → BARRIER → bulk chunks
+    const result = [...nonChunked, ...chunk0s, ...chunkLasts];
+    if (remaining.length > 0) {
+      result.push(BARRIER, ...remaining);
+    }
+    return result;
+  }
+}
+
+/**
+ * DownloadQueue - Flat queue with per-file and global concurrency limits
+ *
+ * Global concurrency limit (e.g., 6) controls total HTTP connections.
+ * Per-file chunk limit (e.g., 2) prevents one large file from hogging all
+ * connections, ensuring bandwidth per chunk is high and chunk 0 arrives fast.
+ * HEAD requests are throttled to avoid flooding browser connection pool.
  */
 export class DownloadQueue {
   constructor(options = {}) {
     this.concurrency = options.concurrency || DEFAULT_CONCURRENCY;
     this.chunkSize = options.chunkSize || DEFAULT_CHUNK_SIZE;
-    this.chunksPerFile = options.chunksPerFile || DEFAULT_CHUNKS_PER_FILE;
-    this.calculateMD5 = options.calculateMD5; // Optional MD5 calculator function
-    this.onProgress = options.onProgress; // Optional progress callback
+    this.maxChunksPerFile = options.chunksPerFile || DEFAULT_MAX_CHUNKS_PER_FILE;
+    this.calculateMD5 = options.calculateMD5;
+    this.onProgress = options.onProgress;
 
-    this.queue = [];
-    this.active = new Map(); // url -> DownloadTask
+    this.queue = [];          // DownloadTask[] — flat queue of chunk/file tasks
+    this.active = new Map();  // stableKey → FileDownload
+    this._activeTasks = [];   // DownloadTask[] — currently in-flight tasks
     this.running = 0;
+
+    // HEAD request throttling: prevents prepare() from flooding browser connections
+    this._prepareQueue = [];
+    this._preparingCount = 0;
+    this._maxPreparing = 2; // Max concurrent HEAD requests
+
+    // When paused, processQueue() is a no-op (used during barrier setup)
+    this.paused = false;
   }
 
-  /**
-   * Add file to download queue
-   * Returns existing task if already downloading
-   */
-  enqueue(fileInfo) {
-    const { path } = fileInfo;
+  static stableKey(fileInfo) {
+    return `${fileInfo.type}/${fileInfo.id}`;
+  }
 
-    // If already downloading, return existing task
-    if (this.active.has(path)) {
-      console.log('[DownloadQueue] File already downloading:', path);
-      return this.active.get(path);
+  enqueue(fileInfo) {
+    const key = DownloadQueue.stableKey(fileInfo);
+
+    if (this.active.has(key)) {
+      const existing = this.active.get(key);
+      if (fileInfo.path && fileInfo.path !== existing.fileInfo.path) {
+        const oldExpiry = getUrlExpiry(existing.fileInfo.path);
+        const newExpiry = getUrlExpiry(fileInfo.path);
+        if (newExpiry > oldExpiry) {
+          console.log('[DownloadQueue] Refreshing URL for', key);
+          existing.fileInfo.path = fileInfo.path;
+        }
+      }
+      return existing;
     }
 
-    // Create new download task
-    const task = new DownloadTask(fileInfo, {
+    const file = new FileDownload(fileInfo, {
       chunkSize: this.chunkSize,
-      chunksPerFile: this.chunksPerFile,
       calculateMD5: this.calculateMD5,
       onProgress: this.onProgress
     });
 
-    this.active.set(path, task);
-    this.queue.push(task);
+    this.active.set(key, file);
+    console.log('[DownloadQueue] Enqueued:', key);
 
-    console.log('[DownloadQueue] Enqueued:', path, `(${this.queue.length} pending, ${this.running} active)`);
+    // Throttled prepare: HEAD requests are limited to avoid flooding connections
+    this._schedulePrepare(file);
 
-    // Start download if capacity available
+    return file;
+  }
+
+  /**
+   * Schedule a FileDownload's prepare() with throttling.
+   * Only N HEAD requests run concurrently to preserve connections for data transfers.
+   */
+  _schedulePrepare(file) {
+    this._prepareQueue.push(file);
+    this._processPrepareQueue();
+  }
+
+  _processPrepareQueue() {
+    while (this._preparingCount < this._maxPreparing && this._prepareQueue.length > 0) {
+      const file = this._prepareQueue.shift();
+      this._preparingCount++;
+      file.prepare(this).finally(() => {
+        this._preparingCount--;
+        this._processPrepareQueue();
+      });
+    }
+  }
+
+  enqueueChunkTasks(tasks) {
+    for (const task of tasks) {
+      this.queue.push(task);
+    }
+    this._sortQueue();
+
+    console.log(`[DownloadQueue] ${tasks.length} tasks added (${this.queue.length} pending, ${this.running} active)`);
     this.processQueue();
-
-    return task;
   }
 
   /**
-   * Prioritize files for the current layout — reorder queue and hold other downloads.
-   * All prioritized files must complete (including all chunks) before others start.
-   * @param {Array<string|number>} fileIds - Media IDs to prioritize
+   * Enqueue a pre-ordered list of tasks (with optional BARRIER sentinels).
+   * Preserves insertion order — no sorting. Position = priority.
+   *
+   * Used by LayoutQueueBuilder to push the entire download queue in layout
+   * playback order with barriers separating critical chunks from bulk.
+   *
+   * @param {Array<DownloadTask|Symbol>} items - Tasks and BARRIERs in order
    */
-  prioritizeLayoutFiles(fileIds) {
-    const idSet = new Set(fileIds.map(String));
-    this._layoutHoldIds = idSet;
-
-    // Reorder queue: matching IDs first, rest after
-    const prioritized = [];
-    const rest = [];
-    for (const task of this.queue) {
-      if (idSet.has(String(task.fileInfo.id))) {
-        prioritized.push(task);
+  enqueueOrderedTasks(items) {
+    let taskCount = 0;
+    let barrierCount = 0;
+    for (const item of items) {
+      if (item === BARRIER) {
+        this.queue.push(BARRIER);
+        barrierCount++;
       } else {
-        rest.push(task);
+        this.queue.push(item);
+        taskCount++;
       }
     }
-    this.queue = [...prioritized, ...rest];
-    console.log('[DownloadQueue] Layout hold:', idSet.size, 'files prioritized,', rest.length, 'held back');
+
+    console.log(`[DownloadQueue] Ordered queue: ${taskCount} tasks, ${barrierCount} barriers (${this.queue.length} pending, ${this.running} active)`);
+    this.processQueue();
+  }
+
+  /** Sort queue by priority (highest first), stable within same priority. */
+  _sortQueue() {
+    this.queue.sort((a, b) => b._priority - a._priority);
+  }
+
+  prioritize(fileType, fileId) {
+    const key = `${fileType}/${fileId}`;
+    const file = this.active.get(key);
+
+    if (!file) {
+      console.log('[DownloadQueue] Not found:', key);
+      return false;
+    }
+
+    let boosted = 0;
+    for (const t of this.queue) {
+      if (t._parentFile === file && t._priority < PRIORITY.high) {
+        t._priority = PRIORITY.high;
+        boosted++;
+      }
+    }
+    this._sortQueue();
+
+    console.log('[DownloadQueue] Prioritized:', key, `(${boosted} tasks boosted)`);
+    return true;
   }
 
   /**
-   * Process queue - start downloads up to concurrency limit.
-   * When layout hold is active, only starts held files until all complete.
+   * Boost priority for files needed by the current/next layout.
+   * @param {Array} fileIds - Media IDs needed by the layout
+   * @param {number} priority - Priority level (default: PRIORITY.high)
    */
-  async processQueue() {
-    // Layout hold: only start held files while any are still pending/active
-    if (this._layoutHoldIds?.size > 0) {
-      const hasHeldInQueue = this.queue.some(t => this._layoutHoldIds.has(String(t.fileInfo.id)));
-      const hasHeldActive = [...this.active.values()].some(t =>
-        this._layoutHoldIds.has(String(t.fileInfo.id))
-      );
+  prioritizeLayoutFiles(fileIds, priority = PRIORITY.high) {
+    const idSet = new Set(fileIds.map(String));
 
-      if (hasHeldInQueue || hasHeldActive) {
-        // Only start held files
-        while (this.running < this.concurrency && this.queue.length > 0) {
-          const idx = this.queue.findIndex(t => this._layoutHoldIds.has(String(t.fileInfo.id)));
-          if (idx === -1) break;
-          const task = this.queue.splice(idx, 1)[0];
-          this._startTask(task);
-        }
-        return;
+    let boosted = 0;
+    for (const t of this.queue) {
+      if (idSet.has(String(t._parentFile?.fileInfo.id)) && t._priority < priority) {
+        t._priority = priority;
+        boosted++;
       }
-      // All held files done — clear hold
-      console.log('[DownloadQueue] Layout hold cleared, resuming normal downloads');
-      this._layoutHoldIds = null;
+    }
+    for (const t of this._activeTasks) {
+      if (idSet.has(String(t._parentFile?.fileInfo.id)) && t._priority < priority) {
+        t._priority = priority;
+      }
+    }
+    this._sortQueue();
+
+    console.log('[DownloadQueue] Layout files prioritized:', idSet.size, 'files,', boosted, 'tasks boosted to', priority);
+  }
+
+  /**
+   * Emergency priority for a specific streaming chunk.
+   * Called by the Service Worker when a video is stalled waiting for chunk N.
+   * Sets urgent priority → queue re-sorts → processQueue() limits concurrency.
+   */
+  urgentChunk(fileType, fileId, chunkIndex) {
+    const key = `${fileType}/${fileId}`;
+    const file = this.active.get(key);
+
+    if (!file) {
+      console.log('[DownloadQueue] urgentChunk: file not active:', key, 'chunk', chunkIndex);
+      return false;
     }
 
-    // Normal FIFO processing
-    while (this.running < this.concurrency && this.queue.length > 0) {
-      const task = this.queue.shift();
-      this._startTask(task);
+    // Already in-flight — nothing to do
+    const isActive = this._activeTasks.some(
+      t => t._parentFile === file && t.chunkIndex === chunkIndex && t.state === 'downloading'
+    );
+    if (isActive) {
+      // Mark the in-flight task as urgent so processQueue() limits concurrency
+      const activeTask = this._activeTasks.find(
+        t => t._parentFile === file && t.chunkIndex === chunkIndex
+      );
+      if (activeTask && activeTask._priority < PRIORITY.urgent) {
+        activeTask._priority = PRIORITY.urgent;
+        console.log(`[DownloadQueue] URGENT: ${key} chunk ${chunkIndex} (already in-flight, limiting slots)`);
+        // Don't call processQueue() — can't stop in-flight tasks, but next
+        // processQueue() call (when any task completes) will see hasUrgent
+        // and limit new starts to URGENT_CONCURRENCY.
+        return true;
+      }
+      console.log('[DownloadQueue] urgentChunk: already urgent:', key, 'chunk', chunkIndex);
+      return false;
+    }
+
+    // Find task in queue (may be past a barrier)
+    const idx = this.queue.findIndex(
+      t => t !== BARRIER && t._parentFile === file && t.chunkIndex === chunkIndex
+    );
+
+    if (idx === -1) {
+      console.log('[DownloadQueue] urgentChunk: chunk not in queue:', key, 'chunk', chunkIndex);
+      return false;
+    }
+
+    const task = this.queue.splice(idx, 1)[0];
+    task._priority = PRIORITY.urgent;
+    // Move to front of queue (past any barriers)
+    this.queue.unshift(task);
+
+    console.log(`[DownloadQueue] URGENT: ${key} chunk ${chunkIndex} (moved to front)`);
+    this.processQueue();
+    return true;
+  }
+
+  /**
+   * Process queue — barrier-aware loop.
+   *
+   * Supports two modes:
+   * 1. Priority-sorted (legacy): queue sorted by priority, urgent reduces concurrency
+   * 2. Barrier-ordered: queue contains BARRIER sentinels that act as hard gates
+   *
+   * BARRIER behavior:
+   * - When processQueue() hits a BARRIER and running > 0 → STOP (slots stay empty)
+   * - When running === 0 → remove barrier, continue with tasks below
+   * - Tasks are never reordered past a BARRIER (except urgentChunk which bypasses)
+   *
+   * Urgent mode: when any task has PRIORITY.urgent, concurrency drops to
+   * URGENT_CONCURRENCY so the stalled chunk gets maximum bandwidth.
+   */
+  processQueue() {
+    if (this.paused) return;
+
+    // Determine effective concurrency and minimum priority to start
+    const hasUrgent = this.queue.some(t => t !== BARRIER && t._priority >= PRIORITY.urgent) ||
+      this._activeTasks?.some(t => t._priority >= PRIORITY.urgent && t.state === 'downloading');
+    const maxSlots = hasUrgent ? URGENT_CONCURRENCY : this.concurrency;
+    const minPriority = hasUrgent ? PRIORITY.urgent : 0; // Urgent = only urgent tasks run
+
+    // Fill slots from front of queue
+    while (this.running < maxSlots && this.queue.length > 0) {
+      const next = this.queue[0];
+
+      // Hit a BARRIER — hard gate
+      if (next === BARRIER) {
+        if (this.running > 0) {
+          break; // In-flight tasks still running — slots stay empty
+        }
+        // All above-barrier tasks done → raise barrier, continue
+        this.queue.shift();
+        continue;
+      }
+
+      // Per-file limit: skip to next eligible task (but don't cross barrier)
+      if (next._priority < minPriority || !this._canStartTask(next)) {
+        let found = false;
+        for (let i = 1; i < this.queue.length; i++) {
+          if (this.queue[i] === BARRIER) break; // Don't look past barrier
+          const task = this.queue[i];
+          if (task._priority >= minPriority && this._canStartTask(task)) {
+            this.queue.splice(i, 1);
+            this._startTask(task);
+            found = true;
+            break;
+          }
+        }
+        if (!found) break;
+        continue;
+      }
+
+      this.queue.shift();
+      this._startTask(next);
     }
 
     if (this.queue.length === 0 && this.running === 0) {
@@ -346,87 +814,88 @@ export class DownloadQueue {
   }
 
   /**
-   * Start a download task (extracted to avoid duplication between hold and normal paths)
+   * Per-file concurrency check. Priority sorting decides order,
+   * this just prevents one file from hogging all connections.
    */
+  _canStartTask(task) {
+    return task._parentFile._runningCount < this.maxChunksPerFile;
+  }
+
   _startTask(task) {
     this.running++;
-    console.log('[DownloadQueue] Starting:', task.fileInfo.path, `(${this.running}/${this.concurrency} active)`);
+    task._parentFile._runningCount++;
+    this._activeTasks.push(task);
+    const key = `${task.fileInfo.type}/${task.fileInfo.id}`;
+    const chunkLabel = task.chunkIndex != null ? ` chunk ${task.chunkIndex}` : '';
+    console.log(`[DownloadQueue] Starting: ${key}${chunkLabel} (${this.running}/${this.concurrency} active)`);
 
     task.start()
-      .catch(() => {}) // Suppress — error handled internally via waiters
-      .finally(() => {
+      .then(() => {
         this.running--;
-        this.active.delete(task.fileInfo.path);
-        console.log('[DownloadQueue] Complete:', task.fileInfo.path, `(${this.running} active, ${this.queue.length} pending)`);
+        task._parentFile._runningCount--;
+        this._activeTasks = this._activeTasks.filter(t => t !== task);
+        console.log(`[DownloadQueue] Fetched: ${key}${chunkLabel} (${this.running} active, ${this.queue.length} pending)`);
         this.processQueue();
+        return task._parentFile.onTaskComplete(task);
+      })
+      .catch(err => {
+        this.running--;
+        task._parentFile._runningCount--;
+        this._activeTasks = this._activeTasks.filter(t => t !== task);
+        this.processQueue();
+        task._parentFile.onTaskFailed(task, err);
       });
   }
 
   /**
-   * Move a file to the front of the queue (if still queued, not yet started)
-   * @param {string} fileType - 'media' or 'layout'
-   * @param {string} fileId - File ID
-   * @returns {boolean} true if file was found (queued or active)
+   * Wait for all queued prepare (HEAD) operations to finish.
+   * Returns when the prepare queue is drained and all FileDownloads have
+   * either created their tasks or failed.
    */
-  prioritize(fileType, fileId) {
-    const idx = this.queue.findIndex(task =>
-      task.fileInfo.type === fileType && String(task.fileInfo.id) === String(fileId)
-    );
-
-    if (idx > 0) {
-      const [task] = this.queue.splice(idx, 1);
-      this.queue.unshift(task);
-      console.log('[DownloadQueue] Prioritized:', `${fileType}/${fileId}`, '(moved to front of queue)');
-      return true;
-    }
-
-    if (idx === 0) {
-      console.log('[DownloadQueue] Already at front:', `${fileType}/${fileId}`);
-      return true;
-    }
-
-    // Check if already downloading
-    for (const [, task] of this.active) {
-      if (task.fileInfo.type === fileType && String(task.fileInfo.id) === String(fileId)) {
-        console.log('[DownloadQueue] Already downloading:', `${fileType}/${fileId}`);
-        return true;
-      }
-    }
-
-    console.log('[DownloadQueue] Not found in queue:', `${fileType}/${fileId}`);
-    return false;
+  awaitAllPrepared() {
+    return new Promise((resolve) => {
+      const check = () => {
+        if (this._preparingCount === 0 && this._prepareQueue.length === 0) {
+          resolve();
+        } else {
+          setTimeout(check, 50);
+        }
+      };
+      check();
+    });
   }
 
-  /**
-   * Get task by URL (returns null if not downloading)
-   */
-  getTask(url) {
-    return this.active.get(url) || null;
+  removeCompleted(key) {
+    const file = this.active.get(key);
+    if (file && (file.state === 'complete' || file.state === 'failed')) {
+      this.queue = this.queue.filter(t => t === BARRIER || t._parentFile !== file);
+      this.active.delete(key);
+    }
   }
 
-  /**
-   * Get progress for all active downloads
-   */
+  getTask(key) {
+    return this.active.get(key) || null;
+  }
+
   getProgress() {
     const progress = {};
-    for (const [url, task] of this.active.entries()) {
-      progress[url] = {
-        downloaded: task.downloadedBytes,
-        total: task.totalBytes,
-        percent: task.totalBytes > 0 ? (task.downloadedBytes / task.totalBytes * 100).toFixed(1) : 0,
-        state: task.state
+    for (const [key, file] of this.active.entries()) {
+      progress[key] = {
+        downloaded: file.downloadedBytes,
+        total: file.totalBytes,
+        percent: file.totalBytes > 0 ? (file.downloadedBytes / file.totalBytes * 100).toFixed(1) : 0,
+        state: file.state
       };
     }
     return progress;
   }
 
-  /**
-   * Cancel all downloads
-   */
   clear() {
     this.queue = [];
     this.active.clear();
     this.running = 0;
+    this._prepareQueue = [];
+    this._preparingCount = 0;
   }
 }
 
@@ -438,40 +907,37 @@ export class DownloadManager {
     this.queue = new DownloadQueue(options);
   }
 
-  /**
-   * Enqueue file for download
-   * @param {Object} fileInfo - { id, type, path, md5 }
-   * @returns {DownloadTask}
-   */
   enqueue(fileInfo) {
     return this.queue.enqueue(fileInfo);
   }
 
   /**
-   * Get download task by URL
+   * Enqueue a file for layout-grouped downloading.
+   * Layout grouping is now handled externally by LayoutTaskBuilder.
+   * @param {Object} fileInfo - File info
+   * @returns {FileDownload}
    */
-  getTask(url) {
-    return this.queue.getTask(url);
+  enqueueForLayout(fileInfo) {
+    return this.queue.enqueue(fileInfo);
   }
 
-  /**
-   * Get progress for all downloads
-   */
+  getTask(key) {
+    return this.queue.getTask(key);
+  }
+
   getProgress() {
     return this.queue.getProgress();
   }
 
-  /**
-   * Prioritize layout files — reorder queue and hold other downloads
-   */
-  prioritizeLayoutFiles(fileIds) {
-    this.queue.prioritizeLayoutFiles(fileIds);
+  prioritizeLayoutFiles(fileIds, priority) {
+    this.queue.prioritizeLayoutFiles(fileIds, priority);
     this.queue.processQueue();
   }
 
-  /**
-   * Clear all downloads
-   */
+  urgentChunk(fileType, fileId, chunkIndex) {
+    return this.queue.urgentChunk(fileType, fileId, chunkIndex);
+  }
+
   clear() {
     this.queue.clear();
   }
