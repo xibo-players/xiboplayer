@@ -28,7 +28,8 @@ All packages are published to npm under the [`@xiboplayer`](https://www.npmjs.co
 - **Multi-display sync** — BroadcastChannel-based lead/follower synchronization for video walls
 - **Timeline prediction** — deterministic future schedule simulation for proactive content preloading
 - **Network resilience** — exponential backoff with jitter, CRC32-based skip optimization, ETag HTTP caching
-- **1020+ tests** across 27 test suites
+- **CORS proxy** — shared Express server for Electron and Chromium shells with XMDS, REST, and file download proxying plus PWA static serving
+- **970+ tests** across 28 test suites
 
 ## Packages
 
@@ -54,7 +55,7 @@ Install all packages at once:
 ```bash
 npm install @xiboplayer/core @xiboplayer/renderer @xiboplayer/schedule \
   @xiboplayer/xmds @xiboplayer/xmr @xiboplayer/cache @xiboplayer/stats \
-  @xiboplayer/settings @xiboplayer/utils
+  @xiboplayer/settings @xiboplayer/utils @xiboplayer/proxy
 ```
 
 Or install only what you need:
@@ -62,6 +63,7 @@ Or install only what you need:
 ```bash
 npm install @xiboplayer/xmds    # just the CMS SOAP client
 npm install @xiboplayer/cache   # just the offline cache
+npm install @xiboplayer/proxy   # CORS proxy + PWA server for shells
 ```
 
 ## Architecture
@@ -79,8 +81,9 @@ npm install @xiboplayer/cache   # just the offline cache
 │       @xiboplayer/xmds            @xiboplayer/xmr       │
 │   SOAP + REST ↔ CMS           WebSocket ↔ CMS push     │
 ├─────────────────────────────────────────────────────────┤
-│       @xiboplayer/utils          @xiboplayer/sync       │
-│  logger · events · fetch      multi-display video wall  │
+│  @xiboplayer/proxy     @xiboplayer/utils    @xibo/sync  │
+│  CORS proxy · PWA      logger · events     video wall   │
+│  static server         fetch · config      lead/follow  │
 └─────────────────────────────────────────────────────────┘
 ```
 
@@ -141,7 +144,7 @@ pnpm install
 ### Testing
 
 ```bash
-pnpm test              # run all tests (1020 tests across 27 suites)
+pnpm test              # run all tests (970+ tests across 28 suites)
 pnpm test:watch        # watch mode
 pnpm test:coverage     # with coverage report
 ```

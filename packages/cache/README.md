@@ -1,14 +1,16 @@
-# @xiboplayer/cache Documentation
+# @xiboplayer/cache
 
 **Offline caching and download management with parallel chunk downloads.**
 
 ## Overview
 
-The `@xiboplayer/cache` package provides:
+Manages media downloads and offline storage for Xibo players:
 
-- **CacheManager** - IndexedDB-based media storage
-- **CacheProxy** - Service Worker integration
-- **DownloadManager** - Parallel chunk downloads (4x faster)
+- **Parallel chunk downloads** — large files (100MB+) split into configurable chunks, downloaded concurrently
+- **Header+trailer first** — MP4 moov atom fetched first for instant playback start before full download
+- **MD5 verification** — integrity checking with CRC32-based skip optimization
+- **Download queue** — flat queue with barriers for layout-ordered downloading
+- **CacheProxy** — browser-side proxy that communicates with a Service Worker backend
 
 ## Installation
 
@@ -19,100 +21,30 @@ npm install @xiboplayer/cache
 ## Usage
 
 ```javascript
-import { CacheManager, DownloadManager } from '@xiboplayer/cache';
+import { CacheProxy } from '@xiboplayer/cache';
 
-// Initialize cache
-const cache = new CacheManager();
-await cache.initialize();
+const cache = new CacheProxy();
+await cache.init();
 
-// Download with parallel chunks
-const downloader = new DownloadManager(cache);
-await downloader.downloadFile(url, { chunkSize: 1024 * 1024 });
+// Request downloads (delegated to Service Worker)
+await cache.requestDownload({ layoutOrder, files });
 
-// Retrieve from cache
-const blob = await cache.get(url);
+// Check if a file is cached
+const isCached = await cache.has(fileId);
 ```
 
-## Features
+## Exports
 
-### Parallel Chunk Downloads
-
-Downloads large files in 4 concurrent chunks (configurable), achieving 2-4x speed improvement over sequential downloads.
-
-```javascript
-const CONCURRENT_CHUNKS = 4; // Adjust 2-6 based on network
-```
-
-### Cache Validation
-
-Automatically validates cached entries:
-- Content-Type verification
-- Size validation (> 100 bytes)
-- Corrupted entry detection
-
-### Blob URL Lifecycle
-
-Proper blob URL management prevents memory leaks:
-- Layout-scoped tracking
-- Automatic revocation on layout switch
-- Media URL cleanup
-
-## API Reference
-
-### CacheManager
-
-```javascript
-class CacheManager {
-  async initialize()
-  async get(key)
-  async set(key, blob)
-  async has(key)
-  async delete(key)
-  async clear()
-  async getSize()
-}
-```
-
-### DownloadManager
-
-```javascript
-class DownloadManager {
-  constructor(cacheManager, options)
-  async downloadFile(url, options)
-  async downloadBatch(urls)
-  getProgress(url)
-}
-```
-
-### CacheProxy
-
-```javascript
-class CacheProxy {
-  constructor(cacheManager)
-  register(serviceWorkerUrl)
-  unregister()
-  update()
-}
-```
-
-## Performance
-
-| Operation | Time |
-|-----------|------|
-| 1GB file download | 1-2 min (vs 5 min sequential) |
-| Cache lookup | <10ms |
-| Cache write | <50ms |
+| Export | Description |
+|--------|-------------|
+| `CacheProxy` | Browser-side proxy communicating with SW backend |
+| `DownloadManager` | Core download queue with barrier-based ordering |
 
 ## Dependencies
 
-- `@xiboplayer/utils` - Logger, EventEmitter
-
-## Related Packages
-
-- [@xiboplayer/core](../../core/docs/) - Player core
-- [@xiboplayer/sw](../../sw/docs/) - Service Worker toolkit
+- `@xiboplayer/utils` — logger, events
+- `spark-md5` — MD5 hashing for file verification
 
 ---
 
-**Package Version**: 1.0.0
-**Last Updated**: 2026-02-10
+**Part of the [XiboPlayer SDK](https://github.com/linuxnow/xiboplayer)**

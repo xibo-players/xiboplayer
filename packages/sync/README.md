@@ -1,0 +1,33 @@
+# @xiboplayer/sync
+
+**Multi-display synchronization for Xibo video walls.**
+
+## Overview
+
+BroadcastChannel-based lead/follower synchronization:
+
+- **Lead election** — automatic leader selection among browser tabs/windows
+- **Synchronized playback** — video start coordinated across displays
+- **Layout sync** — all displays transition to the same layout simultaneously
+
+Designed for video wall setups where multiple screens show synchronized content.
+
+## Installation
+
+```bash
+npm install @xiboplayer/sync
+```
+
+## Usage
+
+```javascript
+import { SyncManager } from '@xiboplayer/sync';
+
+const sync = new SyncManager({ displayId: 'screen-1' });
+sync.on('layout-sync', ({ layoutId }) => renderer.show(layoutId));
+sync.init();
+```
+
+---
+
+**Part of the [XiboPlayer SDK](https://github.com/linuxnow/xiboplayer)**

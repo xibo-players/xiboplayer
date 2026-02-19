@@ -1,16 +1,17 @@
-# @xiboplayer/schedule Documentation
+# @xiboplayer/schedule
 
-**Campaign scheduling, dayparting, and priority logic.**
+**Campaign scheduling with dayparting, interrupts, overlays, and timeline prediction.**
 
 ## Overview
 
-The `@xiboplayer/schedule` package provides:
+Complete scheduling solution for Xibo digital signage:
 
-- **Campaign scheduler** - Multi-campaign priority handling
-- **Dayparting** - Time-based scheduling
-- **Geo-scheduling** - Location-based campaigns
-- **Interrupt campaigns** - High-priority content
-- **Default fallback** - Graceful degradation
+- **Campaign scheduling** — priority-based campaign rotation with configurable play counts
+- **Dayparting** — weekly time slots with midnight-crossing support
+- **Interrupts** — percentage-based share-of-voice scheduling with even interleaving across the hour
+- **Overlays** — multiple simultaneous overlay layouts with independent scheduling and priority
+- **Geo-fencing** — location-based schedule filtering with criteria evaluation
+- **Timeline prediction** — deterministic future schedule simulation for proactive content preloading
 
 ## Installation
 
@@ -21,82 +22,19 @@ npm install @xiboplayer/schedule
 ## Usage
 
 ```javascript
-import { Scheduler } from '@xiboplayer/schedule';
+import { Schedule } from '@xiboplayer/schedule';
 
-const scheduler = new Scheduler({
-  campaigns: campaignData,
-  timezone: 'America/New_York'
-});
+const schedule = new Schedule();
+schedule.update(scheduleXml);
 
-// Get current layout
-const layout = scheduler.getCurrentLayout();
-
-// Check next scheduled event
-const nextEvent = scheduler.getNextEvent();
+const currentLayouts = schedule.getCurrentLayouts();
+const timeline = schedule.getTimeline(now, now + 3600000); // next hour
 ```
-
-## Features
-
-### Campaign Priority
-
-Campaigns ordered by priority (1 = highest):
-1. Interrupt campaigns (override all)
-2. Normal campaigns (scheduled)
-3. Default layout (fallback)
-
-### Dayparting
-
-Time-based scheduling:
-```javascript
-{
-  dayOfWeek: [1, 2, 3, 4, 5], // Mon-Fri
-  startTime: '08:00',
-  endTime: '18:00'
-}
-```
-
-### Geo-Scheduling
-
-Location-based content:
-```javascript
-{
-  geofence: {
-    latitude: 40.7128,
-    longitude: -74.0060,
-    radius: 1000 // meters
-  }
-}
-```
-
-## API Reference
-
-### Scheduler
-
-```javascript
-class Scheduler {
-  constructor(options)
-  getCurrentLayout()
-  getNextEvent()
-  setLocation(lat, lon)
-  on(event, callback)
-}
-```
-
-### Events
-
-- `schedule:change` - Active schedule changed
-- `campaign:start` - Campaign started
-- `campaign:end` - Campaign ended
 
 ## Dependencies
 
-- `@xiboplayer/utils` - Logger, EventEmitter
-
-## Related Packages
-
-- [@xiboplayer/core](../../core/docs/) - Player orchestration
+- `@xiboplayer/utils` — logger, events
 
 ---
 
-**Package Version**: 1.0.0
-**Last Updated**: 2026-02-10
+**Part of the [XiboPlayer SDK](https://github.com/linuxnow/xiboplayer)**

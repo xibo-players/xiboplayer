@@ -1,16 +1,15 @@
-# @xiboplayer/xmds Documentation
+# @xiboplayer/xmds
 
-**XMDS (XML-based Media Distribution Service) SOAP client.**
+**XMDS SOAP + REST client for Xibo CMS communication.**
 
 ## Overview
 
-SOAP client for Xibo CMS communication:
+Dual-transport client supporting both Xibo communication protocols:
 
-- Display registration
-- Content synchronization
-- File downloads
-- Proof of play submission
-- Log reporting
+- **XMDS SOAP** (v3-v7) — standard Xibo player protocol with XML encoding
+- **REST API** — lighter JSON transport (~30% smaller payloads) with ETag caching
+
+Both transports expose the same API. The REST client is preferred when available.
 
 ## Installation
 
@@ -21,40 +20,37 @@ npm install @xiboplayer/xmds
 ## Usage
 
 ```javascript
-import { XMDSClient } from '@xiboplayer/xmds';
+import { RestClient } from '@xiboplayer/xmds';
 
-const client = new XMDSClient({
-  cmsUrl: 'https://cms.example.com',
-  serverKey: 'abc123',
-  hardwareKey: 'def456'
+const client = new RestClient({
+  cmsUrl: 'https://your-cms.example.com',
+  serverKey: 'your-key',
+  hardwareKey: 'display-id',
 });
 
-// Register display
-await client.registerDisplay();
-
-// Get required files
+const result = await client.registerDisplay();
 const files = await client.requiredFiles();
-
-// Download file
-const blob = await client.getFile(fileId, fileType);
+const schedule = await client.schedule();
 ```
 
-## SOAP Methods
+## Methods
 
-- `RegisterDisplay` - Register/verify display
-- `RequiredFiles` - Get content to download
-- `GetFile` - Download media file
-- `SubmitStats` - Send proof of play
-- `SubmitLog` - Report errors
+| Method | Description |
+|--------|-------------|
+| `registerDisplay()` | Register/authorize the display with the CMS |
+| `requiredFiles()` | Get list of required media files and layouts |
+| `schedule()` | Get the current schedule XML |
+| `getResource(regionId, mediaId)` | Get rendered widget HTML |
+| `notifyStatus(status)` | Report display status to CMS |
+| `mediaInventory(inventory)` | Report cached media inventory |
+| `submitStats(stats)` | Submit proof of play statistics |
+| `submitScreenShot(base64)` | Upload a screenshot to the CMS |
+| `submitLog(logs)` | Submit display logs |
 
 ## Dependencies
 
-- `@xiboplayer/utils` - Logger
-
-## Related Packages
-
-- [@xiboplayer/core](../../core/docs/) - Player core
+- `@xiboplayer/utils` — logger, events, fetchWithRetry
 
 ---
 
-**Package Version**: 1.0.0
+**Part of the [XiboPlayer SDK](https://github.com/linuxnow/xiboplayer)**

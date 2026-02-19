@@ -1,15 +1,16 @@
-# @xiboplayer/utils Documentation
+# @xiboplayer/utils
 
-**Shared utilities for all Xibo Player packages.**
+**Shared utilities for all XiboPlayer SDK packages.**
 
 ## Overview
 
-Common utilities:
+Foundation utilities used across the SDK:
 
-- **Logger** - Structured logging
-- **EventEmitter** - Pub/sub event bus
-- **Config** - Configuration management
-- **Helpers** - Utility functions
+- **Logger** — structured logging with configurable levels (`DEBUG`, `INFO`, `WARNING`, `ERROR`) and per-module tags
+- **EventEmitter** — lightweight pub/sub event system
+- **fetchWithRetry** — HTTP fetch with exponential backoff, jitter, and configurable retries
+- **CMS REST client** — JSON API client with ETag caching
+- **Config** — hardware key management and IndexedDB-backed configuration
 
 ## Installation
 
@@ -20,72 +21,27 @@ npm install @xiboplayer/utils
 ## Usage
 
 ```javascript
-import { createLogger, setLogLevel, getLogLevel, isDebug, applyCmsLogLevel, LOG_LEVELS } from '@xiboplayer/utils';
+import { createLogger, EventEmitter, fetchWithRetry } from '@xiboplayer/utils';
 
-// Create a logger (follows global level by default)
-const log = createLogger('MyModule');
-log.info('Message', { data: 123 });
+const log = createLogger('my-module');
+log.info('Starting...');
+log.debug('Detailed info');
 
-// Create a logger with fixed level (ignores global changes)
-const debugLog = createLogger('Debug', 'DEBUG');
-
-// EventEmitter
-import { EventEmitter } from '@xiboplayer/utils';
 const emitter = new EventEmitter();
 emitter.on('event', (data) => console.log(data));
-emitter.emit('event', { foo: 'bar' });
+
+const response = await fetchWithRetry(url, { retries: 3 });
 ```
 
-## API Reference
+## Exports
 
-### Logger
-
-#### Log Levels
-
-| Level | Value | Use case |
-|-------|-------|----------|
-| `DEBUG` | 0 | Development — verbose output for debugging |
-| `INFO` | 1 | Monitoring — routine operations |
-| `WARNING` | 2 | Production default — only unexpected conditions |
-| `ERROR` | 3 | Production — only failures |
-| `NONE` | 4 | Silent |
-
-#### Level Precedence (highest wins)
-
-1. **URL param** — `?logLevel=DEBUG`
-2. **localStorage** — `xibo_log_level` key
-3. **CMS setting** — via `applyCmsLogLevel()` after RegisterDisplay
-4. **Default** — `WARNING` (production-safe)
-
-For development, pass `?logLevel=DEBUG` in the URL. Electron's `--dev` flag does this automatically.
-
-#### Methods
-
-```javascript
-log.debug(message, ...args)   // Only when level ≤ DEBUG
-log.info(message, ...args)    // Only when level ≤ INFO
-log.warn(message, ...args)    // Only when level ≤ WARNING
-log.error(message, ...args)   // Only when level ≤ ERROR
-
-setLogLevel('DEBUG')          // Set globally + persist to localStorage
-getLogLevel()                 // Returns current level name
-isDebug()                     // Returns true if level is DEBUG
-applyCmsLogLevel('debug')     // Apply CMS level (skipped if local override exists)
-```
-
-### EventEmitter
-
-```javascript
-emitter.on(event, callback)
-emitter.once(event, callback)
-emitter.off(event, callback)
-emitter.emit(event, data)
-```
-
-## Dependencies
-
-None (zero dependencies)
+| Export | Description |
+|--------|-------------|
+| `createLogger(tag)` | Create a tagged logger instance |
+| `EventEmitter` | Pub/sub event emitter |
+| `fetchWithRetry(url, opts)` | Fetch with exponential backoff |
+| `Config` | Hardware key and IndexedDB config management |
 
 ---
 
-**Package Version**: 1.0.0
+**Part of the [XiboPlayer SDK](https://github.com/linuxnow/xiboplayer)**

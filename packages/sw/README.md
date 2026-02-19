@@ -1,15 +1,16 @@
-# @xiboplayer/sw Documentation
+# @xiboplayer/sw
 
 **Service Worker toolkit for chunk streaming and offline caching.**
 
 ## Overview
 
-Provides Service Worker utilities for:
+Provides Service Worker building blocks for Xibo players:
 
-- **Chunk streaming** - Progressive media download
-- **Cache-first strategy** - Fast offline access
-- **Background sync** - Resilient updates
-- **Update mechanism** - Seamless SW updates
+- **Chunk streaming** — progressive download with Range request support for large media files
+- **BlobCache** — in-memory cache for assembled chunks with LRU eviction
+- **Widget HTML serving** — intercepts GetResource requests and serves from cache
+- **Version-aware activation** — prevents re-activation of same SW version to preserve in-flight streams
+- **XLF-driven media resolution** — parses layout XLF to determine exactly which media each layout needs
 
 ## Installation
 
@@ -17,47 +18,15 @@ Provides Service Worker utilities for:
 npm install @xiboplayer/sw
 ```
 
-## Usage
-
-```javascript
-// In main thread
-import { registerServiceWorker } from '@xiboplayer/sw';
-
-await registerServiceWorker('/sw.js');
-
-// In service worker
-import { setupChunkStreaming } from '@xiboplayer/sw/worker';
-
-self.addEventListener('install', event => {
-  event.waitUntil(setupChunkStreaming());
-});
-```
-
 ## Features
 
-- HTTP 206 Partial Content support
-- Automatic range request handling
-- Cache API integration
-- Update notifications
+This package provides the core logic used by the PWA Service Worker (`sw-pwa.js`). The SW handles:
 
-## API Reference
-
-### registerServiceWorker(url)
-
-Registers Service Worker with update handling.
-
-### setupChunkStreaming()
-
-Configures SW for chunk-based streaming.
-
-## Dependencies
-
-None (zero dependencies)
-
-## Related Packages
-
-- [@xiboplayer/cache](../../cache/docs/) - Cache management
+1. **Static caching** — PWA shell files cached on install
+2. **Media caching** — layout media downloaded via parallel chunks
+3. **Range requests** — video seeking served from cached chunks
+4. **Download queue** — flat queue with barriers for layout-ordered downloads
 
 ---
 
-**Package Version**: 1.0.0
+**Part of the [XiboPlayer SDK](https://github.com/linuxnow/xiboplayer)**

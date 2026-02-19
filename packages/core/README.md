@@ -1,156 +1,55 @@
-# Xibo Player Core (PWA)
+# @xiboplayer/core
 
-Free, open-source Xibo-compatible digital signage player built as a Progressive Web App.
+**Player orchestration, collection cycle, and lifecycle management for Xibo digital signage.**
 
-## Features
+## Overview
 
-- ✅ Full XMDS v5 protocol support
-- ✅ HTTP file downloads with MD5 verification
-- ✅ XLF layout translation to HTML
-- ✅ Schedule management with priorities
-- ✅ Offline caching (Cache API + IndexedDB)
-- ✅ Service Worker for offline operation
-- ✅ XMR real-time push (WebSocket)
-- ✅ Chunked downloads with progressive streaming
-- ✅ Statistics and log submission
-- ✅ Screenshot capture and submission
-- ✅ Layout transitions (fade, fly)
-- ✅ Dynamic criteria (dayparting, display properties)
-- ✅ Multi-display sync (BroadcastChannel)
+The core package is the central coordinator of a Xibo player. It manages:
 
-## Quick Start
+- **Collection cycle** — periodic CMS polling for schedule, required files, and display settings
+- **Layout state machine** — controls which layout is playing, handles transitions and interrupts
+- **Offline mode** — falls back to cached schedule and media when the CMS is unreachable
+- **Event bus** — emits lifecycle events (`schedule-updated`, `download-request`, `layout-changed`, etc.)
+
+## Installation
 
 ```bash
-npm install
-npm run dev
+npm install @xiboplayer/core
 ```
 
-Open http://localhost:5173 in your browser.
-
-### CORS Issues
-
-If you get "NetworkError when attempting to fetch resource", the CMS is blocking cross-origin requests. Choose one solution:
-
-**Option 1: Enable CORS on CMS (recommended)**
-
-Add to your CMS web server config:
-
-Apache (`/web/.htaccess`):
-```apache
-Header set Access-Control-Allow-Origin "*"
-Header set Access-Control-Allow-Methods "POST, GET, OPTIONS"
-Header set Access-Control-Allow-Headers "Content-Type"
-```
-
-Nginx:
-```nginx
-add_header Access-Control-Allow-Origin *;
-```
-
-**Option 2: Use the CORS proxy (for testing)**
-
-```bash
-# Terminal 1
-CMS_URL=http://your-cms-address npm run proxy
-
-# Terminal 2
-npm run dev
-```
-
-Then in the player setup, use `http://localhost:8080` as the CMS address.
-
-### Configuration
-
-1. Enter your CMS address (e.g., `https://cms.example.com`)
-2. Enter your CMS key (found in CMS Settings → Display Settings)
-3. Enter a display name
-4. Click "Connect"
-5. Authorize the display in your CMS (Displays → Authorize)
-6. Refresh the setup page
-
-The player will start downloading content and displaying layouts.
-
-## How It Works
-
-### Collection Cycle (every 15 minutes)
-
-1. **RegisterDisplay** — Authenticate with CMS, get settings
-2. **RequiredFiles** — Get list of layouts and media to download
-3. **Download files** — HTTP downloads with MD5 verification
-4. **Translate layouts** — Convert XLF to HTML
-5. **Schedule** — Get layout schedule
-6. **Apply schedule** — Show correct layout based on time/priority
-7. **NotifyStatus** — Report current status to CMS
-
-### Schedule Check (every 1 minute)
-
-Checks if the current time matches a different scheduled layout and switches if needed.
-
-### Offline Operation
-
-- All layouts and media are cached locally (Cache API)
-- Service Worker intercepts requests and serves from cache
-- Player continues working even if CMS is unreachable
-
-## Architecture
-
-```
-src/
-├── config.js      — localStorage configuration
-├── xmds.js        — SOAP client (RegisterDisplay, RequiredFiles, Schedule, etc.)
-├── cache.js       — Cache API + IndexedDB manager
-├── schedule.js    — Schedule parser and priority logic
-├── layout.js      — XLF→HTML translator
-└── main.js        — Orchestrator (collection loop, schedule checks)
-```
-
-## Configuration Storage
-
-All configuration is stored in `localStorage`:
+## Usage
 
 ```javascript
-{
-  cmsAddress: 'https://cms.example.com',
-  cmsKey: 'your-cms-key',
-  displayName: 'My Display',
-  hardwareKey: 'auto-generated-uuid',
-  xmrChannel: 'auto-generated-uuid'
-}
+import { PlayerCore } from '@xiboplayer/core';
+
+const player = new PlayerCore({
+  transport,   // XMDS or REST transport from @xiboplayer/xmds
+  schedule,    // Schedule instance from @xiboplayer/schedule
+  renderer,    // Renderer instance from @xiboplayer/renderer
+  cache,       // CacheProxy instance from @xiboplayer/cache
+});
+
+player.on('download-request', ({ layoutOrder, files }) => {
+  // Handle media downloads in layout priority order
+});
+
+await player.init();
 ```
 
-## File Cache
+## Key Events
 
-Files are cached using two systems:
+| Event | Payload | Description |
+|-------|---------|-------------|
+| `schedule-updated` | `{ schedule }` | New schedule received from CMS |
+| `download-request` | `{ layoutOrder, files }` | Media files needed, ordered by layout priority |
+| `layout-changed` | `{ layoutId }` | Currently playing layout changed |
+| `collection-error` | `{ error }` | CMS communication failed |
+| `status` | `{ message }` | Human-readable status update |
 
-1. **Cache API** (`xibo-media-v1`) — Binary blobs (images, videos, layouts)
-2. **IndexedDB** (`xibo-player`) — File metadata (id, type, md5, size, cachedAt)
+## Dependencies
 
-Access cached files via `/cache/{type}/{id}` URLs.
+- `@xiboplayer/utils` — logger, events, config
 
-## Browser Compatibility
+---
 
-- Chrome/Edge: Full support
-- Firefox: Full support
-- Safari: Full support (iOS 11.3+)
-- Chrome on Android: Full support (can be wrapped in WebView)
-- webOS browser: Full support (can be packaged as IPK)
-
-## Development
-
-### Build for production
-
-```bash
-npm run build
-```
-
-Output: `dist/` directory with minified bundle.
-
-### Preview production build
-
-```bash
-npm run preview
-```
-
-## License
-
-AGPL-3.0-or-later
+**Part of the [XiboPlayer SDK](https://github.com/linuxnow/xiboplayer)**
