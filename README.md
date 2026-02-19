@@ -45,6 +45,7 @@ All packages are published to npm under the [`@xiboplayer`](https://www.npmjs.co
 | [`@xiboplayer/utils`](packages/utils) | [![npm](https://img.shields.io/npm/v/@xiboplayer/utils?style=flat-square)](https://www.npmjs.com/package/@xiboplayer/utils) | EventEmitter, logger, fetchWithRetry, CMS REST API client, config |
 | [`@xiboplayer/sw`](packages/sw) | [![npm](https://img.shields.io/npm/v/@xiboplayer/sw?style=flat-square)](https://www.npmjs.com/package/@xiboplayer/sw) | Service Worker — media caching, range requests, widget HTML serving |
 | [`@xiboplayer/sync`](packages/sync) | [![npm](https://img.shields.io/npm/v/@xiboplayer/sync?style=flat-square)](https://www.npmjs.com/package/@xiboplayer/sync) | Multi-display synchronization — lead/follower, synchronized video start |
+| [`@xiboplayer/proxy`](packages/proxy) | [![npm](https://img.shields.io/npm/v/@xiboplayer/proxy?style=flat-square)](https://www.npmjs.com/package/@xiboplayer/proxy) | CORS proxy + PWA server — shared by Electron and Chromium shells |
 
 ## Quick start
 
