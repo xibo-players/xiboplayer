@@ -1,0 +1,39 @@
+{
+  "name": "@xiboplayer/proxy",
+  "version": "0.2.0",
+  "description": "CORS proxy and static server for Xibo Player (serves PWA + proxies CMS)",
+  "type": "module",
+  "main": "./src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./cli": "./bin/cli.js"
+  },
+  "bin": {
+    "xiboplayer-proxy": "./bin/cli.js"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "express": "^5.2.1",
+    "cors": "^2.8.6"
+  },
+  "devDependencies": {
+    "vitest": "^2.0.0"
+  },
+  "keywords": [
+    "xibo",
+    "digital-signage",
+    "proxy",
+    "cors",
+    "express"
+  ],
+  "author": "Pau Aliagas <linuxnow@gmail.com>",
+  "license": "AGPL-3.0-or-later",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/xibo-players/xiboplayer.git",
+    "directory": "packages/proxy"
+  }
+}

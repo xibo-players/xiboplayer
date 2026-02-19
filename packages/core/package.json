@@ -12,7 +12,6 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "proxy": "node proxy.js",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:ui": "vitest --ui",
