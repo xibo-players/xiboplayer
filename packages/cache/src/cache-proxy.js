@@ -170,13 +170,18 @@ class ServiceWorkerBackend extends EventEmitter {
 
   /**
    * Request downloads from Service Worker (non-blocking)
-   * @param {Array} files - Array of { id, type, path, md5 }
+   * @param {Object|Array} payload - Either { layouts: [{ layoutId, mediaFiles }] } or flat Array of files
    * @returns {Promise<void>}
    */
-  async requestDownload(files) {
+  async requestDownload(payload) {
     if (!this.controller) {
       throw new Error('Service Worker not available');
     }
+
+    // Support both grouped and flat payload (backward compat)
+    const data = Array.isArray(payload)
+      ? { files: payload }
+      : payload;
 
     return new Promise((resolve, reject) => {
       const messageChannel = new MessageChannel();
@@ -195,7 +200,7 @@ class ServiceWorkerBackend extends EventEmitter {
       this.controller.postMessage(
         {
           type: 'DOWNLOAD_FILES',
-          data: { files }
+          data
         },
         [messageChannel.port2]
       );
