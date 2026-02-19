@@ -97,6 +97,8 @@ export class PlayerCore extends EventEmitter {
     this.collectionInterval = null;
     this.pendingLayouts = new Map(); // layoutId -> required media IDs
     this.offlineMode = false; // Track whether we're currently in offline mode
+    this._normalCollectInterval = null; // Saved interval to restore after offline retry
+    this._offlineRetrySeconds = 0; // Current backoff interval (0 = not retrying)
 
     // CRC32 checksums for skip optimization (avoid redundant XMDS calls)
     this._lastCheckRf = null;
@@ -189,11 +191,32 @@ export class PlayerCore extends EventEmitter {
       this.emit('offline-mode', true);
     }
 
+    // Exponential backoff: 30s → 60s → 120s → ... → capped at normal interval
+    // Recovers quickly from brief outages but doesn't hammer when truly offline
+    if (this.collectionInterval) {
+      if (!this._normalCollectInterval) {
+        this._normalCollectInterval = this._currentCollectInterval;
+        this._offlineRetrySeconds = 30;
+      } else {
+        // Double the backoff, cap at normal interval
+        this._offlineRetrySeconds = Math.min(
+          this._offlineRetrySeconds * 2,
+          this._normalCollectInterval
+        );
+      }
+      this._setCollectionTimer(this._offlineRetrySeconds);
+      log.info(`Offline: retry in ${this._offlineRetrySeconds}s`);
+    }
+
     // Load cached settings for collection interval (first run only)
     if (!this.collectionInterval) {
       const cachedReg = this._offlineCache.settings;
       if (cachedReg?.settings) {
         this.setupCollectionInterval(cachedReg.settings);
+        this._normalCollectInterval = this._currentCollectInterval;
+        this._offlineRetrySeconds = 30;
+        this._setCollectionTimer(this._offlineRetrySeconds);
+        log.info(`Offline: retry in ${this._offlineRetrySeconds}s`);
       }
     }
 
@@ -311,6 +334,13 @@ export class PlayerCore extends EventEmitter {
         this.offlineMode = false;
         console.log('[PlayerCore] Back online — resuming normal collection');
         this.emit('offline-mode', false);
+
+        // Restore normal collection interval (was shortened for offline retry)
+        if (this._normalCollectInterval) {
+          this._setCollectionTimer(this._normalCollectInterval);
+          this._normalCollectInterval = null;
+          this._offlineRetrySeconds = 0;
+        }
       }
 
       // Apply display settings if DisplaySettings manager is available
@@ -551,6 +581,7 @@ export class PlayerCore extends EventEmitter {
   /** Internal: (re)create the collection setInterval timer */
   _setCollectionTimer(seconds) {
     if (this.collectionInterval) clearInterval(this.collectionInterval);
+    this._currentCollectInterval = seconds;
     log.info(`Collection interval: ${seconds}s`);
     this.collectionInterval = setInterval(() => {
       log.debug('Running scheduled collection cycle...');
