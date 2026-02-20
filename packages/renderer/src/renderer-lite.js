@@ -1386,7 +1386,7 @@ export class RendererLite {
     video.preload = 'auto'; // Eagerly buffer - chunks are pre-warmed in SW BlobCache
     video.muted = widget.options.mute === '1';
     video.loop = false; // Don't use native loop - we handle it manually to avoid black frames
-    video.controls = isDebug(); // Show controls only in debug mode
+    video.controls = false; // Hidden by default — toggle with V key in PWA
     video.playsInline = true; // Prevent fullscreen on mobile
 
     // Handle video end - pause on last frame instead of showing black
