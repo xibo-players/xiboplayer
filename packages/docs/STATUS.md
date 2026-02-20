@@ -49,6 +49,8 @@
 - changeLayout, overlayLayout, revertToSchedule
 - purgeAll, commandAction, triggerWebhook
 - dataUpdate, criteriaUpdate, currentGeoLocation, rekey
+- RSA key pair generation and registration (Web Crypto API)
+- Key rotation via rekey command
 - Exponential backoff reconnection (10 attempts)
 
 ### Interactive Control
@@ -105,7 +107,6 @@
 
 ### Low Impact (Rarely Used)
 - Drawer regions (XLR-specific UI feature)
-- RSA key pair for XMR encryption (plain WebSocket works)
 - Geo-fencing enforcement (parsed but not filtered)
 - Criteria enforcement (implemented via evaluateCriteria)
 - Multi-display sync events (very rare use case)

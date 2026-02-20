@@ -29,7 +29,8 @@ All packages are published to npm under the [`@xiboplayer`](https://www.npmjs.co
 - **Timeline prediction** — deterministic future schedule simulation for proactive content preloading
 - **Network resilience** — exponential backoff with jitter, CRC32-based skip optimization, ETag HTTP caching
 - **CORS proxy** — shared Express server for Electron and Chromium shells with XMDS, REST, and file download proxying plus PWA static serving
-- **970+ tests** across 28 test suites
+- **RSA key pair generation** for XMR display registration via Web Crypto API
+- **1000+ tests** across 29 test suites
 
 ## Packages
 
@@ -43,6 +44,7 @@ All packages are published to npm under the [`@xiboplayer`](https://www.npmjs.co
 | [`@xiboplayer/cache`](packages/cache) | [![npm](https://img.shields.io/npm/v/@xiboplayer/cache?style=flat-square)](https://www.npmjs.com/package/@xiboplayer/cache) | Offline cache — parallel chunk downloads, MD5 verification, download queue |
 | [`@xiboplayer/stats`](packages/stats) | [![npm](https://img.shields.io/npm/v/@xiboplayer/stats?style=flat-square)](https://www.npmjs.com/package/@xiboplayer/stats) | Proof of play, log reporting, fault alerts with deduplication |
 | [`@xiboplayer/settings`](packages/settings) | [![npm](https://img.shields.io/npm/v/@xiboplayer/settings?style=flat-square)](https://www.npmjs.com/package/@xiboplayer/settings) | CMS display settings — resolution, intervals, download windows, screenshot config |
+| [`@xiboplayer/crypto`](packages/crypto) | [![npm](https://img.shields.io/npm/v/@xiboplayer/crypto?style=flat-square)](https://www.npmjs.com/package/@xiboplayer/crypto) | RSA key generation for XMR registration (Web Crypto API) |
 | [`@xiboplayer/utils`](packages/utils) | [![npm](https://img.shields.io/npm/v/@xiboplayer/utils?style=flat-square)](https://www.npmjs.com/package/@xiboplayer/utils) | EventEmitter, logger, fetchWithRetry, CMS REST API client, config |
 | [`@xiboplayer/sw`](packages/sw) | [![npm](https://img.shields.io/npm/v/@xiboplayer/sw?style=flat-square)](https://www.npmjs.com/package/@xiboplayer/sw) | Service Worker — media caching, range requests, widget HTML serving |
 | [`@xiboplayer/sync`](packages/sync) | [![npm](https://img.shields.io/npm/v/@xiboplayer/sync?style=flat-square)](https://www.npmjs.com/package/@xiboplayer/sync) | Multi-display synchronization — lead/follower, synchronized video start |
@@ -81,9 +83,9 @@ npm install @xiboplayer/proxy   # CORS proxy + PWA server for shells
 │       @xiboplayer/xmds            @xiboplayer/xmr       │
 │   SOAP + REST ↔ CMS           WebSocket ↔ CMS push     │
 ├─────────────────────────────────────────────────────────┤
-│  @xiboplayer/proxy     @xiboplayer/utils    @xibo/sync  │
-│  CORS proxy · PWA      logger · events     video wall   │
-│  static server         fetch · config      lead/follow  │
+│  @xiboplayer/proxy   @xiboplayer/utils  @xibo/sync  crypto│
+│  CORS proxy · PWA    logger · events   video wall   RSA  │
+│  static server       fetch · config    lead/follow  keys │
 └─────────────────────────────────────────────────────────┘
 ```
 
@@ -144,7 +146,7 @@ pnpm install
 ### Testing
 
 ```bash
-pnpm test              # run all tests (970+ tests across 28 suites)
+pnpm test              # run all tests (1000+ tests across 29 suites)
 pnpm test:watch        # watch mode
 pnpm test:coverage     # with coverage report
 ```

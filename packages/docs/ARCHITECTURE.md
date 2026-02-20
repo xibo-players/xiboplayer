@@ -92,6 +92,7 @@ Build a **platform-independent, modular player** that:
 | `@xiboplayer/utils` | `event-emitter.js` | 77 | EventEmitter base class |
 | `@xiboplayer/utils` | `fetch-retry.js` | 61 | fetchWithRetry: configurable retry with backoff |
 | `@xiboplayer/utils` | `cms-api.js` | 656 | CMS API helpers |
+| `@xiboplayer/crypto` | `rsa.js` | 75 | RSA key pair generation via Web Crypto API |
 
 **Total source code: ~12,000 lines** (excluding tests)
 
@@ -292,8 +293,9 @@ See `packages/renderer/docs/RENDERER_COMPARISON.md` for detailed renderer compar
 
 ### Authentication
 - **CMS**: Server key + hardware key in every XMDS/REST request
-- **XMR**: Channel token from RegisterDisplay response
+- **XMR**: Channel token from RegisterDisplay response + RSA public key registration
 - **Display**: Hardware key generated from FNV-1a hash of device fingerprint
+- **RSA keys**: Generated via Web Crypto API (RSA-1024), sent in RegisterDisplay, rotatable via XMR rekey command
 
 ### Storage Security
 - All storage (Cache API, IndexedDB, localStorage) is same-origin scoped
