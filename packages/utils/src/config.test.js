@@ -5,6 +5,25 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+
+// Mock @xiboplayer/crypto before importing Config
+vi.mock('@xiboplayer/crypto', () => {
+  let callCount = 0;
+  return {
+    generateRsaKeyPair: vi.fn(async () => {
+      callCount++;
+      return {
+        publicKeyPem: `-----BEGIN PUBLIC KEY-----\nMIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKEY${callCount}==\n-----END PUBLIC KEY-----`,
+        privateKeyPem: `-----BEGIN PRIVATE KEY-----\nMIICdgIBADANBgkqhkiG9w0BAQEFPRIVKEY${callCount}==\n-----END PRIVATE KEY-----`,
+      };
+    }),
+    isValidPemKey: vi.fn((pem) => {
+      if (!pem || typeof pem !== 'string') return false;
+      return /^-----BEGIN (PUBLIC KEY|PRIVATE KEY)-----\n/.test(pem);
+    }),
+  };
+});
+
 import { Config } from './config.js';
 
 describe('Config', () => {
@@ -468,6 +487,95 @@ describe('Config', () => {
       expect(config2.cmsAddress).toBe('https://persist.com');
       expect(config2.cmsKey).toBe('persist-key');
       expect(config2.displayName).toBe('Persist Display');
+    });
+  });
+
+  describe('ensureXmrKeyPair()', () => {
+    beforeEach(() => {
+      config = new Config();
+    });
+
+    it('should generate and store RSA key pair', async () => {
+      expect(config.data.xmrPubKey).toBeUndefined();
+      expect(config.data.xmrPrivKey).toBeUndefined();
+
+      await config.ensureXmrKeyPair();
+
+      expect(config.data.xmrPubKey).toMatch(/^-----BEGIN PUBLIC KEY-----/);
+      expect(config.data.xmrPrivKey).toMatch(/^-----BEGIN PRIVATE KEY-----/);
+    });
+
+    it('should persist keys to localStorage', async () => {
+      await config.ensureXmrKeyPair();
+
+      const stored = JSON.parse(mockLocalStorage.getItem('xibo_config'));
+      expect(stored.xmrPubKey).toMatch(/^-----BEGIN PUBLIC KEY-----/);
+      expect(stored.xmrPrivKey).toMatch(/^-----BEGIN PRIVATE KEY-----/);
+    });
+
+    it('should be idempotent — second call preserves existing keys', async () => {
+      await config.ensureXmrKeyPair();
+      const firstPubKey = config.data.xmrPubKey;
+      const firstPrivKey = config.data.xmrPrivKey;
+
+      await config.ensureXmrKeyPair();
+
+      expect(config.data.xmrPubKey).toBe(firstPubKey);
+      expect(config.data.xmrPrivKey).toBe(firstPrivKey);
+    });
+
+    it('should regenerate keys if xmrPubKey is invalid', async () => {
+      config.data.xmrPubKey = 'invalid-key';
+      config.data.xmrPrivKey = 'invalid-key';
+
+      await config.ensureXmrKeyPair();
+
+      expect(config.data.xmrPubKey).toMatch(/^-----BEGIN PUBLIC KEY-----/);
+      expect(config.data.xmrPrivKey).toMatch(/^-----BEGIN PRIVATE KEY-----/);
+    });
+
+    it('should regenerate keys if xmrPubKey is empty string', async () => {
+      config.data.xmrPubKey = '';
+
+      await config.ensureXmrKeyPair();
+
+      expect(config.data.xmrPubKey).toMatch(/^-----BEGIN PUBLIC KEY-----/);
+    });
+
+    it('should survive config reload from localStorage', async () => {
+      await config.ensureXmrKeyPair();
+      const savedPubKey = config.data.xmrPubKey;
+
+      // Create new config (loads from localStorage)
+      const config2 = new Config();
+
+      expect(config2.data.xmrPubKey).toBe(savedPubKey);
+    });
+  });
+
+  describe('XMR Key Getters', () => {
+    beforeEach(() => {
+      config = new Config();
+    });
+
+    it('should return empty string for xmrPubKey when not set', () => {
+      expect(config.xmrPubKey).toBe('');
+    });
+
+    it('should return empty string for xmrPrivKey when not set', () => {
+      expect(config.xmrPrivKey).toBe('');
+    });
+
+    it('should return xmrPubKey after ensureXmrKeyPair', async () => {
+      await config.ensureXmrKeyPair();
+
+      expect(config.xmrPubKey).toMatch(/^-----BEGIN PUBLIC KEY-----/);
+    });
+
+    it('should return xmrPrivKey after ensureXmrKeyPair', async () => {
+      await config.ensureXmrKeyPair();
+
+      expect(config.xmrPrivKey).toMatch(/^-----BEGIN PRIVATE KEY-----/);
     });
   });
 });

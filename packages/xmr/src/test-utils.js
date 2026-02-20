@@ -101,6 +101,14 @@ export function createMockConfig(overrides = {}) {
     hardwareKey: 'test-hw-key',
     serverKey: 'test-server-key',
     xmrChannel: 'test-channel',
+    data: {
+      xmrPubKey: '',
+      xmrPrivKey: '',
+    },
+    ensureXmrKeyPair: vi.fn(async function () {
+      this.data.xmrPubKey = '-----BEGIN PUBLIC KEY-----\nMOCK\n-----END PUBLIC KEY-----';
+      this.data.xmrPrivKey = '-----BEGIN PRIVATE KEY-----\nMOCK\n-----END PRIVATE KEY-----';
+    }),
     ...overrides
   };
 }

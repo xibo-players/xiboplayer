@@ -305,11 +305,36 @@ describe('XmrWrapper', () => {
         consoleErrorSpy.mockRestore();
       });
 
-      it('should handle rekey command', () => {
-        // rekey is a debug-level log — just verify it doesn't throw
-        expect(() => {
-          xmrInstance.simulateCommand('rekey');
-        }).not.toThrow();
+      it('should handle rekey command — rotates RSA keys and triggers collect', async () => {
+        // Set existing keys
+        mockConfig.data.xmrPubKey = 'old-pub-key';
+        mockConfig.data.xmrPrivKey = 'old-priv-key';
+
+        xmrInstance.simulateCommand('rekey');
+        await vi.runAllTimersAsync();
+
+        // Should clear old keys before regenerating
+        expect(mockConfig.ensureXmrKeyPair).toHaveBeenCalled();
+        // After ensureXmrKeyPair, new keys should be set
+        expect(mockConfig.data.xmrPubKey).toMatch(/^-----BEGIN PUBLIC KEY-----/);
+        expect(mockConfig.data.xmrPrivKey).toMatch(/^-----BEGIN PRIVATE KEY-----/);
+        // Should trigger collect to re-register with new key
+        expect(mockPlayer.collect).toHaveBeenCalled();
+      });
+
+      it('should handle rekey failure gracefully', async () => {
+        mockConfig.ensureXmrKeyPair.mockRejectedValue(new Error('Key generation failed'));
+        const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+        xmrInstance.simulateCommand('rekey');
+        await vi.runAllTimersAsync();
+
+        expect(consoleErrorSpy).toHaveBeenCalledWith(
+          '[XMR]',
+          'Key rotation failed:',
+          expect.any(Error)
+        );
+        consoleErrorSpy.mockRestore();
       });
 
       it('should handle criteriaUpdate command', async () => {

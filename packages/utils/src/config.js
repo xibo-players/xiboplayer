@@ -4,6 +4,7 @@
  * In Node.js (tests, CLI): environment variables are the only source.
  * In browser (PWA player): localStorage is primary, env vars override if set.
  */
+import { generateRsaKeyPair, isValidPemKey } from '@xiboplayer/crypto';
 
 const STORAGE_KEY = 'xibo_config';
 const HW_DB_NAME = 'xibo-hw-backup';
@@ -99,10 +100,11 @@ export class Config {
   }
 
   /**
-   * Backup hardware key to IndexedDB (more persistent than localStorage).
+   * Backup keys to IndexedDB (more persistent than localStorage).
    * IndexedDB survives "Clear site data" in some browsers where localStorage doesn't.
+   * @param {Object} keys - Key-value pairs to store (e.g. { hardwareKey: '...', xmrPubKey: '...' })
    */
-  _backupHardwareKey(key) {
+  _backupKeys(keys) {
     try {
       const req = indexedDB.open(HW_DB_NAME, HW_DB_VERSION);
       req.onupgradeneeded = () => {
@@ -114,15 +116,25 @@ export class Config {
       req.onsuccess = () => {
         const db = req.result;
         const tx = db.transaction('keys', 'readwrite');
-        tx.objectStore('keys').put(key, 'hardwareKey');
+        const store = tx.objectStore('keys');
+        for (const [k, v] of Object.entries(keys)) {
+          store.put(v, k);
+        }
         tx.oncomplete = () => {
-          console.log('[Config] Hardware key backed up to IndexedDB');
+          console.log('[Config] Keys backed up to IndexedDB:', Object.keys(keys).join(', '));
           db.close();
         };
       };
     } catch (e) {
       // IndexedDB not available — localStorage-only mode
     }
+  }
+
+  /**
+   * Backup hardware key to IndexedDB (convenience wrapper).
+   */
+  _backupHardwareKey(key) {
+    this._backupKeys({ hardwareKey: key });
   }
 
   /**
@@ -236,6 +248,31 @@ export class Config {
     });
   }
 
+  /**
+   * Ensure an RSA key pair exists for XMR registration.
+   * If keys are missing or invalid, generates a new pair and persists them.
+   * Idempotent — safe to call multiple times.
+   */
+  async ensureXmrKeyPair() {
+    if (this.data.xmrPubKey && isValidPemKey(this.data.xmrPubKey)) {
+      return;
+    }
+
+    console.log('[Config] Generating RSA key pair for XMR registration...');
+    const { publicKeyPem, privateKeyPem } = await generateRsaKeyPair();
+
+    this.data.xmrPubKey = publicKeyPem;
+    this.data.xmrPrivKey = privateKeyPem;
+    this.save();
+
+    // Backup RSA keys to IndexedDB alongside hardware key
+    if (typeof indexedDB !== 'undefined') {
+      this._backupKeys({ xmrPubKey: publicKeyPem, xmrPrivKey: privateKeyPem });
+    }
+
+    console.log('[Config] RSA key pair generated and saved');
+  }
+
   hash(str) {
     // FNV-1a hash algorithm (better distribution than simple hash)
     // Produces high-entropy 32-character hex string
@@ -283,6 +320,8 @@ export class Config {
     return this.data.hardwareKey;
   }
   get xmrChannel() { return this.data.xmrChannel; }
+  get xmrPubKey() { return this.data.xmrPubKey || ''; }
+  get xmrPrivKey() { return this.data.xmrPrivKey || ''; }
 }
 
 export const config = new Config();

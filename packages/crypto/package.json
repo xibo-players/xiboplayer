@@ -1,38 +1,32 @@
 {
-  "name": "@xiboplayer/utils",
+  "name": "@xiboplayer/crypto",
   "version": "0.3.1",
-  "description": "Shared utilities for Xibo Player packages",
+  "description": "RSA key management for Xibo Player XMR registration",
   "type": "module",
   "main": "./src/index.js",
   "exports": {
-    ".": "./src/index.js",
-    "./logger": "./src/logger.js",
-    "./event-emitter": "./src/event-emitter.js",
-    "./config": "./src/config.js"
+    ".": "./src/index.js"
   },
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage"
   },
-  "dependencies": {
-    "@xiboplayer/crypto": "workspace:*"
-  },
+  "dependencies": {},
   "devDependencies": {
     "vitest": "^2.0.0"
   },
   "keywords": [
     "xibo",
     "digital-signage",
-    "utilities",
-    "logger",
-    "event-emitter"
+    "crypto",
+    "rsa"
   ],
   "author": "Pau Aliagas <linuxnow@gmail.com>",
   "license": "AGPL-3.0-or-later",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/xibo-players/xiboplayer.git",
-    "directory": "packages/utils"
+    "directory": "packages/crypto"
   }
 }

@@ -232,10 +232,18 @@ export class XmrWrapper {
       }
     });
 
-    // CMS command: Rekey
-    this.xmr.on('rekey', () => {
-      log.debug('Received rekey command (pubKey rotation)');
-      // TODO: Implement RSA key pair rotation if XMR encryption is needed
+    // CMS command: Rekey (RSA key pair rotation)
+    this.xmr.on('rekey', async () => {
+      log.info('Received rekey command - rotating RSA key pair');
+      try {
+        this.config.data.xmrPubKey = '';
+        this.config.data.xmrPrivKey = '';
+        await this.config.ensureXmrKeyPair();
+        await this.player.collect();
+        log.info('RSA key pair rotated successfully');
+      } catch (error) {
+        log.error('Key rotation failed:', error);
+      }
     });
 
     // CMS command: Screen Shot (alternative event name)

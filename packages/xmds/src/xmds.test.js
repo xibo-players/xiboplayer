@@ -7,6 +7,69 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { XmdsClient } from './xmds-client.js';
 
+describe('XmdsClient - RegisterDisplay', () => {
+  let client;
+  let mockFetch;
+
+  beforeEach(() => {
+    client = new XmdsClient({
+      cmsAddress: 'https://cms.example.com',
+      cmsKey: 'test-server-key',
+      hardwareKey: 'test-hardware-key',
+      displayName: 'Test Display',
+      xmrChannel: 'test-xmr-channel',
+      xmrPubKey: '-----BEGIN PUBLIC KEY-----\nTEST\n-----END PUBLIC KEY-----',
+      retryOptions: { maxRetries: 0 }
+    });
+
+    mockFetch = vi.fn();
+    global.fetch = mockFetch;
+  });
+
+  it('should include xmrPubKey from config in SOAP envelope', () => {
+    const envelope = client.buildEnvelope('RegisterDisplay', {
+      serverKey: 'test-server-key',
+      hardwareKey: 'test-hardware-key',
+      displayName: 'Test Display',
+      clientType: 'chromeOS',
+      clientVersion: '0.1.0',
+      clientCode: '1',
+      operatingSystem: 'test',
+      macAddress: 'n/a',
+      xmrChannel: 'test-xmr-channel',
+      xmrPubKey: client.config.xmrPubKey || ''
+    });
+
+    expect(envelope).toContain('<xmrPubKey xsi:type="xsd:string">-----BEGIN PUBLIC KEY-----');
+  });
+
+  it('should send empty xmrPubKey when config has no key', () => {
+    const clientNoKey = new XmdsClient({
+      cmsAddress: 'https://cms.example.com',
+      cmsKey: 'test-server-key',
+      hardwareKey: 'test-hardware-key',
+      displayName: 'Test Display',
+      xmrChannel: 'test-xmr-channel',
+      retryOptions: { maxRetries: 0 }
+    });
+
+    const envelope = clientNoKey.buildEnvelope('RegisterDisplay', {
+      serverKey: 'test-server-key',
+      hardwareKey: 'test-hardware-key',
+      displayName: 'Test Display',
+      clientType: 'chromeOS',
+      clientVersion: '0.1.0',
+      clientCode: '1',
+      operatingSystem: 'test',
+      macAddress: 'n/a',
+      xmrChannel: 'test-xmr-channel',
+      xmrPubKey: clientNoKey.config.xmrPubKey || ''
+    });
+
+    expect(envelope).toContain('<xmrPubKey xsi:type="xsd:string"></xmrPubKey>');
+  });
+});
+
 describe('XmdsClient - SubmitLog', () => {
   let client;
   let mockFetch;
