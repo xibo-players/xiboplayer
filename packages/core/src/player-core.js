@@ -370,6 +370,11 @@ export class PlayerCore extends EventEmitter {
         }
       }
 
+      // Pass display properties to schedule for criteria evaluation
+      if (this.schedule?.setDisplayProperties && regResult.settings) {
+        this.schedule.setDisplayProperties(regResult.settings);
+      }
+
       // Store sync config if display is in a sync group
       if (regResult.syncConfig) {
         this.syncConfig = regResult.syncConfig;
@@ -828,6 +833,79 @@ export class PlayerCore extends EventEmitter {
       log.warn('Failed to notify status:', error);
       this.emit('status-notify-failed', layoutId, error);
     }
+  }
+
+  /**
+   * Report geo location (called by XMR when CMS pushes coordinates)
+   * Updates schedule location for geo-fencing and triggers schedule re-evaluation.
+   * @param {Object} data - { latitude, longitude }
+   */
+  reportGeoLocation(data) {
+    const lat = parseFloat(data?.latitude);
+    const lng = parseFloat(data?.longitude);
+
+    if (isNaN(lat) || isNaN(lng)) {
+      log.warn('reportGeoLocation: invalid coordinates', data);
+      return;
+    }
+
+    log.info(`Geo location from CMS: ${lat.toFixed(4)}, ${lng.toFixed(4)}`);
+
+    if (this.schedule?.setLocation) {
+      this.schedule.setLocation(lat, lng);
+    }
+
+    this.emit('location-updated', { latitude: lat, longitude: lng, source: 'cms' });
+    this.checkSchedule();
+  }
+
+  /**
+   * Request geo location from the browser Geolocation API.
+   * Called when CMS asks us to report our location (XMR without coordinates).
+   * @returns {Promise<{latitude: number, longitude: number}|null>}
+   */
+  async requestGeoLocation() {
+    if (typeof navigator === 'undefined' || !navigator.geolocation) {
+      log.warn('Geolocation API not available');
+      return null;
+    }
+
+    try {
+      const position = await new Promise((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(resolve, reject, {
+          timeout: 10000,
+          maximumAge: 300000, // 5 minutes
+          enableHighAccuracy: false
+        });
+      });
+
+      const lat = position.coords.latitude;
+      const lng = position.coords.longitude;
+
+      log.info(`Browser geolocation: ${lat.toFixed(4)}, ${lng.toFixed(4)}`);
+
+      if (this.schedule?.setLocation) {
+        this.schedule.setLocation(lat, lng);
+      }
+
+      this.emit('location-updated', { latitude: lat, longitude: lng, source: 'browser' });
+      this.checkSchedule();
+
+      return { latitude: lat, longitude: lng };
+    } catch (error) {
+      log.warn('Browser geolocation failed:', error?.message || error);
+      return null;
+    }
+  }
+
+  /**
+   * Re-evaluate current schedule and switch layouts if needed.
+   * Called after location updates or other schedule-affecting changes.
+   */
+  checkSchedule() {
+    const layoutFiles = this.schedule.getCurrentLayouts();
+    this.emit('layouts-scheduled', layoutFiles);
+    this._evaluateAndSwitchLayout(layoutFiles, '');
   }
 
   /**

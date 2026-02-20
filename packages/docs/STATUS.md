@@ -43,6 +43,9 @@
 - Overlay management with priority-based z-index
 - Action events, command events, data connector events
 - Default layout fallback
+- Geo-fencing enforcement (haversine distance filtering)
+- Criteria enforcement (evaluateCriteria with 5 metrics + custom display properties)
+- Browser Geolocation API fallback (when CMS has no coordinates)
 
 ### XMR Push Messaging (13 Handlers)
 - collectNow, screenShot, licenceCheck
@@ -107,8 +110,6 @@
 
 ### Low Impact (Rarely Used)
 - Drawer regions (XLR-specific UI feature)
-- Geo-fencing enforcement (parsed but not filtered)
-- Criteria enforcement (implemented via evaluateCriteria)
 - Multi-display sync events (very rare use case)
 - BroadcastChannel stats (stats go direct to CMS)
 

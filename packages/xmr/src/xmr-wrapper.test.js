@@ -362,20 +362,37 @@ describe('XmrWrapper', () => {
         consoleErrorSpy.mockRestore();
       });
 
-      it('should handle currentGeoLocation command', async () => {
+      it('should handle currentGeoLocation with coordinates (CMS push)', async () => {
         const geoData = { latitude: 40.7128, longitude: -74.0060 };
 
         xmrInstance.simulateCommand('currentGeoLocation', geoData);
         await vi.runAllTimersAsync();
 
         expect(mockPlayer.reportGeoLocation).toHaveBeenCalledWith(geoData);
+        expect(mockPlayer.requestGeoLocation).not.toHaveBeenCalled();
       });
 
-      it('should handle currentGeoLocation when not implemented', async () => {
+      it('should handle currentGeoLocation without coordinates (CMS request)', async () => {
+        xmrInstance.simulateCommand('currentGeoLocation', {});
+        await vi.runAllTimersAsync();
+
+        expect(mockPlayer.requestGeoLocation).toHaveBeenCalled();
+        expect(mockPlayer.reportGeoLocation).not.toHaveBeenCalled();
+      });
+
+      it('should handle currentGeoLocation with null data (CMS request)', async () => {
+        xmrInstance.simulateCommand('currentGeoLocation', null);
+        await vi.runAllTimersAsync();
+
+        expect(mockPlayer.requestGeoLocation).toHaveBeenCalled();
+        expect(mockPlayer.reportGeoLocation).not.toHaveBeenCalled();
+      });
+
+      it('should handle currentGeoLocation when reportGeoLocation not implemented', async () => {
         delete mockPlayer.reportGeoLocation;
         const consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
-        xmrInstance.simulateCommand('currentGeoLocation', {});
+        xmrInstance.simulateCommand('currentGeoLocation', { latitude: 40, longitude: -74 });
         await vi.runAllTimersAsync();
 
         expect(consoleWarnSpy).toHaveBeenCalledWith(
@@ -385,8 +402,22 @@ describe('XmrWrapper', () => {
         consoleWarnSpy.mockRestore();
       });
 
+      it('should handle currentGeoLocation when requestGeoLocation not implemented', async () => {
+        delete mockPlayer.requestGeoLocation;
+        const consoleWarnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+        xmrInstance.simulateCommand('currentGeoLocation', {});
+        await vi.runAllTimersAsync();
+
+        expect(consoleWarnSpy).toHaveBeenCalledWith(
+          '[XMR]',
+          'Geo location request not implemented in player'
+        );
+        consoleWarnSpy.mockRestore();
+      });
+
       it('should handle currentGeoLocation failure gracefully', async () => {
-        mockPlayer.reportGeoLocation.mockRejectedValue(new Error('Geo location failed'));
+        mockPlayer.requestGeoLocation.mockRejectedValue(new Error('Geo location failed'));
         const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
         xmrInstance.simulateCommand('currentGeoLocation', {});
