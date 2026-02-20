@@ -1564,6 +1564,132 @@ describe('PlayerCore', () => {
     });
   });
 
+  describe('Geo-Location', () => {
+    it('reportGeoLocation should update schedule location and emit event', () => {
+      mockSchedule.setLocation = vi.fn();
+      const spy = createSpy();
+      core.on('location-updated', spy);
+
+      core.reportGeoLocation({ latitude: 40.7128, longitude: -74.0060 });
+
+      expect(mockSchedule.setLocation).toHaveBeenCalledWith(40.7128, -74.006);
+      expect(spy).toHaveBeenCalledWith({
+        latitude: 40.7128,
+        longitude: -74.006,
+        source: 'cms'
+      });
+    });
+
+    it('reportGeoLocation should reject invalid coordinates', () => {
+      mockSchedule.setLocation = vi.fn();
+      const spy = createSpy();
+      core.on('location-updated', spy);
+
+      core.reportGeoLocation({ latitude: 'abc', longitude: null });
+
+      expect(mockSchedule.setLocation).not.toHaveBeenCalled();
+      expect(spy).not.toHaveBeenCalled();
+    });
+
+    it('reportGeoLocation should reject missing data', () => {
+      mockSchedule.setLocation = vi.fn();
+      const spy = createSpy();
+      core.on('location-updated', spy);
+
+      core.reportGeoLocation(null);
+
+      expect(mockSchedule.setLocation).not.toHaveBeenCalled();
+      expect(spy).not.toHaveBeenCalled();
+    });
+
+    it('reportGeoLocation should trigger checkSchedule', () => {
+      mockSchedule.setLocation = vi.fn();
+      const spy = createSpy();
+      core.on('layouts-scheduled', spy);
+
+      core.reportGeoLocation({ latitude: 51.5074, longitude: -0.1278 });
+
+      expect(spy).toHaveBeenCalled();
+    });
+
+    it('requestGeoLocation should return null when navigator.geolocation unavailable', async () => {
+      // Save and remove geolocation
+      const origGeo = navigator.geolocation;
+      Object.defineProperty(navigator, 'geolocation', { value: undefined, configurable: true });
+
+      const result = await core.requestGeoLocation();
+
+      expect(result).toBeNull();
+
+      // Restore
+      Object.defineProperty(navigator, 'geolocation', { value: origGeo, configurable: true });
+    });
+
+    it('requestGeoLocation should update schedule on success', async () => {
+      mockSchedule.setLocation = vi.fn();
+      const spy = createSpy();
+      core.on('location-updated', spy);
+
+      // Mock navigator.geolocation
+      const origGeo = navigator.geolocation;
+      const mockGeo = {
+        getCurrentPosition: vi.fn((success) => {
+          success({ coords: { latitude: 41.3851, longitude: 2.1734 } });
+        })
+      };
+      Object.defineProperty(navigator, 'geolocation', { value: mockGeo, configurable: true });
+
+      const result = await core.requestGeoLocation();
+
+      expect(result).toEqual({ latitude: 41.3851, longitude: 2.1734 });
+      expect(mockSchedule.setLocation).toHaveBeenCalledWith(41.3851, 2.1734);
+      expect(spy).toHaveBeenCalledWith({
+        latitude: 41.3851,
+        longitude: 2.1734,
+        source: 'browser'
+      });
+
+      // Restore
+      Object.defineProperty(navigator, 'geolocation', { value: origGeo, configurable: true });
+    });
+
+    it('requestGeoLocation should return null on failure', async () => {
+      const origGeo = navigator.geolocation;
+      const mockGeo = {
+        getCurrentPosition: vi.fn((_success, error) => {
+          error(new Error('User denied geolocation'));
+        })
+      };
+      Object.defineProperty(navigator, 'geolocation', { value: mockGeo, configurable: true });
+
+      const result = await core.requestGeoLocation();
+
+      expect(result).toBeNull();
+
+      Object.defineProperty(navigator, 'geolocation', { value: origGeo, configurable: true });
+    });
+  });
+
+  describe('Display Properties', () => {
+    it('should pass display properties to schedule after registration', async () => {
+      mockSchedule.setDisplayProperties = vi.fn();
+
+      await core.collect();
+
+      expect(mockSchedule.setDisplayProperties).toHaveBeenCalledWith(
+        expect.objectContaining({ collectInterval: '300' })
+      );
+    });
+
+    it('should skip setDisplayProperties when schedule does not support it', async () => {
+      // mockSchedule has no setDisplayProperties by default
+      delete mockSchedule.setDisplayProperties;
+
+      // Should not throw
+      await expect(core.collect()).resolves.not.toThrow();
+    });
+  });
+
   describe('Offline Mode', () => {
     it('isOffline should return false when navigator.onLine is true', () => {
       Object.defineProperty(navigator, 'onLine', { value: true, configurable: true });

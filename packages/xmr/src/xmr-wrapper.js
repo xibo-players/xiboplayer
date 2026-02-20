@@ -269,16 +269,29 @@ export class XmrWrapper {
     });
 
     // CMS command: Current Geo Location
+    // Dual-path: if data has coordinates, CMS is telling us our location.
+    // If data is empty/no coordinates, CMS is asking us to report our location.
     this.xmr.on('currentGeoLocation', async (data) => {
       log.info('Received currentGeoLocation command:', data);
       try {
-        // Report current geo location to CMS
-        // For now, log the request - actual implementation would use navigator.geolocation
-        if (this.player.reportGeoLocation) {
-          await this.player.reportGeoLocation(data);
-          log.debug('currentGeoLocation completed successfully');
+        const hasCoordinates = data && data.latitude != null && data.longitude != null;
+
+        if (hasCoordinates) {
+          // CMS is pushing coordinates to us
+          if (this.player.reportGeoLocation) {
+            this.player.reportGeoLocation(data);
+            log.debug('currentGeoLocation: coordinates applied');
+          } else {
+            log.warn('Geo location reporting not implemented in player');
+          }
         } else {
-          log.warn('Geo location reporting not implemented in player');
+          // CMS is asking us to report our location via browser API
+          if (this.player.requestGeoLocation) {
+            await this.player.requestGeoLocation();
+            log.debug('currentGeoLocation: browser location requested');
+          } else {
+            log.warn('Geo location request not implemented in player');
+          }
         }
       } catch (error) {
         log.error('currentGeoLocation failed:', error);
