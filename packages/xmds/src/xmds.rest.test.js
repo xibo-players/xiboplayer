@@ -237,6 +237,40 @@ describe('RestClient - RegisterDisplay', () => {
     global.fetch = mockFetch;
   });
 
+  it('should include xmrPubKey from config in POST body', async () => {
+    const clientWithKey = createRestClient({
+      xmrPubKey: '-----BEGIN PUBLIC KEY-----\nTEST\n-----END PUBLIC KEY-----',
+    });
+    const mockFetchLocal = vi.fn();
+    global.fetch = mockFetchLocal;
+
+    mockFetchLocal.mockResolvedValue(jsonResponse({
+      display: {
+        '@attributes': { code: 'READY', message: 'OK' },
+        collectInterval: '60',
+      }
+    }));
+
+    await clientWithKey.registerDisplay();
+
+    const body = JSON.parse(mockFetchLocal.mock.calls[0][1].body);
+    expect(body.xmrPubKey).toBe('-----BEGIN PUBLIC KEY-----\nTEST\n-----END PUBLIC KEY-----');
+  });
+
+  it('should send empty xmrPubKey when config has no key', async () => {
+    mockFetch.mockResolvedValue(jsonResponse({
+      display: {
+        '@attributes': { code: 'READY', message: 'OK' },
+        collectInterval: '60',
+      }
+    }));
+
+    await client.registerDisplay();
+
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+    expect(body.xmrPubKey).toBe('');
+  });
+
   it('should POST to /register and parse READY response', async () => {
     mockFetch.mockResolvedValue(jsonResponse({
       display: {

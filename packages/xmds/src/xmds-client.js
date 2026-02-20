@@ -155,7 +155,7 @@ export class XmdsClient {
       operatingSystem: os,
       macAddress: this.config.macAddress || 'n/a',
       xmrChannel: this.config.xmrChannel,
-      xmrPubKey: ''
+      xmrPubKey: this.config.xmrPubKey || ''
     });
 
     return this.parseRegisterDisplayResponse(xml);

@@ -96,6 +96,12 @@ importers:
         specifier: ^2.0.0
         version: 2.1.9(@vitest/ui@2.1.9)(jsdom@25.0.1)
 
+  packages/crypto:
+    devDependencies:
+      vitest:
+        specifier: ^2.0.0
+        version: 2.1.9(@vitest/ui@2.1.9)(jsdom@25.0.1)
+
   packages/player:
     dependencies:
       '@xiboplayer/cache':
@@ -208,6 +214,10 @@ importers:
         version: 2.1.9(@vitest/ui@2.1.9)(jsdom@25.0.1)
 
   packages/utils:
+    dependencies:
+      '@xiboplayer/crypto':
+        specifier: workspace:*
+        version: link:../crypto
     devDependencies:
       vitest:
         specifier: ^2.0.0

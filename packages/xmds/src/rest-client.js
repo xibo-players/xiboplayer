@@ -148,7 +148,7 @@ export class RestClient {
       operatingSystem: os,
       macAddress: this.config.macAddress || 'n/a',
       xmrChannel: this.config.xmrChannel,
-      xmrPubKey: '',
+      xmrPubKey: this.config.xmrPubKey || '',
     });
 
     return this._parseRegisterDisplayJson(json);
