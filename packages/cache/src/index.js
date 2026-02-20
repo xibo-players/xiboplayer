@@ -4,3 +4,4 @@ export const VERSION = pkg.version;
 export { CacheManager, cacheManager } from './cache.js';
 export { CacheProxy } from './cache-proxy.js';
 export { DownloadManager, FileDownload, LayoutTaskBuilder, isUrlExpired } from './download-manager.js';
+export { CacheAnalyzer } from './cache-analyzer.js';
