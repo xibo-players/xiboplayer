@@ -1,6 +1,6 @@
 {
   "name": "@xiboplayer/utils",
-  "version": "0.3.1",
+  "version": "0.3.3",
   "description": "Shared utilities for Xibo Player packages",
   "type": "module",
   "main": "./src/index.js",
