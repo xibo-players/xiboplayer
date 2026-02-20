@@ -44,6 +44,7 @@
 
 import { EventEmitter, createLogger, applyCmsLogLevel } from '@xiboplayer/utils';
 import { calculateTimeline, parseLayoutDuration } from '@xiboplayer/schedule';
+import { CacheAnalyzer } from '@xiboplayer/cache';
 import { DataConnectorManager } from './data-connectors.js';
 
 const log = createLogger('PlayerCore');
@@ -117,6 +118,9 @@ export class PlayerCore extends EventEmitter {
 
     // Layout durations for timeline calculation (layoutFile/layoutId → seconds)
     this._layoutDurations = new Map();
+
+    // Cache analyzer for stale media detection and storage health
+    this.cacheAnalyzer = this.cache ? new CacheAnalyzer(this.cache) : null;
 
     // In-memory offline cache (populated from IndexedDB on first load)
     this._offlineCache = { schedule: null, settings: null, requiredFiles: null };
@@ -429,6 +433,13 @@ export class PlayerCore extends EventEmitter {
 
         this._lastRequiredFiles = files;
         this.emit('download-request', { layoutOrder, files });
+
+        // Non-blocking cache analysis (stale media detection)
+        if (this.cacheAnalyzer) {
+          this.cacheAnalyzer.analyze(files).then(report => {
+            this.emit('cache-analysis', report);
+          }).catch(err => log.warn('Cache analysis failed:', err));
+        }
 
         // Submit media inventory to CMS (reports cached files)
         this.submitMediaInventory(files);
