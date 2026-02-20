@@ -127,6 +127,21 @@ describe('PlayerCore', () => {
       expect(spy).toHaveBeenCalled();
     });
 
+    it('should call ensureXmrKeyPair before registerDisplay', async () => {
+      const callOrder = [];
+      mockConfig.ensureXmrKeyPair = vi.fn(async () => { callOrder.push('ensureXmrKeyPair'); });
+      mockXmds.registerDisplay = vi.fn(async () => {
+        callOrder.push('registerDisplay');
+        return { displayName: 'Test', settings: { collectInterval: '300' } };
+      });
+
+      await core.collect();
+
+      expect(mockConfig.ensureXmrKeyPair).toHaveBeenCalled();
+      expect(callOrder[0]).toBe('ensureXmrKeyPair');
+      expect(callOrder[1]).toBe('registerDisplay');
+    });
+
     it('should register display and emit register-complete', async () => {
       const spy = createSpy();
       core.on('register-complete', spy);

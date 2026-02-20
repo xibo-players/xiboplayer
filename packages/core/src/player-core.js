@@ -321,6 +321,11 @@ export class PlayerCore extends EventEmitter {
         throw new Error('Offline with no cached data — cannot start playback');
       }
 
+      // Ensure RSA key pair exists before registering
+      if (this.config.ensureXmrKeyPair) {
+        await this.config.ensureXmrKeyPair();
+      }
+
       // Register display
       log.debug('Collection step: registerDisplay');
       const regResult = await this.xmds.registerDisplay();
