@@ -156,10 +156,18 @@ export class XmrWrapper {
     });
 
     // CMS command: Change Layout
-    this.xmr.on('changeLayout', async (layoutId) => {
-      log.info('Received changeLayout command:', layoutId);
+    // Payload may be a layoutId string or an object with { layoutId, duration, downloadRequired, changeMode }
+    this.xmr.on('changeLayout', async (data) => {
+      const layoutId = typeof data === 'object' ? (data.layoutId || data) : data;
+      const duration = typeof data === 'object' ? (parseInt(data.duration) || 0) : 0;
+      const changeMode = typeof data === 'object' ? (data.changeMode || 'replace') : 'replace';
+      log.info('Received changeLayout command:', layoutId, duration ? `duration=${duration}s` : '', changeMode !== 'replace' ? `mode=${changeMode}` : '');
       try {
-        await this.player.changeLayout(layoutId);
+        if (typeof data === 'object' && data.downloadRequired === true) {
+          log.info('changeLayout: downloadRequired — triggering collection first');
+          await this.player.collect();
+        }
+        await this.player.changeLayout(layoutId, { duration, changeMode });
         log.debug('changeLayout completed successfully');
       } catch (error) {
         log.error('changeLayout failed:', error);
@@ -167,10 +175,17 @@ export class XmrWrapper {
     });
 
     // CMS command: Overlay Layout
-    this.xmr.on('overlayLayout', async (layoutId) => {
-      log.info('Received overlayLayout command:', layoutId);
+    // Payload may be a layoutId string or an object with { layoutId, duration, downloadRequired }
+    this.xmr.on('overlayLayout', async (data) => {
+      const layoutId = typeof data === 'object' ? (data.layoutId || data) : data;
+      const duration = typeof data === 'object' ? (parseInt(data.duration) || 0) : 0;
+      log.info('Received overlayLayout command:', layoutId, duration ? `duration=${duration}s` : '');
       try {
-        await this.player.overlayLayout(layoutId);
+        if (typeof data === 'object' && data.downloadRequired === true) {
+          log.info('overlayLayout: downloadRequired — triggering collection first');
+          await this.player.collect();
+        }
+        await this.player.overlayLayout(layoutId, { duration });
         log.debug('overlayLayout completed successfully');
       } catch (error) {
         log.error('overlayLayout failed:', error);
@@ -200,10 +215,14 @@ export class XmrWrapper {
     });
 
     // CMS command: Execute Command
+    // Resolve command from local display settings (from RegisterDisplay), not from XMR payload
     this.xmr.on('commandAction', async (data) => {
-      log.info('Received commandAction command:', data);
+      const commandCode = data?.commandCode || data;
+      log.info('Received commandAction command:', commandCode);
       try {
-        await this.player.executeCommand(data?.commandCode || data, data?.commands);
+        // Use local commands from RegisterDisplay (stored on player), not XMR payload commands
+        const localCommands = this.player.displayCommands || data?.commands;
+        await this.player.executeCommand(commandCode, localCommands);
         log.debug('commandAction completed successfully');
       } catch (error) {
         log.error('commandAction failed:', error);

@@ -113,6 +113,10 @@ export function parseScheduleResponse(xml) {
         geoLocation: layoutEl.getAttribute('geoLocation') || '',
         syncEvent: layoutEl.getAttribute('syncEvent') === '1',
         shareOfVoice: parseInt(layoutEl.getAttribute('shareOfVoice') || '0'),
+        duration: parseInt(layoutEl.getAttribute('duration') || '0'),
+        cyclePlayback: layoutEl.getAttribute('cyclePlayback') === '1',
+        groupKey: layoutEl.getAttribute('groupKey') || null,
+        playCount: parseInt(layoutEl.getAttribute('playCount') || '0'),
         dependants: depEls.length > 0 ? [...depEls].map(el => el.textContent) : [],
         criteria: parseCriteria(layoutEl)
       });
@@ -159,10 +163,10 @@ export function parseScheduleResponse(xml) {
         id: String(fileId), // Normalized string ID for consistent type usage
         duration: parseInt(overlayEl.getAttribute('duration') || '60'),
         file: fileId,
-        fromDt: overlayEl.getAttribute('fromdt'),
-        toDt: overlayEl.getAttribute('todt'),
+        fromdt: overlayEl.getAttribute('fromdt'),
+        todt: overlayEl.getAttribute('todt'),
         priority: parseInt(overlayEl.getAttribute('priority') || '0'),
-        scheduleId: overlayEl.getAttribute('scheduleid'),
+        scheduleid: overlayEl.getAttribute('scheduleid'),
         isGeoAware: overlayEl.getAttribute('isGeoAware') === '1',
         geoLocation: overlayEl.getAttribute('geoLocation') || '',
         syncEvent: overlayEl.getAttribute('syncEvent') === '1',
@@ -185,10 +189,10 @@ export function parseScheduleResponse(xml) {
         layoutCode: actionEl.getAttribute('layoutCode') || '',
         commandCode: actionEl.getAttribute('commandCode') || '',
         duration: parseInt(actionEl.getAttribute('duration') || '0'),
-        fromDt: actionEl.getAttribute('fromdt'),
-        toDt: actionEl.getAttribute('todt'),
+        fromdt: actionEl.getAttribute('fromdt'),
+        todt: actionEl.getAttribute('todt'),
         priority: parseInt(actionEl.getAttribute('priority') || '0'),
-        scheduleId: actionEl.getAttribute('scheduleid'),
+        scheduleid: actionEl.getAttribute('scheduleid'),
         isGeoAware: actionEl.getAttribute('isGeoAware') === '1',
         geoLocation: actionEl.getAttribute('geoLocation') || ''
       });

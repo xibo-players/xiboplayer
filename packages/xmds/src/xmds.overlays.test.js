@@ -25,8 +25,8 @@ describe('Schedule Parsing - Overlays', () => {
       expect(schedule.overlays[0].file).toBe('101.xlf');
       expect(schedule.overlays[0].duration).toBe(60);
       expect(schedule.overlays[0].priority).toBe(10);
-      expect(schedule.overlays[0].fromDt).toBe('2026-01-01 00:00:00');
-      expect(schedule.overlays[0].toDt).toBe('2026-12-31 23:59:59');
+      expect(schedule.overlays[0].fromdt).toBe('2026-01-01 00:00:00');
+      expect(schedule.overlays[0].todt).toBe('2026-12-31 23:59:59');
     });
 
     it('should parse multiple overlays', () => {
