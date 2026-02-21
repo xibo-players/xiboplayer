@@ -471,6 +471,9 @@ export class PlayerCore extends EventEmitter {
         }
       }
 
+      // Fetch weather data for schedule criteria evaluation (#15)
+      await this._fetchWeatherData();
+
       log.debug('Collection step: evaluateSchedule');
       // Evaluate current schedule
       const layoutFiles = this.schedule.getCurrentLayouts();
@@ -1178,6 +1181,23 @@ export class PlayerCore extends EventEmitter {
           this.emit('scheduled-command', command);
         }
       }
+    }
+  }
+
+  /**
+   * Fetch weather data from CMS and pass to schedule for criteria evaluation.
+   * Non-blocking: weather fetch failure doesn't prevent schedule evaluation.
+   */
+  async _fetchWeatherData() {
+    if (!this.xmds?.getWeather || !this.schedule?.setWeatherData) return;
+
+    try {
+      const weatherJson = await this.xmds.getWeather();
+      const weatherData = typeof weatherJson === 'string' ? JSON.parse(weatherJson) : weatherJson;
+      this.schedule.setWeatherData(weatherData);
+      log.info('Weather data updated:', Object.keys(weatherData).join(', '));
+    } catch (e) {
+      log.warn('GetWeather failed (non-critical):', e?.message || e);
     }
   }
 

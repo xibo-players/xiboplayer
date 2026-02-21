@@ -13,6 +13,7 @@ export class ScheduleManager {
     this.playHistory = new Map(); // Track plays per layout: layoutId -> [timestamps]
     this.interruptScheduler = options.interruptScheduler || null; // Optional interrupt scheduler
     this.displayProperties = options.displayProperties || {}; // CMS display custom properties
+    this.weatherData = {}; // Weather data from GetWeather XMDS call
     this.playerLocation = null; // { latitude, longitude } from Geolocation API
     this._layoutMetadata = new Map(); // layoutFile → { syncEvent, shareOfVoice, ... }
   }
@@ -22,6 +23,14 @@ export class ScheduleManager {
    */
   setSchedule(schedule) {
     this.schedule = schedule;
+  }
+
+  /**
+   * Update weather data for criteria evaluation
+   * @param {Object} data - Parsed weather object { temperature, humidity, windSpeed, condition, cloudCover }
+   */
+  setWeatherData(data) {
+    this.weatherData = data || {};
   }
 
   /**
@@ -169,7 +178,7 @@ export class ScheduleManager {
         if (!this.isRecurringScheduleActive(layout, now)) continue;
         if (!this.isTimeActive(layout, now)) continue;
         if (layout.criteria && layout.criteria.length > 0) {
-          if (!evaluateCriteria(layout.criteria, { now, displayProperties: this.displayProperties })) continue;
+          if (!evaluateCriteria(layout.criteria, { now, displayProperties: this.displayProperties, weatherData: this.weatherData })) continue;
         }
         if (layout.isGeoAware && layout.geoLocation) {
           if (!this.isWithinGeoFence(layout.geoLocation)) continue;
@@ -258,7 +267,7 @@ export class ScheduleManager {
 
         // Check criteria conditions (date/time, display properties)
         if (layout.criteria && layout.criteria.length > 0) {
-          if (!evaluateCriteria(layout.criteria, { now, displayProperties: this.displayProperties })) {
+          if (!evaluateCriteria(layout.criteria, { now, displayProperties: this.displayProperties, weatherData: this.weatherData })) {
             _log('[Schedule] Layout', layout.id, 'filtered by criteria');
             continue;
           }
