@@ -690,7 +690,7 @@ export class PlayerCore extends EventEmitter {
    * Returns { layoutId, layoutFile } or null if no next layout or same as current.
    */
   peekNextLayout() {
-    const layoutFiles = this.schedule.getCurrentLayouts();
+    const layoutFiles = this.schedule.getInterleavedLayouts?.() || this.schedule.getCurrentLayouts();
     if (layoutFiles.length <= 1) {
       // Single layout or empty schedule - no different layout to preload
       return null;
@@ -721,7 +721,7 @@ export class PlayerCore extends EventEmitter {
       return;
     }
 
-    const layoutFiles = this.schedule.getCurrentLayouts();
+    const layoutFiles = this.schedule.getInterleavedLayouts?.() || this.schedule.getCurrentLayouts();
     log.info(`Advancing schedule: ${layoutFiles.length} layout(s) available, current index ${this._currentLayoutIndex}`);
 
     // ── Never-stop guarantee ────────────────────────────────────────
