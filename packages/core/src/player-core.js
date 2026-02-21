@@ -109,6 +109,9 @@ export class PlayerCore extends EventEmitter {
     this._layoutOverride = null; // { layoutId, type: 'change'|'overlay' }
     this._lastRequiredFiles = []; // Track files for MediaInventory
 
+    // Scheduled commands tracking (avoid re-executing same command)
+    this._executedCommands = new Set();
+
     // Schedule cycle state (round-robin through multiple layouts)
     this._currentLayoutIndex = 0;
 
@@ -420,6 +423,7 @@ export class PlayerCore extends EventEmitter {
           log.debug('Collection step: processing schedule');
           this.emit('schedule-received', schedule);
           this.schedule.setSchedule(schedule);
+          this._executedCommands.clear();
           this.updateDataConnectors();
           this._offlineSave('schedule', schedule);
           this.logUpcomingTimeline();
@@ -458,6 +462,7 @@ export class PlayerCore extends EventEmitter {
           this._lastCheckSchedule = checkSchedule;
           this.emit('schedule-received', schedule);
           this.schedule.setSchedule(schedule);
+          this._executedCommands.clear();
           this.updateDataConnectors();
           this._offlineSave('schedule', schedule);
           this.logUpcomingTimeline();
@@ -473,6 +478,9 @@ export class PlayerCore extends EventEmitter {
       this.emit('layouts-scheduled', layoutFiles);
 
       this._evaluateAndSwitchLayout(layoutFiles, '');
+
+      // Process scheduled commands (auto-execute commands whose time has arrived)
+      this._processScheduledCommands();
 
       // If no layouts scheduled and we're playing one that was filtered (e.g., maxPlaysPerHour),
       // force switch to default layout if available
@@ -1125,6 +1133,51 @@ export class PlayerCore extends EventEmitter {
     if (connectors.length > 0) {
       this.dataConnectorManager.startPolling();
       this.emit('data-connectors-started', connectors.length);
+    }
+  }
+
+  /**
+   * Process scheduled commands from the CMS schedule.
+   * Checks for command events whose scheduled date has arrived and executes them.
+   * Each command is only executed once (tracked by code+date key in _executedCommands).
+   */
+  _processScheduledCommands() {
+    if (!this.schedule?.getCommands) return;
+
+    const commands = this.schedule.getCommands();
+    if (commands.length === 0) return;
+
+    const now = new Date();
+
+    for (const command of commands) {
+      if (!command.code || !command.date) continue;
+
+      // Unique key to track execution (same command can be scheduled multiple times)
+      const commandKey = `${command.code}|${command.date}`;
+
+      // Skip already executed commands
+      if (this._executedCommands.has(commandKey)) continue;
+
+      // Check if the command's scheduled time has arrived
+      const commandDate = new Date(command.date);
+      if (isNaN(commandDate.getTime())) {
+        log.warn('Scheduled command has invalid date:', command.date);
+        continue;
+      }
+
+      if (now >= commandDate) {
+        log.info(`Executing scheduled command: ${command.code} (scheduled: ${command.date})`);
+        this._executedCommands.add(commandKey);
+
+        // Handle built-in commands directly
+        if (command.code === 'collectNow') {
+          // Trigger immediate collection on next tick (avoid re-entrance)
+          setTimeout(() => this.collectNow().catch(e => log.error('collectNow command failed:', e)), 0);
+        } else {
+          // Emit event for platform layer to handle (reboot, restart, etc.)
+          this.emit('scheduled-command', command);
+        }
+      }
     }
   }
 
