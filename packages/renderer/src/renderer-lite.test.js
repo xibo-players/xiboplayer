@@ -303,6 +303,120 @@ describe('RendererLite', () => {
       expect(mockGetMediaUrl).toHaveBeenCalledWith(1);
     });
 
+    it('should default to objectFit contain and objectPosition center center', async () => {
+      const widget = {
+        type: 'image',
+        id: 'm1',
+        fileId: '1',
+        options: { uri: 'test.png' },
+        duration: 10,
+        transitions: { in: null, out: null }
+      };
+
+      const region = { width: 1920, height: 1080 };
+      const element = await renderer.renderImage(widget, region);
+
+      expect(element.style.objectFit).toBe('contain');
+      expect(element.style.objectPosition).toBe('center center');
+    });
+
+    it('should apply objectFit fill when scaleType is stretch', async () => {
+      const widget = {
+        type: 'image',
+        id: 'm1',
+        fileId: '1',
+        options: { uri: 'test.png', scaleType: 'stretch' },
+        duration: 10,
+        transitions: { in: null, out: null }
+      };
+
+      const region = { width: 1920, height: 1080 };
+      const element = await renderer.renderImage(widget, region);
+
+      expect(element.style.objectFit).toBe('fill');
+    });
+
+    it('should apply objectFit contain when scaleType is center', async () => {
+      const widget = {
+        type: 'image',
+        id: 'm1',
+        fileId: '1',
+        options: { uri: 'test.png', scaleType: 'center' },
+        duration: 10,
+        transitions: { in: null, out: null }
+      };
+
+      const region = { width: 1920, height: 1080 };
+      const element = await renderer.renderImage(widget, region);
+
+      expect(element.style.objectFit).toBe('contain');
+    });
+
+    it('should map align and valign to objectPosition', async () => {
+      const widget = {
+        type: 'image',
+        id: 'm1',
+        fileId: '1',
+        options: { uri: 'test.png', align: 'left', valign: 'top' },
+        duration: 10,
+        transitions: { in: null, out: null }
+      };
+
+      const region = { width: 1920, height: 1080 };
+      const element = await renderer.renderImage(widget, region);
+
+      expect(element.style.objectPosition).toBe('left top');
+    });
+
+    it('should map align right and valign bottom to objectPosition', async () => {
+      const widget = {
+        type: 'image',
+        id: 'm1',
+        fileId: '1',
+        options: { uri: 'test.png', align: 'right', valign: 'bottom' },
+        duration: 10,
+        transitions: { in: null, out: null }
+      };
+
+      const region = { width: 1920, height: 1080 };
+      const element = await renderer.renderImage(widget, region);
+
+      expect(element.style.objectPosition).toBe('right bottom');
+    });
+
+    it('should map valign middle to center in objectPosition', async () => {
+      const widget = {
+        type: 'image',
+        id: 'm1',
+        fileId: '1',
+        options: { uri: 'test.png', align: 'center', valign: 'middle' },
+        duration: 10,
+        transitions: { in: null, out: null }
+      };
+
+      const region = { width: 1920, height: 1080 };
+      const element = await renderer.renderImage(widget, region);
+
+      expect(element.style.objectPosition).toBe('center center');
+    });
+
+    it('should combine scaleType stretch with alignment options', async () => {
+      const widget = {
+        type: 'image',
+        id: 'm1',
+        fileId: '1',
+        options: { uri: 'test.png', scaleType: 'stretch', align: 'left', valign: 'bottom' },
+        duration: 10,
+        transitions: { in: null, out: null }
+      };
+
+      const region = { width: 1920, height: 1080 };
+      const element = await renderer.renderImage(widget, region);
+
+      expect(element.style.objectFit).toBe('fill');
+      expect(element.style.objectPosition).toBe('left bottom');
+    });
+
     it('should create video widget element', async () => {
       const widget = {
         type: 'video',

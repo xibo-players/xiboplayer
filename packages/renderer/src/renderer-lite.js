@@ -1359,7 +1359,17 @@ export class RendererLite {
     img.className = 'renderer-lite-widget';
     img.style.width = '100%';
     img.style.height = '100%';
-    img.style.objectFit = 'contain';
+    // Scale type: 'center' (default) → contain, 'stretch' → fill
+    const scaleType = widget.options.scaleType;
+    img.style.objectFit = scaleType === 'stretch' ? 'fill' : 'contain';
+
+    // Alignment: map align/valign to CSS object-position
+    const alignMap = { left: 'left', center: 'center', right: 'right' };
+    const valignMap = { top: 'top', middle: 'center', bottom: 'bottom' };
+    const hPos = alignMap[widget.options.align] || 'center';
+    const vPos = valignMap[widget.options.valign] || 'center';
+    img.style.objectPosition = `${hPos} ${vPos}`;
+
     img.style.opacity = '0';
 
     // Get media URL from cache (already pre-fetched!) or fetch on-demand
