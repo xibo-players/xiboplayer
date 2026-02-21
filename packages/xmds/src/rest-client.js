@@ -339,13 +339,25 @@ export class RestClient {
 
   /**
    * BlackList - report broken media to CMS
-   *
-   * BlackList has no REST equivalent endpoint.
-   * Log a warning and return false.
+   * POST /blacklist → JSON acknowledgement
+   * @param {string|number} mediaId - The media ID
+   * @param {string} type - File type ('media' or 'layout')
+   * @param {string} reason - Reason for blacklisting
+   * @returns {Promise<boolean>}
    */
   async blackList(mediaId, type, reason) {
-    log.warn(`BlackList not available via REST (${type}/${mediaId}: ${reason})`);
-    return false;
+    try {
+      const result = await this.restSend('POST', '/blacklist', {
+        mediaId: String(mediaId),
+        type: type || 'media',
+        reason: reason || 'Failed to render',
+      });
+      log.info(`BlackListed ${type}/${mediaId}: ${reason}`);
+      return result?.success === true;
+    } catch (error) {
+      log.warn('BlackList failed:', error);
+      return false;
+    }
   }
 
   /**

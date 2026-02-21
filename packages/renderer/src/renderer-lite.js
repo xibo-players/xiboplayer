@@ -1794,9 +1794,10 @@ export class RendererLite {
     img.className = 'renderer-lite-widget';
     img.style.width = '100%';
     img.style.height = '100%';
-    // Scale type: 'center' (default) → contain, 'stretch' → fill
+    // Scale type: stretch → fill, center → none (natural size), default → contain
     const scaleType = widget.options.scaleType;
-    img.style.objectFit = scaleType === 'stretch' ? 'fill' : 'contain';
+    const fitMap = { stretch: 'fill', center: 'none', fit: 'contain' };
+    img.style.objectFit = fitMap[scaleType] || 'contain';
 
     // Alignment: map align/valign to CSS object-position
     const alignMap = { left: 'left', center: 'center', right: 'right' };
@@ -1829,7 +1830,9 @@ export class RendererLite {
     video.className = 'renderer-lite-widget';
     video.style.width = '100%';
     video.style.height = '100%';
-    video.style.objectFit = 'contain';
+    const vScaleType = widget.options.scaleType;
+    const vFitMap = { stretch: 'fill', center: 'none', fit: 'contain' };
+    video.style.objectFit = vFitMap[vScaleType] || 'contain';
     video.style.opacity = '1'; // Immediately visible
     video.autoplay = true;
     video.preload = 'auto'; // Eagerly buffer - chunks are pre-warmed in SW BlobCache
