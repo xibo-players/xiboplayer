@@ -234,16 +234,24 @@ export class LogReporter {
   /**
    * Get logs ready for submission to CMS
    *
-   * Returns unsubmitted logs up to the specified limit.
-   * Logs are ordered by ID (oldest first).
+   * Returns unsubmitted logs up to a limit determined by backlog size:
+   * - Normal: up to 50 logs per submission
+   * - Backlog (> 50 pending): up to 300 logs per submission
+   * Aligns with upstream Xibo player spec limits.
    *
-   * @param {number} limit - Maximum number of logs to return (default: 100)
+   * @param {number} [limit] - Override limit (omit for auto-detection)
    * @returns {Promise<Array>} Array of log objects
    */
-  async getLogsForSubmission(limit = 100) {
+  async getLogsForSubmission(limit) {
     if (!this.db) {
       log.warn('Logs database not initialized');
       return [];
+    }
+
+    // Auto-detect limit based on backlog size if not explicitly provided
+    if (limit === undefined) {
+      const pending = await this._countUnsubmitted();
+      limit = pending > 50 ? 300 : 50;
     }
 
     return new Promise((resolve, reject) => {
@@ -262,7 +270,7 @@ export class LogReporter {
           logs.push(cursor.value);
           cursor.continue();
         } else {
-          log.debug(`Retrieved ${logs.length} unsubmitted logs`);
+          log.debug(`Retrieved ${logs.length} unsubmitted logs (limit: ${limit})`);
           resolve(logs);
         }
       };
@@ -271,6 +279,25 @@ export class LogReporter {
         log.error('Failed to retrieve logs:', request.error);
         reject(new Error(`Failed to retrieve logs: ${request.error}`));
       };
+    });
+  }
+
+  /**
+   * Count unsubmitted logs in the database.
+   * @returns {Promise<number>}
+   */
+  async _countUnsubmitted() {
+    return new Promise((resolve) => {
+      try {
+        const transaction = this.db.transaction([LOGS_STORE], 'readonly');
+        const store = transaction.objectStore(LOGS_STORE);
+        const index = store.index('submitted');
+        const request = index.count(IDBKeyRange.only(0));
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => resolve(0);
+      } catch (_) {
+        resolve(0);
+      }
     });
   }
 
