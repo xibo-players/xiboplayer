@@ -871,15 +871,60 @@ export class PlayerCore extends EventEmitter {
   }
 
   /**
-   * Request geo location from the browser Geolocation API.
-   * Called when CMS asks us to report our location (XMR without coordinates).
+   * Request geo location using a fallback chain:
+   * 1. Browser Geolocation API (GPS / OS-level)
+   * 2. Google Geolocation API (if GOOGLE_GEO_API_KEY is configured)
+   * 3. IP-based geolocation (free, no key required)
    * @returns {Promise<{latitude: number, longitude: number}|null>}
    */
   async requestGeoLocation() {
-    if (typeof navigator === 'undefined' || !navigator.geolocation) {
-      log.warn('Geolocation API not available');
-      return null;
+    // Try browser geolocation first (works with GPS or Google API key baked into Chromium)
+    const browser = await this._tryBrowserGeolocation();
+    if (browser) return this._applyLocation(browser.latitude, browser.longitude, 'browser');
+
+    // Try Google Geolocation API if key is configured
+    const apiKey = this.config?.googleGeoApiKey;
+    if (apiKey) {
+      const google = await this._tryGoogleGeolocation(apiKey);
+      if (google) return this._applyLocation(google.latitude, google.longitude, 'google-api');
     }
+
+    // Fall back to IP-based geolocation (free, no key)
+    const ip = await this._tryIpGeolocation();
+    if (ip) return this._applyLocation(ip.latitude, ip.longitude, 'ip-geolocation');
+
+    log.warn('All geolocation methods failed');
+    return null;
+  }
+
+  /**
+   * Apply a resolved location: update schedule, emit event, trigger re-evaluation.
+   * @param {number} lat
+   * @param {number} lng
+   * @param {string} source - 'browser' | 'google-api' | 'ip-geolocation'
+   * @returns {{latitude: number, longitude: number}}
+   * @private
+   */
+  _applyLocation(lat, lng, source) {
+    log.info(`Geolocation (${source}): ${lat.toFixed(4)}, ${lng.toFixed(4)}`);
+
+    if (this.schedule?.setLocation) {
+      this.schedule.setLocation(lat, lng);
+    }
+
+    this.emit('location-updated', { latitude: lat, longitude: lng, source });
+    this.checkSchedule();
+
+    return { latitude: lat, longitude: lng };
+  }
+
+  /**
+   * Try the browser Geolocation API (navigator.geolocation).
+   * @returns {Promise<{latitude: number, longitude: number}|null>}
+   * @private
+   */
+  async _tryBrowserGeolocation() {
+    if (typeof navigator === 'undefined' || !navigator.geolocation) return null;
 
     try {
       const position = await new Promise((resolve, reject) => {
@@ -889,24 +934,79 @@ export class PlayerCore extends EventEmitter {
           enableHighAccuracy: false
         });
       });
-
-      const lat = position.coords.latitude;
-      const lng = position.coords.longitude;
-
-      log.info(`Browser geolocation: ${lat.toFixed(4)}, ${lng.toFixed(4)}`);
-
-      if (this.schedule?.setLocation) {
-        this.schedule.setLocation(lat, lng);
-      }
-
-      this.emit('location-updated', { latitude: lat, longitude: lng, source: 'browser' });
-      this.checkSchedule();
-
-      return { latitude: lat, longitude: lng };
+      return { latitude: position.coords.latitude, longitude: position.coords.longitude };
     } catch (error) {
       log.warn('Browser geolocation failed:', error?.message || error);
       return null;
     }
+  }
+
+  /**
+   * Try Google Geolocation API (direct HTTPS POST, bypasses Chromium's built-in service).
+   * @param {string} apiKey - Google API key
+   * @returns {Promise<{latitude: number, longitude: number}|null>}
+   * @private
+   */
+  async _tryGoogleGeolocation(apiKey) {
+    try {
+      const res = await fetch(
+        `https://www.googleapis.com/geolocation/v1/geolocate?key=${apiKey}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ considerIp: true }),
+          signal: AbortSignal.timeout(5000)
+        }
+      );
+      if (!res.ok) {
+        log.warn(`Google Geolocation API returned ${res.status}`);
+        return null;
+      }
+      const data = await res.json();
+      if (data.location?.lat != null && data.location?.lng != null) {
+        return { latitude: data.location.lat, longitude: data.location.lng };
+      }
+      return null;
+    } catch (error) {
+      log.warn('Google Geolocation API failed:', error?.message || error);
+      return null;
+    }
+  }
+
+  /**
+   * Try IP-based geolocation using free HTTPS providers (no API key needed).
+   * Tries ipapi.co first, then freeipapi.com as fallback.
+   * @returns {Promise<{latitude: number, longitude: number}|null>}
+   * @private
+   */
+  async _tryIpGeolocation() {
+    const providers = [
+      {
+        url: 'https://ipapi.co/json/',
+        parse: (data) => data.latitude != null && data.longitude != null
+          ? { latitude: data.latitude, longitude: data.longitude }
+          : null
+      },
+      {
+        url: 'https://freeipapi.com/api/json',
+        parse: (data) => data.latitude != null && data.longitude != null
+          ? { latitude: data.latitude, longitude: data.longitude }
+          : null
+      }
+    ];
+
+    for (const provider of providers) {
+      try {
+        const res = await fetch(provider.url, { signal: AbortSignal.timeout(5000) });
+        if (!res.ok) continue;
+        const data = await res.json();
+        const location = provider.parse(data);
+        if (location) return location;
+      } catch (error) {
+        log.warn(`IP geolocation (${provider.url}) failed:`, error?.message || error);
+      }
+    }
+    return null;
   }
 
   /**

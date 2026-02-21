@@ -25,6 +25,7 @@ function loadFromEnv() {
     displayName: env.DISPLAY_NAME || '',
     hardwareKey: env.HARDWARE_KEY || '',
     xmrChannel: env.XMR_CHANNEL || '',
+    googleGeoApiKey: env.GOOGLE_GEO_API_KEY || '',
   };
 
   // Return env config if any value is set
@@ -322,6 +323,9 @@ export class Config {
   get xmrChannel() { return this.data.xmrChannel; }
   get xmrPubKey() { return this.data.xmrPubKey || ''; }
   get xmrPrivKey() { return this.data.xmrPrivKey || ''; }
+
+  get googleGeoApiKey() { return this.data.googleGeoApiKey || ''; }
+  set googleGeoApiKey(val) { this.data.googleGeoApiKey = val; this.save(); }
 }
 
 export const config = new Config();
