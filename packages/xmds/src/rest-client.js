@@ -185,9 +185,20 @@ export class RestClient {
         continue;
       }
       if (key === 'tags') {
-        // Parse tags: array of strings, or array of {tag: "value"} objects
+        // Parse tags from CMS JSON (SimpleXMLElement serialization varies):
+        //   Array of strings: ["geoApiKey|AIzaSy..."]
+        //   Array of objects: [{tag: "geoApiKey|AIzaSy..."}]
+        //   Single-tag object: {tag: "geoApiKey|AIzaSy..."} (SimpleXMLElement collapses single-element arrays)
+        //   String: "geoApiKey|AIzaSy..."
+        const extractTag = (t) => typeof t === 'object' ? (t.tag || t.value || '') : String(t);
         if (Array.isArray(value)) {
-          tags = value.map(t => typeof t === 'object' ? (t.tag || t.value || '') : String(t)).filter(Boolean);
+          tags = value.map(extractTag).filter(Boolean);
+        } else if (value && typeof value === 'object') {
+          // Single tag: {tag: "value"} — wrap in array
+          const t = extractTag(value);
+          if (t) tags = [t];
+        } else if (typeof value === 'string' && value) {
+          tags = [value];
         }
         continue;
       }
