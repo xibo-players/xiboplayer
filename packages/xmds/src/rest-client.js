@@ -315,6 +315,11 @@ export class RestClient {
       status.timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
     }
 
+    // Add statusDialog (summary for CMS display status page) if not provided
+    if (!status.statusDialog) {
+      status.statusDialog = `Current Layout: ${status.currentLayoutId || 'None'}`;
+    }
+
     return this.restSend('PUT', '/status', {
       statusData: status,
     });

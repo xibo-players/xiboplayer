@@ -234,24 +234,15 @@ export class LogReporter {
   /**
    * Get logs ready for submission to CMS
    *
-   * Returns unsubmitted logs up to a limit determined by backlog size:
-   * - Normal: up to 50 logs per submission
-   * - Backlog (> 50 pending): up to 300 logs per submission
-   * Aligns with upstream Xibo player spec limits.
+   * Returns unsubmitted logs up to the spec limit of 50 per batch.
    *
-   * @param {number} [limit] - Override limit (omit for auto-detection)
+   * @param {number} [limit=50] - Maximum number of logs to return (spec max: 50)
    * @returns {Promise<Array>} Array of log objects
    */
-  async getLogsForSubmission(limit) {
+  async getLogsForSubmission(limit = 50) {
     if (!this.db) {
       log.warn('Logs database not initialized');
       return [];
-    }
-
-    // Auto-detect limit based on backlog size if not explicitly provided
-    if (limit === undefined) {
-      const pending = await this._countUnsubmitted();
-      limit = pending > 50 ? 300 : 50;
     }
 
     return new Promise((resolve, reject) => {
