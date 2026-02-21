@@ -75,7 +75,7 @@ Install all packages at once:
 ```bash
 npm install @xiboplayer/core @xiboplayer/renderer @xiboplayer/schedule \
   @xiboplayer/xmds @xiboplayer/xmr @xiboplayer/cache @xiboplayer/stats \
-  @xiboplayer/settings @xiboplayer/utils @xiboplayer/proxy
+  @xiboplayer/settings @xiboplayer/utils @xiboplayer/sync @xiboplayer/proxy
 ```
 
 Or install only what you need:
@@ -101,15 +101,15 @@ npm install @xiboplayer/proxy   # CORS proxy + PWA server for shells
 │       @xiboplayer/xmds            @xiboplayer/xmr       │
 │   SOAP + REST ↔ CMS           WebSocket ↔ CMS push     │
 ├─────────────────────────────────────────────────────────┤
-│  @xiboplayer/proxy   @xiboplayer/utils  @xibo/sync  crypto│
-│  CORS proxy · PWA    logger · events   video wall   RSA  │
-│  static server       fetch · config    lead/follow  keys │
+│ @xiboplayer/proxy  @xiboplayer/utils  @xiboplayer/sync crypto│
+│  CORS proxy · PWA    logger · events   video wall    RSA  │
+│  static server       fetch · config    lead/follow   keys │
 └─────────────────────────────────────────────────────────┘
 ```
 
 ## CMS communication
 
-The SDK supports two transport protocols:
+The SDK supports three communication channels:
 
 | Protocol | Package | Use case |
 |----------|---------|----------|
