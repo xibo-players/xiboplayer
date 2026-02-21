@@ -12,6 +12,13 @@
  * - hour: Hour (0-23)
  * - isoDay: ISO day of week (1=Monday, 7=Sunday)
  *
+ * Weather metrics (require weatherData in options):
+ * - weatherTemp: Current temperature
+ * - weatherHumidity: Current humidity percentage
+ * - weatherWindSpeed: Current wind speed
+ * - weatherCondition: Current weather condition (e.g. "Clear", "Rain")
+ * - weatherCloudCover: Cloud cover percentage
+ *
  * Supported conditions:
  * - equals, notEquals
  * - greaterThan, greaterThanOrEquals, lessThan, lessThanOrEquals
@@ -29,13 +36,25 @@ const log = createLogger('schedule:criteria');
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
 /**
+ * Weather metric name → weatherData property mapping
+ */
+const WEATHER_METRICS = {
+  weatherTemp: 'temperature',
+  weatherHumidity: 'humidity',
+  weatherWindSpeed: 'windSpeed',
+  weatherCondition: 'condition',
+  weatherCloudCover: 'cloudCover',
+};
+
+/**
  * Get built-in metric value from current date/time
  * @param {string} metric - Metric name
  * @param {Date} now - Current date
  * @param {Object} displayProperties - Display property map from CMS
+ * @param {Object} weatherData - Weather data from GetWeather XMDS call
  * @returns {string|null} Metric value or null if unknown
  */
-function getMetricValue(metric, now, displayProperties = {}) {
+function getMetricValue(metric, now, displayProperties = {}, weatherData = {}) {
   switch (metric) {
     case 'dayOfWeek':
       return DAY_NAMES[now.getDay()];
@@ -48,6 +67,15 @@ function getMetricValue(metric, now, displayProperties = {}) {
     case 'isoDay':
       return String(now.getDay() === 0 ? 7 : now.getDay());
     default:
+      // Check weather metrics
+      if (WEATHER_METRICS[metric]) {
+        const weatherKey = WEATHER_METRICS[metric];
+        if (weatherData[weatherKey] !== undefined) {
+          return String(weatherData[weatherKey]);
+        }
+        log.debug(`Weather metric "${metric}" requested but no weather data available`);
+        return null;
+      }
       // Check display properties (custom fields set in CMS)
       if (displayProperties[metric] !== undefined) {
         return String(displayProperties[metric]);
@@ -113,6 +141,7 @@ function evaluateCondition(actual, condition, expected, type) {
  * @param {Object} options
  * @param {Date} [options.now] - Current date (defaults to new Date())
  * @param {Object} [options.displayProperties] - Display property map from CMS
+ * @param {Object} [options.weatherData] - Weather data from GetWeather XMDS call
  * @returns {boolean} True if all criteria match (or no criteria)
  */
 export function evaluateCriteria(criteria, options = {}) {
@@ -120,9 +149,10 @@ export function evaluateCriteria(criteria, options = {}) {
 
   const now = options.now || new Date();
   const displayProperties = options.displayProperties || {};
+  const weatherData = options.weatherData || {};
 
   for (const criterion of criteria) {
-    const actual = getMetricValue(criterion.metric, now, displayProperties);
+    const actual = getMetricValue(criterion.metric, now, displayProperties, weatherData);
     const matches = evaluateCondition(actual, criterion.condition, criterion.value, criterion.type);
 
     if (!matches) {

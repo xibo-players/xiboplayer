@@ -367,6 +367,17 @@ export class XmdsClient {
     });
   }
 
+  /**
+   * GetWeather - get current weather data for schedule criteria
+   * @returns {Promise<string>} Weather data XML from CMS
+   */
+  async getWeather() {
+    return this.call('GetWeather', {
+      serverKey: this.config.cmsKey,
+      hardwareKey: this.config.hardwareKey
+    });
+  }
+
   async submitStats(statsXml) {
     try {
       const xml = await this.call('SubmitStats', {
