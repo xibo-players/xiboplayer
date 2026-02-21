@@ -144,6 +144,9 @@ importers:
 
   packages/renderer:
     dependencies:
+      '@xiboplayer/cache':
+        specifier: workspace:*
+        version: link:../cache
       '@xiboplayer/utils':
         specifier: workspace:*
         version: link:../utils
