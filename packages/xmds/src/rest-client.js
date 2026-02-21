@@ -337,6 +337,15 @@ export class RestClient {
     return result?.success === true;
   }
 
+  /**
+   * GetWeather - get current weather data for schedule criteria
+   * GET /weather → JSON weather data
+   * @returns {Promise<Object>} Weather data from CMS
+   */
+  async getWeather() {
+    return this.restGet('/weather');
+  }
+
   async submitStats(statsXml) {
     try {
       // Accept array (JSON-native) or string (XML) — send under the right key

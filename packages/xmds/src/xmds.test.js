@@ -883,6 +883,105 @@ describe('XmdsClient - NotifyStatus', () => {
   });
 });
 
+describe('XmdsClient - GetWeather', () => {
+  let client;
+  let mockFetch;
+
+  beforeEach(() => {
+    client = new XmdsClient({
+      cmsAddress: 'https://cms.example.com',
+      cmsKey: 'test-server-key',
+      hardwareKey: 'test-hardware-key',
+      retryOptions: { maxRetries: 0 }
+    });
+
+    mockFetch = vi.fn();
+    global.fetch = mockFetch;
+  });
+
+  it('should build correct SOAP envelope for GetWeather', async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      text: async () => `<?xml version="1.0"?>
+<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+  <soap:Body>
+    <GetWeatherResponse>
+      <weather>{"temperature":22,"humidity":65,"windSpeed":10,"condition":"Clear","cloudCover":15}</weather>
+    </GetWeatherResponse>
+  </soap:Body>
+</soap:Envelope>`
+    });
+
+    await client.getWeather();
+
+    expect(mockFetch).toHaveBeenCalledWith(
+      'https://cms.example.com/xmds.php?v=5&method=GetWeather',
+      expect.objectContaining({
+        method: 'POST',
+        headers: {
+          'Content-Type': 'text/xml; charset=utf-8'
+        }
+      })
+    );
+
+    const body = mockFetch.mock.calls[0][1].body;
+    expect(body).toContain('<tns:GetWeather>');
+    expect(body).toContain('<serverKey xsi:type="xsd:string">test-server-key</serverKey>');
+    expect(body).toContain('<hardwareKey xsi:type="xsd:string">test-hardware-key</hardwareKey>');
+  });
+
+  it('should return weather data from SOAP response', async () => {
+    const weatherJson = '{"temperature":22,"humidity":65,"windSpeed":10,"condition":"Clear","cloudCover":15}';
+    mockFetch.mockResolvedValue({
+      ok: true,
+      text: async () => `<?xml version="1.0"?>
+<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+  <soap:Body>
+    <GetWeatherResponse>
+      <weather>${weatherJson}</weather>
+    </GetWeatherResponse>
+  </soap:Body>
+</soap:Envelope>`
+    });
+
+    const result = await client.getWeather();
+    expect(result).toBe(weatherJson);
+  });
+
+  it('should handle SOAP fault', async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      text: async () => `<?xml version="1.0"?>
+<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+  <soap:Body>
+    <soap:Fault>
+      <faultcode>Server</faultcode>
+      <faultstring>Weather service unavailable</faultstring>
+    </soap:Fault>
+  </soap:Body>
+</soap:Envelope>`
+    });
+
+    await expect(client.getWeather()).rejects.toThrow('SOAP Fault: Weather service unavailable');
+  });
+
+  it('should handle HTTP errors', async () => {
+    mockFetch.mockResolvedValue({
+      ok: false,
+      status: 500,
+      statusText: 'Internal Server Error'
+    });
+
+    await expect(client.getWeather()).rejects.toThrow('XMDS GetWeather failed: 500 Internal Server Error');
+  });
+
+  it('should handle network errors', async () => {
+    mockFetch.mockRejectedValue(new Error('Network error'));
+
+    await expect(client.getWeather()).rejects.toThrow('Network error');
+  });
+});
+
 describe('XmdsClient - MediaInventory', () => {
   let client;
   let mockFetch;
