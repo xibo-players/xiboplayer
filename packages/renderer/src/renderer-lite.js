@@ -211,6 +211,7 @@ export class RendererLite {
     this.widgetTimers = new Map(); // widgetId => timer
     this.mediaUrlCache = new Map(); // fileId => blob URL (for parallel pre-fetching)
     this.layoutBlobUrls = new Map(); // layoutId => Set<blobUrl> (for lifecycle tracking)
+    this.audioOverlays = new Map(); // widgetId => [HTMLAudioElement] (audio overlays for widgets)
 
     // Scale state (for fitting layout to screen)
     this.scaleFactor = 1;
@@ -490,6 +491,19 @@ export class RendererLite {
     // Parse widget-level actions
     const actions = this.parseActions(mediaEl);
 
+    // Parse audio overlay nodes (<audio> child elements on the widget)
+    const audioNodes = [];
+    for (const child of mediaEl.children) {
+      if (child.tagName.toLowerCase() === 'audio') {
+        audioNodes.push({
+          mediaId: child.getAttribute('mediaId') || null,
+          uri: child.getAttribute('uri') || '',
+          volume: parseInt(child.getAttribute('volume') || '100'),
+          loop: child.getAttribute('loop') === '1'
+        });
+      }
+    }
+
     return {
       type,
       duration,
@@ -497,10 +511,12 @@ export class RendererLite {
       id,
       fileId, // Media library file ID for cache lookup
       enableStat: mediaEl.getAttribute('enableStat') !== '0', // absent or "1" = enabled
+      webhookUrl: options.webhookUrl || null,
       options,
       raw,
       transitions,
-      actions
+      actions,
+      audioNodes // Audio overlays attached to this widget
     };
   }
 
@@ -1125,6 +1141,27 @@ export class RendererLite {
       });
     }
 
+    // Audio widgets: wait for playback to start
+    const audioEl = this.findMediaElement(element, 'AUDIO');
+    if (audioEl) {
+      if (!audioEl.paused && audioEl.readyState >= 3) {
+        return Promise.resolve();
+      }
+      return new Promise((resolve) => {
+        const timer = setTimeout(() => {
+          this.log.warn(`Audio ready timeout (${READY_TIMEOUT}ms) for widget ${widget.id}`);
+          resolve();
+        }, READY_TIMEOUT);
+        const onPlaying = () => {
+          audioEl.removeEventListener('playing', onPlaying);
+          clearTimeout(timer);
+          this.log.info(`Audio widget ${widget.id} ready (playing)`);
+          resolve();
+        };
+        audioEl.addEventListener('playing', onPlaying);
+      });
+    }
+
     // Image widgets: wait for image decode
     const imgEl = this.findMediaElement(element, 'IMG');
     if (imgEl) {
@@ -1235,7 +1272,79 @@ export class RendererLite {
       element.style.opacity = '1';
     }
 
+    // Start audio overlays attached to this widget
+    this._startAudioOverlays(widget);
+
     return widget;
+  }
+
+  /**
+   * Start audio overlay elements for a widget.
+   * Audio overlays are <audio> child nodes in the XLF that play alongside
+   * the visual widget (e.g. background music for an image slideshow).
+   * @param {Object} widget - Widget config with audioNodes array
+   */
+  _startAudioOverlays(widget) {
+    if (!widget.audioNodes || widget.audioNodes.length === 0) return;
+
+    // Stop any existing audio overlays for this widget first
+    this._stopAudioOverlays(widget.id);
+
+    const audioElements = [];
+    for (const audioNode of widget.audioNodes) {
+      if (!audioNode.uri) continue;
+
+      const audio = document.createElement('audio');
+      audio.autoplay = true;
+      audio.loop = audioNode.loop;
+      audio.volume = Math.max(0, Math.min(1, audioNode.volume / 100));
+
+      // Resolve audio URI via cache/proxy
+      const mediaId = parseInt(audioNode.mediaId);
+      let audioSrc = mediaId ? this.mediaUrlCache.get(mediaId) : null;
+
+      if (!audioSrc && mediaId && this.options.getMediaUrl) {
+        // Async — fire and forget, set src when ready
+        this.options.getMediaUrl(mediaId).then(url => {
+          audio.src = url;
+        }).catch(() => {
+          audio.src = `${window.location.origin}/player/cache/media/${audioNode.uri}`;
+        });
+      } else if (!audioSrc) {
+        audio.src = `${window.location.origin}/player/cache/media/${audioNode.uri}`;
+      } else {
+        audio.src = audioSrc;
+      }
+
+      // Handle autoplay restrictions gracefully (play() may return undefined in some envs)
+      const playPromise = audio.play();
+      if (playPromise && playPromise.catch) playPromise.catch(() => {});
+
+      audioElements.push(audio);
+      this.log.info(`Audio overlay started for widget ${widget.id}: ${audioNode.uri} (loop=${audioNode.loop}, vol=${audioNode.volume})`);
+    }
+
+    if (audioElements.length > 0) {
+      this.audioOverlays.set(widget.id, audioElements);
+    }
+  }
+
+  /**
+   * Stop and clean up audio overlay elements for a widget.
+   * @param {string} widgetId - Widget ID
+   */
+  _stopAudioOverlays(widgetId) {
+    const audioElements = this.audioOverlays.get(widgetId);
+    if (!audioElements) return;
+
+    for (const audio of audioElements) {
+      audio.pause();
+      audio.removeAttribute('src');
+      audio.load(); // Release resources
+    }
+
+    this.audioOverlays.delete(widgetId);
+    this.log.info(`Audio overlays stopped for widget ${widgetId}`);
   }
 
   /**
@@ -1265,6 +1374,9 @@ export class RendererLite {
 
     const audioEl = widgetElement.querySelector('audio');
     if (audioEl && widget.options.loop !== '1') audioEl.pause();
+
+    // Stop audio overlays attached to this widget
+    this._stopAudioOverlays(widget.id);
 
     return { widget, animPromise };
   }
@@ -1527,6 +1639,34 @@ export class RendererLite {
     }
 
     audio.src = audioSrc;
+
+    // Handle audio end - similar to video ended handling
+    audio.addEventListener('ended', () => {
+      if (widget.options.loop === '1') {
+        audio.currentTime = 0;
+        this.log.info(`Audio ${fileId} ended - reset to start, waiting for widget cycle to replay`);
+      } else {
+        this.log.info(`Audio ${fileId} ended - playback complete`);
+      }
+    });
+
+    // Detect audio duration for dynamic layout timing (when useDuration=0)
+    audio.addEventListener('loadedmetadata', () => {
+      const audioDuration = Math.floor(audio.duration);
+      this.log.info(`Audio ${fileId} duration detected: ${audioDuration}s`);
+
+      if (widget.duration === 0 || widget.useDuration === 0) {
+        widget.duration = audioDuration;
+        this.log.info(`Updated widget ${widget.id} duration to ${audioDuration}s (useDuration=0)`);
+        this.updateLayoutDuration();
+      }
+    });
+
+    // Handle audio errors
+    audio.addEventListener('error', () => {
+      const error = audio.error;
+      this.log.warn(`Audio error (non-fatal): ${fileId}, code: ${error?.code}, message: ${error?.message || 'Unknown'}`);
+    });
 
     // Visual feedback
     const icon = document.createElement('div');
@@ -2577,6 +2717,11 @@ export class RendererLite {
   cleanup() {
     this.stopAllOverlays();
     this.stopCurrentLayout();
+
+    // Clean up any remaining audio overlays
+    for (const widgetId of this.audioOverlays.keys()) {
+      this._stopAudioOverlays(widgetId);
+    }
 
     // Clear the layout preload pool
     this.layoutPool.clear();
