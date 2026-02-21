@@ -1446,14 +1446,17 @@ export class RendererLite {
     }
 
     // Hide all other widgets in region
+    // Cancel fill:forwards animations first — they override inline styles
     for (const [widgetId, widgetEl] of region.widgetElements) {
       if (widgetId !== widget.id) {
+        widgetEl.getAnimations?.().forEach(a => a.cancel());
         widgetEl.style.visibility = 'hidden';
         widgetEl.style.opacity = '0';
       }
     }
 
     this.updateMediaElement(element, widget);
+    element.getAnimations?.().forEach(a => a.cancel());
     element.style.visibility = 'visible';
 
     if (widget.transitions.in) {
