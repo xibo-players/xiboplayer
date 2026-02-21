@@ -2,12 +2,13 @@
 
 ## Current Status: PRODUCTION READY
 
-**Feature Parity:** ~95% vs upstream Xibo players
-**Last Updated:** 2026-02-17
+**Feature Parity:** ~92% vs upstream Xibo players
+**Last Updated:** 2026-02-21
+**Audit:** See [AUDIT.md](AUDIT.md) for full spec compliance results
 
 ## What Works
 
-### XMDS Communication (10/10 Methods)
+### XMDS Communication (14/14 Methods)
 - RegisterDisplay - Authentication, settings, XMR address
 - RequiredFiles - File list with CRC32 skip optimization
 - Schedule - Layout schedule with actions, commands, data connectors
@@ -18,6 +19,9 @@
 - SubmitStats - Proof-of-play with aggregation
 - SubmitScreenShot - Periodic + on-demand screenshot capture
 - BlackList - Media blacklisting via SOAP
+- GetFile - Chunked parallel download
+- ReportFaults - Fault tracking with deduplication
+- GetWeather - Not yet implemented ([#73](https://github.com/xibo-players/xiboplayer/issues/73))
 
 ### Dual Transport (PWA Exclusive)
 - SOAP/XML transport (XmdsClient) - All CMS versions
@@ -106,16 +110,40 @@
 - Android - WebView wrapper
 - webOS - Cordova wrapper
 
-## Known Gaps (~5%)
+## Known Gaps (15 tracked issues)
 
-### Low Impact (Rarely Used)
-- Drawer regions (XLR-specific UI feature)
-- Multi-display sync events (very rare use case)
-- BroadcastChannel stats (stats go direct to CMS)
+### Critical ([#70](https://github.com/xibo-players/xiboplayer/issues/70), [#71](https://github.com/xibo-players/xiboplayer/issues/71), [#72](https://github.com/xibo-players/xiboplayer/issues/72))
+- HTTP 429 Retry-After header handling
+- Periodic fault reporting agent
+- Unsafe layout blacklisting
+
+### Moderate ([#73](https://github.com/xibo-players/xiboplayer/issues/73)–[#79](https://github.com/xibo-players/xiboplayer/issues/79))
+- Weather criteria integration
+- Image scaling options (scaletype)
+- BlackList via REST transport
+- NotifyStatus additional fields
+- Widget engagement tracking
+- Layout interleaving (weighted SoV)
+- PWA scheduled commands + webhooks + event stats
+
+### Minor ([#80](https://github.com/xibo-players/xiboplayer/issues/80)–[#84](https://github.com/xibo-players/xiboplayer/issues/84))
+- Recurrence pattern evaluation
+- Download window enforcement
+- Stats BroadcastChannel transport
+- Default transition type
+- Adspace exchange / SSP
 
 ### Not Applicable (Browser Sandbox)
 - Shell commands (use HTTP commands instead)
 - RS232 serial port (N/A in browser)
+
+## Test Suite
+
+```
+Tests:  1144 passed | 7 skipped (1151 total)
+Files:  31 test files (all passed)
+Time:   ~9s
+```
 
 ## Performance
 
@@ -132,10 +160,10 @@
 
 | Category | Lines | Files |
 |----------|-------|-------|
-| Core packages | ~7,500 | 20 source files |
-| Platform (PWA) | ~3,200 | 2 files |
-| Tests | ~3,000+ | 12 test files |
-| **Total** | **~12,000** | **~22 files** |
+| Core packages (src) | ~19,500 | 69 source files |
+| Platform (PWA) | ~2,400 | TypeScript |
+| Tests | ~19,500 | 38 test files |
+| **Total** | **~41,000** | **~107 files** |
 
 ## Build and Test
 
@@ -165,5 +193,6 @@ pnpm run build
 ## Related Documentation
 
 - Architecture: `packages/docs/ARCHITECTURE.md`
+- Spec Audit: `packages/docs/AUDIT.md`
 - Renderer comparison: `packages/renderer/docs/RENDERER_COMPARISON.md`
 - Deployment guide: `packages/docs/DEPLOYMENT.md`
