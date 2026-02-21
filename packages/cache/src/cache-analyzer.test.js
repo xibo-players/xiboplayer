@@ -2,6 +2,7 @@
  * CacheAnalyzer Tests
  *
  * Tests for stale media detection, storage health reporting, and eviction logic.
+ * Mock follows the CacheProxy interface (getAllFiles, deleteFiles).
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
@@ -12,17 +13,15 @@ describe('CacheAnalyzer', () => {
   let mockCache;
 
   beforeEach(() => {
-    // Mock CacheManager with in-memory file store
+    // Mock CacheProxy with in-memory file store
     const files = new Map();
-    const cacheStore = new Map();
 
     mockCache = {
-      db: null, // Will be set up per-test if eviction is tested
-      cache: {
-        delete: vi.fn(async (key) => cacheStore.delete(key)),
-      },
       getAllFiles: vi.fn(async () => [...files.values()]),
-      getCacheKey: vi.fn((type, id) => `/player/pwa/cache/${type}/${id}`),
+      deleteFiles: vi.fn(async (filesToDelete) => ({
+        deleted: filesToDelete.length,
+        total: filesToDelete.length,
+      })),
       // Helper to add test files
       _files: files,
       _addFile(record) {
@@ -184,25 +183,6 @@ describe('CacheAnalyzer', () => {
   });
 
   describe('eviction', () => {
-    let deletedIds;
-
-    beforeEach(() => {
-      deletedIds = [];
-
-      // Mock IndexedDB transaction for metadata deletion
-      const mockStore = {
-        delete: vi.fn((id) => {
-          deletedIds.push(id);
-          return { set onsuccess(fn) { fn(); }, set onerror(_) {} };
-        }),
-      };
-      mockCache.db = {
-        transaction: vi.fn(() => ({
-          objectStore: vi.fn(() => mockStore),
-        })),
-      };
-    });
-
     it('should evict orphaned files when storage exceeds threshold', async () => {
       mockCache._addFile({ id: 'old', type: 'media', size: 500, cachedAt: 1000 });
       mockCache._addFile({ id: 'newer', type: 'media', size: 300, cachedAt: 2000 });
@@ -220,9 +200,8 @@ describe('CacheAnalyzer', () => {
       expect(report.evicted.length).toBeGreaterThan(0);
       // Should evict oldest first
       expect(report.evicted[0].id).toBe('old');
-      expect(deletedIds).toContain('old');
-      // Cache API delete should also be called
-      expect(mockCache.cache.delete).toHaveBeenCalled();
+      // deleteFiles should be called on the cache proxy
+      expect(mockCache.deleteFiles).toHaveBeenCalled();
 
       vi.unstubAllGlobals();
     });

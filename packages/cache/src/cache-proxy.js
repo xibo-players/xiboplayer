@@ -417,6 +417,32 @@ export class CacheProxy extends EventEmitter {
   }
 
   /**
+   * Get all cached files from Service Worker
+   * @returns {Promise<Array<{id: string, type: string, size: number, cachedAt: number}>>}
+   */
+  async getAllFiles() {
+    if (!this.backend) {
+      throw new Error('CacheProxy not initialized');
+    }
+
+    return new Promise((resolve) => {
+      const channel = new MessageChannel();
+
+      channel.port1.onmessage = (event) => {
+        const { success, files } = event.data;
+        resolve(success ? files : []);
+      };
+
+      navigator.serviceWorker.controller.postMessage(
+        { type: 'GET_ALL_FILES' },
+        [channel.port2]
+      );
+
+      setTimeout(() => resolve([]), 5000);
+    });
+  }
+
+  /**
    * Delete files from cache (purge obsolete media)
    * @param {Array<{type: string, id: string}>} files - Files to delete
    * @returns {Promise<{deleted: number, total: number}>}

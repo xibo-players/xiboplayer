@@ -98,6 +98,9 @@ export class MessageHandler {
       case 'URGENT_CHUNK':
         return this.handleUrgentChunk(data.fileType, data.fileId, data.chunkIndex);
 
+      case 'GET_ALL_FILES':
+        return await this.handleGetAllFiles();
+
       default:
         this.log.warn('Unknown message type:', type);
         return { success: false, error: 'Unknown message type' };
@@ -687,6 +690,14 @@ export class MessageHandler {
     ]);
 
     this.log.info('Backfilled static cache for:', filename, `(${staticContentType}, ${blob.size} bytes)`);
+  }
+
+  /**
+   * Handle GET_ALL_FILES message — enumerate all cached files
+   */
+  async handleGetAllFiles() {
+    const files = await this.cacheManager.getAllFiles();
+    return { success: true, files };
   }
 
   /**

@@ -248,6 +248,58 @@ export class CacheManager {
   }
 
   /**
+   * Enumerate all cached files (media, layout, widget) from Cache API keys.
+   * Deduplicates chunked entries (chunks + metadata → single parent file).
+   * @returns {Promise<Array<{id: string, type: string, size: number, cachedAt: number}>>}
+   */
+  async getAllFiles() {
+    if (!this.cache) await this.init();
+    const keys = await this.cache.keys();
+    const files = [];
+    const seen = new Set();
+
+    for (const request of keys) {
+      const url = new URL(request.url);
+      const path = url.pathname;
+
+      // Skip chunk entries and metadata — only count parent files
+      if (path.includes('/chunk-') || path.endsWith('/metadata')) {
+        const parent = path.replace(/\/(chunk-\d+|metadata)$/, '');
+        if (seen.has(parent)) continue;
+        seen.add(parent);
+
+        const meta = await this.getMetadata(parent);
+        const match = parent.match(/\/cache\/(media|layout|widget)\/(.+)/);
+        if (match) {
+          files.push({
+            id: match[2], type: match[1],
+            size: meta?.totalSize || 0,
+            cachedAt: meta?.createdAt || 0,
+          });
+        }
+        continue;
+      }
+
+      // Skip static resources — they're copies, not primary files
+      if (path.includes('/cache/static/')) continue;
+
+      // Whole (non-chunked) file
+      if (seen.has(path)) continue;
+      seen.add(path);
+      const match = path.match(/\/cache\/(media|layout|widget)\/(.+)/);
+      if (match) {
+        const resp = await this.cache.match(request);
+        files.push({
+          id: match[2], type: match[1],
+          size: parseInt(resp?.headers.get('Content-Length') || '0'),
+          cachedAt: 0,
+        });
+      }
+    }
+    return files;
+  }
+
+  /**
    * Check if file is stored as chunks
    * @param {string} cacheKey - Base cache key
    * @returns {Promise<boolean>}

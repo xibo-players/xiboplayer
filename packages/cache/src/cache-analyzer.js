@@ -4,6 +4,9 @@
  * Compares cached files against RequiredFiles from the CMS to identify
  * orphaned media that is no longer needed. Logs a summary every collection
  * cycle. Only evicts when storage pressure exceeds a configurable threshold.
+ *
+ * Works entirely through CacheProxy (postMessage to SW) — no IndexedDB,
+ * no direct Cache API access.
  */
 
 import { createLogger } from '@xiboplayer/utils';
@@ -24,7 +27,7 @@ function formatBytes(bytes) {
 
 export class CacheAnalyzer {
   /**
-   * @param {import('./cache.js').CacheManager} cache - CacheManager instance
+   * @param {import('./cache-proxy.js').CacheProxy} cache - CacheProxy instance
    * @param {object} [options]
    * @param {number} [options.threshold=80] - Storage usage % above which eviction triggers
    */
@@ -130,59 +133,43 @@ export class CacheAnalyzer {
 
   /**
    * Evict orphaned files (oldest first) until targetBytes are freed.
-   *
-   * Deletes from both IndexedDB metadata and Cache API.
+   * Delegates deletion to CacheProxy.deleteFiles() which routes to SW.
    *
    * @param {Array} orphanedFiles - Files to evict, sorted oldest-first
    * @param {number} targetBytes - Bytes to free
    * @returns {Promise<Array>} Evicted file records
    */
   async _evict(orphanedFiles, targetBytes) {
-    const evicted = [];
-    let freedBytes = 0;
+    const toEvict = [];
+    let plannedBytes = 0;
 
     for (const file of orphanedFiles) {
-      if (freedBytes >= targetBytes) break;
-
-      try {
-        // Delete from IndexedDB metadata
-        await this._deleteFileMetadata(file.id);
-
-        // Delete from Cache API
-        const cacheKey = this.cache.getCacheKey(file.type, file.id);
-        if (this.cache.cache) {
-          await this.cache.cache.delete(cacheKey);
-        }
-
-        freedBytes += file.size || 0;
-        evicted.push({
-          id: file.id,
-          type: file.type,
-          size: file.size || 0,
-          cachedAt: file.cachedAt || 0,
-        });
-
-        log.info(`  Evicted: ${file.type}/${file.id} (${formatBytes(file.size || 0)})`);
-      } catch (err) {
-        log.warn(`  Failed to evict ${file.type}/${file.id}:`, err.message);
-      }
+      if (plannedBytes >= targetBytes) break;
+      toEvict.push(file);
+      plannedBytes += file.size || 0;
     }
 
-    log.info(`Evicted ${evicted.length} files, freed ${formatBytes(freedBytes)}`);
-    return evicted;
-  }
+    if (toEvict.length === 0) return [];
 
-  /**
-   * Delete a file record from IndexedDB.
-   */
-  async _deleteFileMetadata(id) {
-    return new Promise((resolve, reject) => {
-      const tx = this.cache.db.transaction('files', 'readwrite');
-      const store = tx.objectStore('files');
-      const request = store.delete(id);
-      request.onsuccess = () => resolve();
-      request.onerror = () => reject(request.error);
-    });
+    try {
+      const filesToDelete = toEvict.map(f => ({ type: f.type, id: f.id }));
+      await this.cache.deleteFiles(filesToDelete);
+
+      for (const f of toEvict) {
+        log.info(`  Evicted: ${f.type}/${f.id} (${formatBytes(f.size || 0)})`);
+      }
+      log.info(`Evicted ${toEvict.length} files, freed ${formatBytes(plannedBytes)}`);
+    } catch (err) {
+      log.warn('Eviction failed:', err.message);
+      return [];
+    }
+
+    return toEvict.map(f => ({
+      id: f.id,
+      type: f.type,
+      size: f.size || 0,
+      cachedAt: f.cachedAt || 0,
+    }));
   }
 }
 

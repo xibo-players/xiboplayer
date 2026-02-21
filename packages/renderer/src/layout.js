@@ -3,6 +3,8 @@
  * Based on arexibo layout.rs
  */
 
+import { cacheWidgetHtml } from '@xiboplayer/cache';
+
 export class LayoutTranslator {
   constructor(xmds) {
     this.xmds = xmds;
@@ -11,7 +13,7 @@ export class LayoutTranslator {
   /**
    * Translate XLF XML to playable HTML
    */
-  async translateXLF(layoutId, xlfXml, cacheManager) {
+  async translateXLF(layoutId, xlfXml) {
     const parser = new DOMParser();
     const doc = parser.parseFromString(xlfXml, 'text/xml');
 
@@ -26,7 +28,7 @@ export class LayoutTranslator {
 
     const regions = [];
     for (const regionEl of doc.querySelectorAll('region')) {
-      regions.push(await this.translateRegion(layoutId, regionEl, cacheManager));
+      regions.push(await this.translateRegion(layoutId, regionEl));
     }
 
     return this.generateHTML(width, height, bgcolor, regions);
@@ -35,7 +37,7 @@ export class LayoutTranslator {
   /**
    * Translate a single region
    */
-  async translateRegion(layoutId, regionEl, cacheManager) {
+  async translateRegion(layoutId, regionEl) {
     const id = regionEl.getAttribute('id');
     const width = parseInt(regionEl.getAttribute('width'));
     const height = parseInt(regionEl.getAttribute('height'));
@@ -45,7 +47,7 @@ export class LayoutTranslator {
 
     const media = [];
     for (const mediaEl of regionEl.querySelectorAll('media')) {
-      media.push(await this.translateMedia(layoutId, id, mediaEl, cacheManager));
+      media.push(await this.translateMedia(layoutId, id, mediaEl));
     }
 
     return {
@@ -62,7 +64,7 @@ export class LayoutTranslator {
   /**
    * Translate a single media item
    */
-  async translateMedia(layoutId, regionId, mediaEl, cacheManager) {
+  async translateMedia(layoutId, regionId, mediaEl) {
     const type = mediaEl.getAttribute('type');
     const duration = parseInt(mediaEl.getAttribute('duration') || '10');
     const id = mediaEl.getAttribute('id');
@@ -127,7 +129,7 @@ export class LayoutTranslator {
           console.log(`[Layout] Got resource HTML (${raw.length} chars)`);
 
           // Store widget HTML in cache and save cache key for iframe src generation
-          const widgetCacheKey = await cacheManager.cacheWidgetHtml(layoutId, regionId, id, raw);
+          const widgetCacheKey = await cacheWidgetHtml(layoutId, regionId, id, raw);
           options.widgetCacheKey = widgetCacheKey;
 
           // Success - break retry loop
@@ -150,10 +152,11 @@ export class LayoutTranslator {
       if (!raw && lastError) {
         console.warn(`[Layout] All retries failed, checking for cached widget HTML...`);
 
-        // Try to get cached widget HTML
+        // Try to get cached widget HTML directly from Cache API
         try {
           const cachedKey = `/cache/widget/${layoutId}/${regionId}/${id}.html`;
-          const cached = await cacheManager.cache.match(new Request(window.location.origin + '/player' + cachedKey));
+          const cache = await caches.open('xibo-media-v1');
+          const cached = await cache.match(new Request(window.location.origin + '/player' + cachedKey));
 
           if (cached) {
             raw = await cached.text();
