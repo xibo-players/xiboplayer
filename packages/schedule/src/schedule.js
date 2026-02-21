@@ -455,6 +455,45 @@ export class ScheduleManager {
   }
 
   /**
+   * Get current layouts with the default layout interleaved between scheduled layouts.
+   *
+   * Xibo CMS expects the default layout (fallback) to play between each scheduled
+   * layout in the rotation. For example, with layouts [A, B, C] and default D,
+   * the result is [A, D, B, D, C, D].
+   *
+   * No interleaving when:
+   * - There is no default layout configured
+   * - There are no scheduled layouts (only default plays)
+   * - There is only one scheduled layout (no gaps to fill)
+   *
+   * @returns {string[]} Layout files with default interleaved
+   */
+  getInterleavedLayouts() {
+    const layouts = this.getCurrentLayouts();
+    const defaultLayout = this.schedule?.default;
+
+    // No interleaving needed: no default, no layouts, or single layout
+    if (!defaultLayout || layouts.length <= 1) {
+      return layouts;
+    }
+
+    // If the only layout is the default itself, return as-is
+    if (layouts.length === 1 && layouts[0] === defaultLayout) {
+      return layouts;
+    }
+
+    // Interleave: A, D, B, D, C, D
+    const interleaved = [];
+    for (const layout of layouts) {
+      interleaved.push(layout);
+      interleaved.push(defaultLayout);
+    }
+
+    log.info('[Schedule] Interleaved', layouts.length, 'layouts with default', defaultLayout);
+    return interleaved;
+  }
+
+  /**
    * Check if any current layouts are sync events
    * @returns {boolean}
    */

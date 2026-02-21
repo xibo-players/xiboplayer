@@ -196,6 +196,132 @@ describe('ScheduleManager - Campaigns', () => {
   });
 });
 
+describe('ScheduleManager - Default Layout Interleaving', () => {
+  let manager;
+
+  beforeEach(() => {
+    manager = new ScheduleManager();
+  });
+
+  it('should interleave default layout between multiple scheduled layouts', () => {
+    manager.setSchedule({
+      default: '999',
+      layouts: [
+        { file: '100', priority: 10, fromdt: dateStr(-1), todt: dateStr(1) },
+        { file: '200', priority: 10, fromdt: dateStr(-1), todt: dateStr(1) },
+        { file: '300', priority: 10, fromdt: dateStr(-1), todt: dateStr(1) }
+      ],
+      campaigns: []
+    });
+
+    const layouts = manager.getInterleavedLayouts();
+
+    expect(layouts).toEqual(['100', '999', '200', '999', '300', '999']);
+  });
+
+  it('should not interleave when only default layout is active', () => {
+    manager.setSchedule({
+      default: '999',
+      layouts: [],
+      campaigns: []
+    });
+
+    const layouts = manager.getInterleavedLayouts();
+
+    expect(layouts).toEqual(['999']);
+  });
+
+  it('should not interleave when only one scheduled layout', () => {
+    manager.setSchedule({
+      default: '999',
+      layouts: [
+        { file: '100', priority: 10, fromdt: dateStr(-1), todt: dateStr(1) }
+      ],
+      campaigns: []
+    });
+
+    const layouts = manager.getInterleavedLayouts();
+
+    expect(layouts).toEqual(['100']);
+  });
+
+  it('should preserve layout order when interleaving', () => {
+    manager.setSchedule({
+      default: '999',
+      layouts: [],
+      campaigns: [
+        {
+          id: '1',
+          priority: 10,
+          fromdt: dateStr(-1),
+          todt: dateStr(1),
+          layouts: [
+            { file: '205' },
+            { file: '203' },
+            { file: '204' }
+          ]
+        }
+      ]
+    });
+
+    const layouts = manager.getInterleavedLayouts();
+
+    // Order must be preserved: 205, default, 203, default, 204, default
+    expect(layouts).toEqual(['205', '999', '203', '999', '204', '999']);
+  });
+
+  it('should return empty array when no schedule is set', () => {
+    const layouts = manager.getInterleavedLayouts();
+
+    expect(layouts).toEqual([]);
+  });
+
+  it('should not interleave when no default layout is configured', () => {
+    manager.setSchedule({
+      layouts: [
+        { file: '100', priority: 10, fromdt: dateStr(-1), todt: dateStr(1) },
+        { file: '200', priority: 10, fromdt: dateStr(-1), todt: dateStr(1) }
+      ],
+      campaigns: []
+    });
+
+    const layouts = manager.getInterleavedLayouts();
+
+    // No default, so no interleaving — just the scheduled layouts
+    expect(layouts).toEqual(['100', '200']);
+  });
+
+  it('should interleave with campaign and standalone layouts at same priority', () => {
+    manager.setSchedule({
+      default: '999',
+      layouts: [
+        { file: '100', priority: 10, fromdt: dateStr(-1), todt: dateStr(1) }
+      ],
+      campaigns: [
+        {
+          id: '1',
+          priority: 10,
+          fromdt: dateStr(-1),
+          todt: dateStr(1),
+          layouts: [
+            { file: '200' },
+            { file: '201' }
+          ]
+        }
+      ]
+    });
+
+    const layouts = manager.getInterleavedLayouts();
+
+    // 3 scheduled layouts + 3 default insertions = 6
+    expect(layouts).toHaveLength(6);
+    // Every odd-indexed element should be the default
+    expect(layouts[1]).toBe('999');
+    expect(layouts[3]).toBe('999');
+    expect(layouts[5]).toBe('999');
+  });
+});
+
 describe('ScheduleManager - Actions and Commands', () => {
   let manager;
 
