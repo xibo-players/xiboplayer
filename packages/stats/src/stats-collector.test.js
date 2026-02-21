@@ -562,3 +562,91 @@ describe('formatStats', () => {
     expect(xml).toContain('todt=');
   });
 });
+
+describe('_splitAtHourBoundaries', () => {
+  let collector;
+
+  beforeEach(async () => {
+    collector = new StatsCollector();
+    await collector.init();
+  });
+
+  afterEach(() => {
+    if (collector?.db) collector.db.close();
+  });
+
+  it('should not split a stat within the same hour', () => {
+    const stat = {
+      type: 'layout', layoutId: 1, scheduleId: 1, count: 1, submitted: 0,
+      start: new Date('2026-02-10T12:10:00Z'),
+      end: new Date('2026-02-10T12:50:00Z'),
+      duration: 2400
+    };
+    const parts = collector._splitAtHourBoundaries(stat);
+    expect(parts).toHaveLength(1);
+    expect(parts[0].duration).toBe(2400);
+  });
+
+  it('should split a stat spanning two hours', () => {
+    const stat = {
+      type: 'layout', layoutId: 1, scheduleId: 1, count: 1, submitted: 0,
+      start: new Date('2026-02-10T12:50:00Z'),
+      end: new Date('2026-02-10T13:10:00Z'),
+      duration: 1200
+    };
+    const parts = collector._splitAtHourBoundaries(stat);
+    expect(parts).toHaveLength(2);
+    expect(parts[0].duration).toBe(600);  // 12:50 → 13:00
+    expect(parts[1].duration).toBe(600);  // 13:00 → 13:10
+    expect(parts[0].end.toISOString()).toBe('2026-02-10T13:00:00.000Z');
+    expect(parts[1].start.toISOString()).toBe('2026-02-10T13:00:00.000Z');
+  });
+
+  it('should split a stat spanning three hours', () => {
+    const stat = {
+      type: 'layout', layoutId: 1, scheduleId: 1, count: 1, submitted: 0,
+      start: new Date('2026-02-10T11:30:00Z'),
+      end: new Date('2026-02-10T13:15:00Z'),
+      duration: 6300
+    };
+    const parts = collector._splitAtHourBoundaries(stat);
+    expect(parts).toHaveLength(3);
+    expect(parts[0].duration).toBe(1800); // 11:30 → 12:00
+    expect(parts[1].duration).toBe(3600); // 12:00 → 13:00
+    expect(parts[2].duration).toBe(900);  // 13:00 → 13:15
+    // Durations sum to original
+    const total = parts.reduce((s, p) => s + p.duration, 0);
+    expect(total).toBe(6300);
+  });
+
+  it('should split at day boundary (midnight)', () => {
+    const stat = {
+      type: 'layout', layoutId: 1, scheduleId: 1, count: 1, submitted: 0,
+      start: new Date('2026-02-10T23:50:00Z'),
+      end: new Date('2026-02-11T00:10:00Z'),
+      duration: 1200
+    };
+    const parts = collector._splitAtHourBoundaries(stat);
+    expect(parts).toHaveLength(2);
+    expect(parts[0].duration).toBe(600);
+    expect(parts[1].duration).toBe(600);
+  });
+
+  it('should preserve all stat fields in split records', () => {
+    const stat = {
+      type: 'media', layoutId: 5, mediaId: 42, scheduleId: 7, count: 1, submitted: 0,
+      start: new Date('2026-02-10T12:50:00Z'),
+      end: new Date('2026-02-10T13:10:00Z'),
+      duration: 1200
+    };
+    const parts = collector._splitAtHourBoundaries(stat);
+    for (const part of parts) {
+      expect(part.type).toBe('media');
+      expect(part.layoutId).toBe(5);
+      expect(part.mediaId).toBe(42);
+      expect(part.scheduleId).toBe(7);
+      expect(part.count).toBe(1);
+      expect(part.submitted).toBe(0);
+    }
+  });
+});
