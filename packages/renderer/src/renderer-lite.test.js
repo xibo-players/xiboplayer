@@ -1478,4 +1478,116 @@ describe('RendererLite', () => {
     });
   });
 
+
+  describe('Widget webhookUrl parsing', () => {
+    it('should parse webhookUrl from widget options', () => {
+      const xlf = `
+        <layout>
+          <region id="r1">
+            <media id="m1" type="image" duration="10" fileId="1">
+              <options>
+                <uri>test.png</uri>
+                <webhookUrl>https://example.com/hook</webhookUrl>
+              </options>
+            </media>
+          </region>
+        </layout>
+      `;
+
+      const layout = renderer.parseXlf(xlf);
+      const widget = layout.regions[0].widgets[0];
+
+      expect(widget.webhookUrl).toBe('https://example.com/hook');
+    });
+
+    it('should set webhookUrl to null when not present in options', () => {
+      const xlf = `
+        <layout>
+          <region id="r1">
+            <media id="m1" type="image" duration="10" fileId="1">
+              <options><uri>test.png</uri></options>
+            </media>
+          </region>
+        </layout>
+      `;
+
+      const layout = renderer.parseXlf(xlf);
+      const widget = layout.regions[0].widgets[0];
+
+      expect(widget.webhookUrl).toBeNull();
+    });
+  });
+
+  describe('Widget duration completion webhook', () => {
+    it('should emit widgetAction event when widget with webhookUrl reaches duration end', async () => {
+      vi.useFakeTimers();
+
+      const xlf = `
+        <layout duration="60">
+          <region id="r1">
+            <media id="m1" type="image" duration="5" fileId="1">
+              <options>
+                <uri>1.png</uri>
+                <webhookUrl>https://example.com/hook</webhookUrl>
+              </options>
+            </media>
+            <media id="m2" type="image" duration="5" fileId="2">
+              <options><uri>2.png</uri></options>
+            </media>
+          </region>
+        </layout>
+      `;
+
+      const widgetActionHandler = vi.fn();
+      renderer.on('widgetAction', widgetActionHandler);
+
+      const renderPromise = renderer.renderLayout(xlf, 1);
+      await vi.advanceTimersByTimeAsync(10000);
+      await renderPromise;
+
+      // Advance past first widget duration (5s) to trigger timer
+      vi.advanceTimersByTime(5000);
+
+      expect(widgetActionHandler).toHaveBeenCalledWith({
+        type: 'durationEnd',
+        widgetId: 'm1',
+        layoutId: 1,
+        regionId: 'r1',
+        url: 'https://example.com/hook'
+      });
+
+      vi.useRealTimers();
+    });
+
+    it('should not emit widgetAction event when widget has no webhookUrl', async () => {
+      vi.useFakeTimers();
+
+      const xlf = `
+        <layout duration="60">
+          <region id="r1">
+            <media id="m1" type="image" duration="5" fileId="1">
+              <options><uri>1.png</uri></options>
+            </media>
+            <media id="m2" type="image" duration="5" fileId="2">
+              <options><uri>2.png</uri></options>
+            </media>
+          </region>
+        </layout>
+      `;
+
+      const widgetActionHandler = vi.fn();
+      renderer.on('widgetAction', widgetActionHandler);
+
+      const renderPromise = renderer.renderLayout(xlf, 1);
+      await vi.advanceTimersByTimeAsync(10000);
+      await renderPromise;
+
+      // Advance past first widget duration (5s) to trigger timer
+      vi.advanceTimersByTime(5000);
+
+      expect(widgetActionHandler).not.toHaveBeenCalled();
+
+      vi.useRealTimers();
+    });
+  });
 });
