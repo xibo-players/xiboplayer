@@ -704,7 +704,7 @@ describe('ScheduleManager - Actions and Commands', () => {
       expect(conflicts.length).toBe(1);
       const windowMs = conflicts[0].endTime.getTime() - conflicts[0].startTime.getTime();
       // Window should span most of the 2-hour scan (overlap runs for ~2h)
-      expect(windowMs).toBeGreaterThan(60 * 60 * 1000); // at least 1 hour
+      expect(windowMs).toBeGreaterThanOrEqual(60 * 60 * 1000); // at least 1 hour
     });
   });
 });
