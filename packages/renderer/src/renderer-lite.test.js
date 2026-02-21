@@ -978,4 +978,275 @@ describe('RendererLite', () => {
       expect(renderer.currentLayout.duration).toBe(45);
     });
   });
+
+  describe('Audio Widget Support', () => {
+    it('should parse audio widget with type, loop and volume options', () => {
+      const xlf = `
+        <layout>
+          <region id="r1">
+            <media id="a1" type="audio" duration="30" fileId="10">
+              <options>
+                <uri>song.mp3</uri>
+                <loop>1</loop>
+                <volume>80</volume>
+              </options>
+            </media>
+          </region>
+        </layout>
+      `;
+
+      const layout = renderer.parseXlf(xlf);
+      const widget = layout.regions[0].widgets[0];
+
+      expect(widget.type).toBe('audio');
+      expect(widget.duration).toBe(30);
+      expect(widget.fileId).toBe('10');
+      expect(widget.options.loop).toBe('1');
+      expect(widget.options.volume).toBe('80');
+      expect(widget.options.uri).toBe('song.mp3');
+    });
+
+    it('should create audio element inside container for audio widget', async () => {
+      const xlf = `
+        <layout>
+          <region id="r1" width="1920" height="1080" top="0" left="0">
+            <media id="a1" type="audio" duration="10" fileId="10">
+              <options>
+                <uri>test.mp3</uri>
+                <loop>0</loop>
+                <volume>50</volume>
+              </options>
+            </media>
+          </region>
+        </layout>
+      `;
+
+      await renderer.renderLayout(xlf, 1);
+
+      const region = renderer.regions.get('r1');
+      expect(region).toBeDefined();
+      expect(region.widgetElements.size).toBe(1);
+
+      const widgetEl = region.widgetElements.get('a1');
+      expect(widgetEl).toBeDefined();
+      expect(widgetEl.classList.contains('audio-widget')).toBe(true);
+
+      const audioEl = widgetEl.querySelector('audio');
+      expect(audioEl).toBeDefined();
+      expect(audioEl.autoplay).toBe(true);
+      expect(audioEl.loop).toBe(false);
+      expect(audioEl.volume).toBe(0.5);
+    });
+
+    it('should set loop=true on audio element when widget options loop is 1', async () => {
+      const xlf = `
+        <layout>
+          <region id="r1" width="1920" height="1080" top="0" left="0">
+            <media id="a1" type="audio" duration="10" fileId="10">
+              <options>
+                <uri>test.mp3</uri>
+                <loop>1</loop>
+                <volume>100</volume>
+              </options>
+            </media>
+          </region>
+        </layout>
+      `;
+
+      await renderer.renderLayout(xlf, 1);
+
+      const widgetEl = renderer.regions.get('r1').widgetElements.get('a1');
+      const audioEl = widgetEl.querySelector('audio');
+      expect(audioEl.loop).toBe(true);
+      expect(audioEl.volume).toBe(1);
+    });
+
+    it('should default volume to 100 when not specified', async () => {
+      const xlf = `
+        <layout>
+          <region id="r1" width="1920" height="1080" top="0" left="0">
+            <media id="a1" type="audio" duration="10" fileId="10">
+              <options><uri>test.mp3</uri></options>
+            </media>
+          </region>
+        </layout>
+      `;
+
+      await renderer.renderLayout(xlf, 1);
+
+      const widgetEl = renderer.regions.get('r1').widgetElements.get('a1');
+      const audioEl = widgetEl.querySelector('audio');
+      expect(audioEl.volume).toBe(1);
+    });
+  });
+
+  describe('Audio Overlay Support', () => {
+    it('should parse audio overlay nodes from widget XML', () => {
+      const xlf = `
+        <layout>
+          <region id="r1">
+            <media id="m1" type="image" duration="10" fileId="1">
+              <audio mediaId="50" uri="bgmusic.mp3" volume="80" loop="1"/>
+              <options><uri>test.png</uri></options>
+            </media>
+          </region>
+        </layout>
+      `;
+
+      const layout = renderer.parseXlf(xlf);
+      const widget = layout.regions[0].widgets[0];
+
+      expect(widget.audioNodes).toBeDefined();
+      expect(widget.audioNodes).toHaveLength(1);
+      expect(widget.audioNodes[0]).toEqual({
+        mediaId: '50',
+        uri: 'bgmusic.mp3',
+        volume: 80,
+        loop: true
+      });
+    });
+
+    it('should parse multiple audio overlay nodes', () => {
+      const xlf = `
+        <layout>
+          <region id="r1">
+            <media id="m1" type="image" duration="10" fileId="1">
+              <audio mediaId="50" uri="bgmusic.mp3" volume="80" loop="1"/>
+              <audio mediaId="51" uri="sfx.mp3" volume="40" loop="0"/>
+              <options><uri>test.png</uri></options>
+            </media>
+          </region>
+        </layout>
+      `;
+
+      const layout = renderer.parseXlf(xlf);
+      const widget = layout.regions[0].widgets[0];
+
+      expect(widget.audioNodes).toHaveLength(2);
+      expect(widget.audioNodes[0].uri).toBe('bgmusic.mp3');
+      expect(widget.audioNodes[0].loop).toBe(true);
+      expect(widget.audioNodes[1].uri).toBe('sfx.mp3');
+      expect(widget.audioNodes[1].loop).toBe(false);
+      expect(widget.audioNodes[1].volume).toBe(40);
+    });
+
+    it('should have empty audioNodes when widget has no audio children', () => {
+      const xlf = `
+        <layout>
+          <region id="r1">
+            <media id="m1" type="image" duration="10" fileId="1">
+              <options><uri>test.png</uri></options>
+            </media>
+          </region>
+        </layout>
+      `;
+
+      const layout = renderer.parseXlf(xlf);
+      const widget = layout.regions[0].widgets[0];
+
+      expect(widget.audioNodes).toBeDefined();
+      expect(widget.audioNodes).toHaveLength(0);
+    });
+
+    it('should create audio overlay elements when widget is shown', async () => {
+      const xlf = `
+        <layout>
+          <region id="r1" width="1920" height="1080" top="0" left="0">
+            <media id="m1" type="image" duration="10" fileId="1">
+              <audio mediaId="50" uri="bgmusic.mp3" volume="75" loop="1"/>
+              <options><uri>test.png</uri></options>
+            </media>
+          </region>
+        </layout>
+      `;
+
+      await renderer.renderLayout(xlf, 1);
+      // Explicitly show the widget to trigger audio overlay (renderLayout fires it async)
+      const region = renderer.regions.get('r1');
+      await renderer._showWidget(region, 0);
+
+      // Audio overlay should be tracked
+      const overlays = renderer.audioOverlays.get('m1');
+      expect(overlays).toBeDefined();
+      expect(overlays).toHaveLength(1);
+      expect(overlays[0]).toBeInstanceOf(HTMLAudioElement);
+      expect(overlays[0].loop).toBe(true);
+      expect(overlays[0].volume).toBeCloseTo(0.75);
+    });
+
+    it('should stop audio overlays when widget is hidden', async () => {
+      const xlf = `
+        <layout>
+          <region id="r1" width="1920" height="1080" top="0" left="0">
+            <media id="m1" type="image" duration="10" fileId="1">
+              <audio mediaId="50" uri="bgmusic.mp3" volume="80" loop="1"/>
+              <options><uri>test.png</uri></options>
+            </media>
+            <media id="m2" type="image" duration="10" fileId="2">
+              <options><uri>test2.png</uri></options>
+            </media>
+          </region>
+        </layout>
+      `;
+
+      await renderer.renderLayout(xlf, 1);
+      // Explicitly show widget to trigger audio overlay
+      const region = renderer.regions.get('r1');
+      await renderer._showWidget(region, 0);
+
+      // Audio overlay should be active for m1
+      expect(renderer.audioOverlays.has('m1')).toBe(true);
+
+      // Hide widget m1
+      renderer._hideWidget(region, 0);
+
+      // Audio overlay should be cleaned up
+      expect(renderer.audioOverlays.has('m1')).toBe(false);
+    });
+
+    it('should clean up audio overlays on renderer cleanup', async () => {
+      const xlf = `
+        <layout>
+          <region id="r1" width="1920" height="1080" top="0" left="0">
+            <media id="m1" type="image" duration="10" fileId="1">
+              <audio mediaId="50" uri="bgmusic.mp3" volume="80" loop="1"/>
+              <options><uri>test.png</uri></options>
+            </media>
+          </region>
+        </layout>
+      `;
+
+      await renderer.renderLayout(xlf, 1);
+      // Explicitly show widget to trigger audio overlay
+      const region = renderer.regions.get('r1');
+      await renderer._showWidget(region, 0);
+      expect(renderer.audioOverlays.size).toBeGreaterThan(0);
+
+      renderer.cleanup();
+      expect(renderer.audioOverlays.size).toBe(0);
+    });
+
+    it('should clamp volume to valid range', async () => {
+      const xlf = `
+        <layout>
+          <region id="r1" width="1920" height="1080" top="0" left="0">
+            <media id="m1" type="image" duration="10" fileId="1">
+              <audio mediaId="50" uri="bgmusic.mp3" volume="150" loop="0"/>
+              <options><uri>test.png</uri></options>
+            </media>
+          </region>
+        </layout>
+      `;
+
+      await renderer.renderLayout(xlf, 1);
+      // Explicitly show widget to trigger audio overlay
+      const region = renderer.regions.get('r1');
+      await renderer._showWidget(region, 0);
+
+      const overlays = renderer.audioOverlays.get('m1');
+      expect(overlays).toBeDefined();
+      expect(overlays[0].volume).toBeLessThanOrEqual(1);
+    });
+  });
+
 });
