@@ -926,7 +926,7 @@ describe('PlayerCore', () => {
     it('should set _layoutOverride with overlay type', async () => {
       await core.overlayLayout('123');
 
-      expect(core._layoutOverride).toEqual({ layoutId: 123, type: 'overlay' });
+      expect(core._layoutOverride).toEqual({ layoutId: 123, type: 'overlay', duration: 0 });
     });
 
     it('should parse string layoutId to integer', async () => {
@@ -940,10 +940,10 @@ describe('PlayerCore', () => {
 
     it('should overwrite previous layout override', async () => {
       await core.overlayLayout('100');
-      expect(core._layoutOverride).toEqual({ layoutId: 100, type: 'overlay' });
+      expect(core._layoutOverride).toEqual({ layoutId: 100, type: 'overlay', duration: 0 });
 
       await core.overlayLayout('200');
-      expect(core._layoutOverride).toEqual({ layoutId: 200, type: 'overlay' });
+      expect(core._layoutOverride).toEqual({ layoutId: 200, type: 'overlay', duration: 0 });
     });
   });
 

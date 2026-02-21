@@ -330,6 +330,11 @@ export class XmdsClient {
       status.timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
     }
 
+    // Add statusDialog (summary for CMS display status page) if not provided
+    if (!status.statusDialog) {
+      status.statusDialog = `Current Layout: ${status.currentLayoutId || 'None'}`;
+    }
+
     return await this.call('NotifyStatus', {
       serverKey: this.config.cmsKey,
       hardwareKey: this.config.hardwareKey,

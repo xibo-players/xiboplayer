@@ -194,10 +194,10 @@ describe('Schedule Parsing', () => {
       expect(schedule.actions[0].actionType).toBe('navLayout');
       expect(schedule.actions[0].triggerCode).toBe('tc1');
       expect(schedule.actions[0].layoutCode).toBe('42');
-      expect(schedule.actions[0].fromDt).toBe('2026-01-01 00:00:00');
-      expect(schedule.actions[0].toDt).toBe('2030-12-31 23:59:59');
+      expect(schedule.actions[0].fromdt).toBe('2026-01-01 00:00:00');
+      expect(schedule.actions[0].todt).toBe('2030-12-31 23:59:59');
       expect(schedule.actions[0].priority).toBe(5);
-      expect(schedule.actions[0].scheduleId).toBe('10');
+      expect(schedule.actions[0].scheduleid).toBe('10');
     });
 
     it('should parse multiple actions', () => {

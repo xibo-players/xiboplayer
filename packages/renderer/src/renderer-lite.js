@@ -352,11 +352,16 @@ export class RendererLite {
     for (const actionEl of parentEl.children) {
       if (actionEl.tagName !== 'action') continue;
       actions.push({
+        id: actionEl.getAttribute('id') || '',
         actionType: actionEl.getAttribute('actionType') || '',
         triggerType: actionEl.getAttribute('triggerType') || '',
         triggerCode: actionEl.getAttribute('triggerCode') || '',
-        layoutCode: actionEl.getAttribute('layoutCode') || '',
+        source: actionEl.getAttribute('source') || '',
+        sourceId: actionEl.getAttribute('sourceId') || '',
+        target: actionEl.getAttribute('target') || '',
         targetId: actionEl.getAttribute('targetId') || '',
+        widgetId: actionEl.getAttribute('widgetId') || '',
+        layoutCode: actionEl.getAttribute('layoutCode') || '',
         commandCode: actionEl.getAttribute('commandCode') || ''
       });
     }
@@ -2037,9 +2042,19 @@ export class RendererLite {
           }, { once: true });
         }
 
+        // Parse NUMITEMS/DURATION from fallback HTML (cache path)
+        if (result.fallback) {
+          this._parseDurationComments(result.fallback, widget);
+        }
+
         return iframe;
       }
       html = result;
+    }
+
+    if (html) {
+      // Parse NUMITEMS/DURATION HTML comments for dynamic widget duration
+      this._parseDurationComments(html, widget);
     }
 
     // Fallback: Create blob URL for iframe
@@ -2126,6 +2141,13 @@ export class RendererLite {
    * Render webpage widget
    */
   async renderWebpage(widget, region) {
+    // modeId=1 (or absent) = Open Natively (direct URL), modeId=0 = Manual/GetResource
+    const modeId = parseInt(widget.options.modeId || '1');
+    if (modeId === 0) {
+      // GetResource mode: treat like a generic widget (fetch HTML from CMS)
+      return await this.renderGenericWidget(widget, region);
+    }
+
     const iframe = document.createElement('iframe');
     iframe.className = 'renderer-lite-widget';
     iframe.style.width = '100%';

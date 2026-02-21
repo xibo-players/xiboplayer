@@ -246,4 +246,37 @@ describe('parseScheduleResponse', () => {
     expect(result.campaigns[0].criteria[0].metric).toBe('temperature');
     expect(result.campaigns[0].criteria[0].value).toBe('25');
   });
+
+  it('should parse duration, cyclePlayback, groupKey, playCount on campaign layouts', () => {
+    const xml = `<schedule>
+      <campaign id="c1" priority="5" fromdt="2025-01-01 00:00:00" todt="2025-12-31 23:59:59"
+                scheduleid="30">
+        <layout file="500.xlf" duration="90" cyclePlayback="1" groupKey="group-B" playCount="2"/>
+      </campaign>
+    </schedule>`;
+    const result = parseScheduleResponse(xml);
+    const layout = result.campaigns[0].layouts[0];
+    expect(layout.duration).toBe(90);
+    expect(layout.cyclePlayback).toBe(true);
+    expect(layout.groupKey).toBe('group-B');
+    expect(layout.playCount).toBe(2);
+  });
+
+  it('should use consistent lowercase casing for fromdt/todt/scheduleid on overlays', () => {
+    const xml = `<schedule>
+      <overlays>
+        <overlay file="600.xlf" fromdt="2025-01-01 12:00:00" todt="2025-01-01 13:00:00"
+                 scheduleid="40" priority="2"/>
+      </overlays>
+    </schedule>`;
+    const result = parseScheduleResponse(xml);
+    const overlay = result.overlays[0];
+    expect(overlay.fromdt).toBe('2025-01-01 12:00:00');
+    expect(overlay.todt).toBe('2025-01-01 13:00:00');
+    expect(overlay.scheduleid).toBe('40');
+    // Verify old camelCase properties are NOT present
+    expect(overlay.fromDt).toBeUndefined();
+    expect(overlay.toDt).toBeUndefined();
+    expect(overlay.scheduleId).toBeUndefined();
+  });
 });

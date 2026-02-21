@@ -112,6 +112,9 @@ export class PlayerCore extends EventEmitter {
     // Scheduled commands tracking (avoid re-executing same command)
     this._executedCommands = new Set();
 
+    // Display commands from RegisterDisplay (used by XMR commandAction)
+    this.displayCommands = null;
+
     // Schedule cycle state (round-robin through multiple layouts)
     this._currentLayoutIndex = 0;
 
@@ -388,6 +391,15 @@ export class PlayerCore extends EventEmitter {
 
       // Extract config from display tags (key|value convention)
       this._applyTagConfig(regResult.tags);
+
+      // Store display commands for XMR commandAction resolution
+      if (regResult.commands && regResult.commands.length > 0) {
+        this.displayCommands = {};
+        for (const cmd of regResult.commands) {
+          this.displayCommands[cmd.commandCode] = cmd;
+        }
+        log.debug('Display commands:', Object.keys(this.displayCommands).join(', '));
+      }
 
       this.emit('register-complete', regResult);
 
@@ -1073,21 +1085,46 @@ export class PlayerCore extends EventEmitter {
    * Change to a specific layout (called by XMR wrapper)
    * Tracks override state so revertToSchedule() can undo it.
    */
-  async changeLayout(layoutId) {
+  async changeLayout(layoutId, options) {
     log.info('Layout change requested via XMR:', layoutId);
-    this._layoutOverride = { layoutId: parseInt(layoutId, 10), type: 'change' };
+    const id = parseInt(layoutId, 10);
+    const duration = options?.duration || 0;
+    const changeMode = options?.changeMode || 'replace';
+    this._layoutOverride = { layoutId: id, type: 'change', duration, changeMode };
     this.currentLayoutId = null; // Force re-render
-    this.emit('layout-prepare-request', parseInt(layoutId, 10));
+    this.emit('layout-prepare-request', id);
+
+    // Auto-revert after duration (if specified)
+    if (duration > 0) {
+      setTimeout(() => {
+        if (this._layoutOverride?.layoutId === id) {
+          log.info(`Layout override duration expired (${duration}s), reverting to schedule`);
+          this.revertToSchedule();
+        }
+      }, duration * 1000);
+    }
   }
 
   /**
    * Push an overlay layout on top of current content (called by XMR wrapper)
    * @param {number|string} layoutId - Layout to overlay
    */
-  async overlayLayout(layoutId) {
+  async overlayLayout(layoutId, options) {
     log.info('Overlay layout requested via XMR:', layoutId);
-    this._layoutOverride = { layoutId: parseInt(layoutId, 10), type: 'overlay' };
-    this.emit('overlay-layout-request', parseInt(layoutId, 10));
+    const id = parseInt(layoutId, 10);
+    const duration = options?.duration || 0;
+    this._layoutOverride = { layoutId: id, type: 'overlay', duration };
+    this.emit('overlay-layout-request', id);
+
+    // Auto-revert after duration (if specified)
+    if (duration > 0) {
+      setTimeout(() => {
+        if (this._layoutOverride?.layoutId === id) {
+          log.info(`Overlay duration expired (${duration}s), reverting to schedule`);
+          this.revertToSchedule();
+        }
+      }, duration * 1000);
+    }
   }
 
   /**

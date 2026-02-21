@@ -115,8 +115,8 @@ export class OverlayScheduler {
    * @returns {boolean}
    */
   isTimeActive(overlay, now) {
-    const from = overlay.fromDt ? new Date(overlay.fromDt) : null;
-    const to = overlay.toDt ? new Date(overlay.toDt) : null;
+    const from = (overlay.fromdt || overlay.fromDt) ? new Date(overlay.fromdt || overlay.fromDt) : null;
+    const to = (overlay.todt || overlay.toDt) ? new Date(overlay.todt || overlay.toDt) : null;
 
     // Check time bounds
     if (from && now < from) {

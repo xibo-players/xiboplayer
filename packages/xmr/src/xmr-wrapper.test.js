@@ -287,7 +287,7 @@ describe('XmrWrapper', () => {
         xmrInstance.simulateCommand('changeLayout', 'layout-123');
         await vi.runAllTimersAsync();
 
-        expect(mockPlayer.changeLayout).toHaveBeenCalledWith('layout-123');
+        expect(mockPlayer.changeLayout).toHaveBeenCalledWith('layout-123', { duration: 0, changeMode: 'replace' });
       });
 
       it('should handle changeLayout failure gracefully', async () => {
@@ -435,7 +435,7 @@ describe('XmrWrapper', () => {
         xmrInstance.simulateCommand('overlayLayout', 'overlay-layout-456');
         await vi.runAllTimersAsync();
 
-        expect(mockPlayer.overlayLayout).toHaveBeenCalledWith('overlay-layout-456');
+        expect(mockPlayer.overlayLayout).toHaveBeenCalledWith('overlay-layout-456', { duration: 0 });
       });
 
       it('should handle overlayLayout failure gracefully', async () => {
@@ -745,7 +745,7 @@ describe('XmrWrapper', () => {
 
       expect(mockPlayer.collect).toHaveBeenCalled();
       expect(mockPlayer.captureScreenshot).toHaveBeenCalled();
-      expect(mockPlayer.changeLayout).toHaveBeenCalledWith('layout-123');
+      expect(mockPlayer.changeLayout).toHaveBeenCalledWith('layout-123', { duration: 0, changeMode: 'replace' });
     });
 
     it('should handle rapid connect/disconnect cycles', async () => {
