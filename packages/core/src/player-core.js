@@ -123,6 +123,10 @@ export class PlayerCore extends EventEmitter {
     this._layoutBlacklist = new Map();
     this._blacklistThreshold = 3; // Consecutive failures before blacklisting
 
+    // Status tracking for NotifyStatus enrichment
+    this._lastLayoutChangeTime = null; // ISO timestamp of last layout switch
+    this._statusCode = 2; // 1=running, 2=downloading, 3=error
+
     // Schedule cycle state (round-robin through multiple layouts)
     this._currentLayoutIndex = 0;
 
@@ -692,6 +696,8 @@ export class PlayerCore extends EventEmitter {
    */
   setCurrentLayout(layoutId) {
     this.currentLayoutId = layoutId;
+    this._lastLayoutChangeTime = new Date().toISOString();
+    this._statusCode = 1; // Running
     this.pendingLayouts.delete(layoutId);
     this.emit('layout-current', layoutId);
     // Re-log timeline from current time on each layout change
@@ -928,7 +934,10 @@ export class PlayerCore extends EventEmitter {
       const status = {
         currentLayoutId: layoutId,
         deviceName: this.config?.displayName || '',
-        lastCommandSuccess: this._lastCommandSuccess ?? true
+        displayName: this.config?.displayName || '',
+        lastCommandSuccess: this._lastCommandSuccess ?? true,
+        code: this._statusCode,
+        lastLayoutChangeTime: this._lastLayoutChangeTime || new Date().toISOString(),
       };
 
       // Add geo-location if available
