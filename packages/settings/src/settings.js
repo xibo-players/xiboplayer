@@ -41,7 +41,9 @@
  *   settings.on('interval-changed', (newInterval) => { ... });
  */
 
-import { EventEmitter } from '@xiboplayer/utils';
+import { EventEmitter, createLogger } from '@xiboplayer/utils';
+
+const log = createLogger('DisplaySettings');
 
 export class DisplaySettings extends EventEmitter {
   constructor() {
@@ -93,7 +95,7 @@ export class DisplaySettings extends EventEmitter {
    */
   applySettings(settings) {
     if (!settings) {
-      console.warn('[DisplaySettings] No settings provided');
+      log.warn('No settings provided');
       return { changed: [], settings: this.settings };
     }
 
@@ -143,7 +145,7 @@ export class DisplaySettings extends EventEmitter {
     // Emit generic settings-applied event
     this.emit('settings-applied', this.settings, changes);
 
-    console.log('[DisplaySettings] Applied settings:', {
+    log.info('Applied settings:', {
       collectInterval: this.settings.collectInterval,
       displayName: this.settings.displayName,
       statsEnabled: this.settings.statsEnabled,
@@ -274,7 +276,7 @@ export class DisplaySettings extends EventEmitter {
         return currentTime >= start && currentTime < end;
       }
     } catch (error) {
-      console.warn('[DisplaySettings] Failed to parse download window:', error);
+      log.warn('Failed to parse download window:', error);
       return true; // Allow downloads if parsing fails
     }
   }
@@ -331,7 +333,7 @@ export class DisplaySettings extends EventEmitter {
 
       return nextWindow;
     } catch (error) {
-      console.warn('[DisplaySettings] Failed to calculate next download window:', error);
+      log.warn('Failed to calculate next download window:', error);
       return null;
     }
   }

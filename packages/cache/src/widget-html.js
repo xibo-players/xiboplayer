@@ -12,6 +12,9 @@
  * Uses Cache API directly — the SW also serves from the same cache.
  */
 
+import { createLogger } from '@xiboplayer/utils';
+
+const log = createLogger('Cache');
 const CACHE_NAME = 'xibo-media-v1';
 
 // Dynamic base path for multi-variant deployment (pwa, pwa-xmds, pwa-xlr)
@@ -54,7 +57,7 @@ export async function cacheWidgetHtml(layoutId, regionId, mediaId, html) {
   modifiedHtml = modifiedHtml.replace(cmsUrlRegex, (match, filename) => {
     const localPath = `${BASE}/cache/static/${filename}`;
     staticResources.push({ filename, originalUrl: match });
-    console.log(`[Cache] Rewrote widget URL: ${filename} → ${localPath}`);
+    log.info(`Rewrote widget URL: ${filename} → ${localPath}`);
     return localPath;
   });
 

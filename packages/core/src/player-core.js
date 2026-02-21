@@ -147,10 +147,10 @@ export class PlayerCore extends EventEmitter {
 
       this._offlineCache = { schedule, settings, requiredFiles };
       db.close();
-      console.log('[PlayerCore] Offline cache loaded from IndexedDB',
+      log.info('Offline cache loaded from IndexedDB',
         schedule ? '(has schedule)' : '(empty)');
     } catch (e) {
-      console.warn('[PlayerCore] Failed to load offline cache from IndexedDB:', e);
+      log.warn('Failed to load offline cache from IndexedDB:', e);
     }
   }
 
@@ -167,7 +167,7 @@ export class PlayerCore extends EventEmitter {
       });
       db.close();
     } catch (e) {
-      console.warn('[PlayerCore] Failed to save offline cache:', key, e);
+      log.warn('Failed to save offline cache:', key, e);
     }
   }
 
@@ -191,7 +191,7 @@ export class PlayerCore extends EventEmitter {
    * Evaluates the cached schedule and continues playback.
    */
   collectOffline() {
-    console.warn('[PlayerCore] Offline mode — using cached schedule');
+    log.warn('Offline mode — using cached schedule');
 
     if (!this.offlineMode) {
       this.offlineMode = true;
@@ -344,7 +344,7 @@ export class PlayerCore extends EventEmitter {
       // Exit offline mode if we were in it
       if (this.offlineMode) {
         this.offlineMode = false;
-        console.log('[PlayerCore] Back online — resuming normal collection');
+        log.info('Back online — resuming normal collection');
         this.emit('offline-mode', false);
 
         // Restore normal collection interval (was shortened for offline retry)
@@ -520,7 +520,7 @@ export class PlayerCore extends EventEmitter {
     } catch (error) {
       // Offline fallback: if network failed but we have cached data, use it
       if (this.hasCachedData()) {
-        console.warn('[PlayerCore] Collection failed, falling back to cached data:', error?.message || error);
+        log.warn('Collection failed, falling back to cached data:', error?.message || error);
         this.emit('collection-error', error);
         return this.collectOffline();
       }
