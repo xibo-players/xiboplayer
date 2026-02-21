@@ -119,6 +119,10 @@ export class PlayerCore extends EventEmitter {
     this._faultReportingInterval = null;
     this._faultReportingSeconds = 60; // Default: check for faults every 60s
 
+    // Unsafe layout blacklist: layoutId → { failures: number, blacklisted: boolean, reason: string }
+    this._layoutBlacklist = new Map();
+    this._blacklistThreshold = 3; // Consecutive failures before blacklisting
+
     // Schedule cycle state (round-robin through multiple layouts)
     this._currentLayoutIndex = 0;
 
@@ -417,6 +421,9 @@ export class PlayerCore extends EventEmitter {
 
       // Get required files (skip if CRC unchanged)
       if (!this._lastCheckRf || this._lastCheckRf !== checkRf) {
+        // RequiredFiles changed — CMS may have fixed broken layouts
+        this.resetBlacklist();
+
         log.debug('Collection step: requiredFiles');
         const rfResult = await this.xmds.requiredFiles();
         // RequiredFiles returns { files, purge } — files to download, items to delete
@@ -711,7 +718,7 @@ export class PlayerCore extends EventEmitter {
 
   /**
    * Get the next layout from the schedule using round-robin cycling.
-   * Returns { layoutId, layoutFile } or null if no layouts are scheduled.
+   * Skips blacklisted layouts. Returns { layoutId, layoutFile } or null.
    */
   getNextLayout() {
     const layoutFiles = this.schedule.getCurrentLayouts();
@@ -724,6 +731,20 @@ export class PlayerCore extends EventEmitter {
       this._currentLayoutIndex = 0;
     }
 
+    // Try each layout starting from current index, skip blacklisted
+    for (let i = 0; i < layoutFiles.length; i++) {
+      const idx = (this._currentLayoutIndex + i) % layoutFiles.length;
+      const layoutFile = layoutFiles[idx];
+      const layoutId = parseLayoutFile(layoutFile);
+
+      if (!this.isLayoutBlacklisted(layoutId)) {
+        this._currentLayoutIndex = idx;
+        return { layoutId, layoutFile };
+      }
+    }
+
+    // All layouts blacklisted — return first anyway to avoid blank screen
+    log.warn('All scheduled layouts are blacklisted, using first layout as fallback');
     const layoutFile = layoutFiles[this._currentLayoutIndex];
     const layoutId = parseLayoutFile(layoutFile);
     return { layoutId, layoutFile };
@@ -741,16 +762,18 @@ export class PlayerCore extends EventEmitter {
       return null;
     }
 
-    const nextIndex = (this._currentLayoutIndex + 1) % layoutFiles.length;
-    const layoutFile = layoutFiles[nextIndex];
-    const layoutId = parseLayoutFile(layoutFile);
+    // Find next non-blacklisted layout
+    for (let i = 1; i < layoutFiles.length; i++) {
+      const idx = (this._currentLayoutIndex + i) % layoutFiles.length;
+      const layoutFile = layoutFiles[idx];
+      const layoutId = parseLayoutFile(layoutFile);
 
-    // Don't return if it's the same as current (no point preloading)
-    if (layoutId === this.currentLayoutId) {
-      return null;
+      if (layoutId !== this.currentLayoutId && !this.isLayoutBlacklisted(layoutId)) {
+        return { layoutId, layoutFile };
+      }
     }
 
-    return { layoutId, layoutFile };
+    return null;
   }
 
   /**
@@ -787,11 +810,33 @@ export class PlayerCore extends EventEmitter {
       return;
     }
 
-    // Advance index (wraps around)
-    this._currentLayoutIndex = (this._currentLayoutIndex + 1) % layoutFiles.length;
+    // Find next non-blacklisted layout (wraps around, tries all)
+    let layoutFile, layoutId;
+    for (let i = 1; i <= layoutFiles.length; i++) {
+      const idx = (this._currentLayoutIndex + i) % layoutFiles.length;
+      const file = layoutFiles[idx];
+      const id = parseLayoutFile(file);
 
-    const layoutFile = layoutFiles[this._currentLayoutIndex];
-    const layoutId = parseLayoutFile(layoutFile);
+      if (!this.isLayoutBlacklisted(id)) {
+        this._currentLayoutIndex = idx;
+        layoutFile = file;
+        layoutId = id;
+        break;
+      }
+    }
+
+    // All layouts blacklisted — fall back to replaying current
+    if (!layoutFile) {
+      if (this.currentLayoutId) {
+        log.warn('All layouts blacklisted, replaying current to avoid blank screen');
+        const replayId = this.currentLayoutId;
+        this.currentLayoutId = null;
+        this.emit('layout-prepare-request', replayId);
+      } else {
+        this.emit('no-layouts-scheduled');
+      }
+      return;
+    }
 
     // Multi-display sync: if this is a sync event and we have a SyncManager,
     // delegate layout transitions to the sync protocol
@@ -1292,6 +1337,87 @@ export class PlayerCore extends EventEmitter {
       this.emit('media-blacklisted', { mediaId, type, reason });
     } catch (error) {
       log.warn('BlackList failed:', error);
+    }
+  }
+
+  /**
+   * Report a layout render failure. After N consecutive failures
+   * (default 3), the layout is blacklisted and skipped in schedule
+   * evaluation. Blacklisted layouts are reported to CMS via the
+   * BlackList XMDS method.
+   *
+   * @param {number} layoutId - The layout that failed
+   * @param {string} reason - Human-readable failure description
+   */
+  reportLayoutFailure(layoutId, reason) {
+    const id = Number(layoutId);
+    const entry = this._layoutBlacklist.get(id) || { failures: 0, blacklisted: false, reason: '' };
+    entry.failures++;
+    entry.reason = reason;
+
+    if (!entry.blacklisted && entry.failures >= this._blacklistThreshold) {
+      entry.blacklisted = true;
+      log.warn(`Layout ${id} blacklisted after ${entry.failures} consecutive failures: ${reason}`);
+      this.emit('layout-blacklisted', { layoutId: id, reason, failures: entry.failures });
+
+      // Report to CMS (non-blocking)
+      this.blackList(id, 'layout', reason);
+    } else if (!entry.blacklisted) {
+      log.info(`Layout ${id} failure ${entry.failures}/${this._blacklistThreshold}: ${reason}`);
+    }
+
+    this._layoutBlacklist.set(id, entry);
+  }
+
+  /**
+   * Report a successful layout render. Resets the failure counter for
+   * this layout, removing it from the blacklist if it was blacklisted.
+   *
+   * @param {number} layoutId - The layout that rendered successfully
+   */
+  reportLayoutSuccess(layoutId) {
+    const id = Number(layoutId);
+    if (this._layoutBlacklist.has(id)) {
+      const was = this._layoutBlacklist.get(id);
+      this._layoutBlacklist.delete(id);
+      if (was.blacklisted) {
+        log.info(`Layout ${id} removed from blacklist (rendered successfully)`);
+        this.emit('layout-unblacklisted', { layoutId: id });
+      }
+    }
+  }
+
+  /**
+   * Check if a layout is currently blacklisted.
+   * @param {number} layoutId
+   * @returns {boolean}
+   */
+  isLayoutBlacklisted(layoutId) {
+    const entry = this._layoutBlacklist.get(Number(layoutId));
+    return entry?.blacklisted === true;
+  }
+
+  /**
+   * Get all currently blacklisted layout IDs.
+   * @returns {number[]}
+   */
+  getBlacklistedLayouts() {
+    const result = [];
+    for (const [id, entry] of this._layoutBlacklist) {
+      if (entry.blacklisted) result.push(id);
+    }
+    return result;
+  }
+
+  /**
+   * Reset the blacklist. Called when RequiredFiles changes (CMS may
+   * have fixed broken layouts).
+   */
+  resetBlacklist() {
+    if (this._layoutBlacklist.size > 0) {
+      log.info(`Blacklist reset (${this._layoutBlacklist.size} entries cleared)`);
+      this._layoutBlacklist.clear();
+      this.emit('blacklist-reset');
     }
   }
 
