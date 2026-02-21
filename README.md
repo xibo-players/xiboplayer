@@ -43,7 +43,12 @@ All packages are published to npm under the [`@xiboplayer`](https://www.npmjs.co
 - **Sub-playlist cycle playback** — round-robin or random widget selection per group per layout cycle
 - **Widget time-gating** — per-widget fromDt/toDt expiry filtering at region creation
 - **Dynamic duration** — parses NUMITEMS/DURATION HTML comments from GetResource for DataSet tickers and RSS feeds
-- **1111 tests** across 30 test suites
+- **Region loop control** — `loop=0` keeps single media visible after expiry instead of cycling
+- **Purge file handling** — processes CMS purge directives from RequiredFiles
+- **HTTP 429 retry** — respects Retry-After header for rate-limited CMS responses
+- **Spec-compliant logging** — SubmitLog XML with child elements per upstream format
+- **Configurable client identity** — clientType/clientVersion/clientCode in RegisterDisplay
+- **1138 tests** across 30 test suites
 
 ## Packages
 
@@ -160,7 +165,7 @@ pnpm install
 ### Testing
 
 ```bash
-pnpm test              # run all tests (1111 tests across 30 suites)
+pnpm test              # run all tests (1138 tests across 30 suites)
 pnpm test:watch        # watch mode
 pnpm test:coverage     # with coverage report
 ```
