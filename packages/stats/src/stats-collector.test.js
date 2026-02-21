@@ -189,6 +189,70 @@ describe('StatsCollector', () => {
     });
   });
 
+  describe('event tracking', () => {
+    it('should record an event stat', async () => {
+      await collector.recordEvent('touch', 123, 456, 789);
+
+      const stats = await collector.getAllStats();
+      expect(stats.length).toBe(1);
+      expect(stats[0].type).toBe('event');
+      expect(stats[0].tag).toBe('touch');
+      expect(stats[0].layoutId).toBe(123);
+      expect(stats[0].widgetId).toBe(456);
+      expect(stats[0].scheduleId).toBe(789);
+      expect(stats[0].duration).toBe(0);
+      expect(stats[0].count).toBe(1);
+      expect(stats[0].submitted).toBe(0);
+      expect(stats[0].start).toBeInstanceOf(Date);
+      expect(stats[0].end).toBeInstanceOf(Date);
+    });
+
+    it('should record multiple events', async () => {
+      await collector.recordEvent('touch', 123, 456, 789);
+      await collector.recordEvent('webhook', 123, 456, 789);
+      await collector.recordEvent('touch', 123, 457, 789);
+
+      const stats = await collector.getAllStats();
+      expect(stats.length).toBe(3);
+      expect(stats.every(s => s.type === 'event')).toBe(true);
+    });
+
+    it('should not store event in inProgressStats', async () => {
+      await collector.recordEvent('touch', 123, 456, 789);
+
+      expect(collector.inProgressStats.size).toBe(0);
+    });
+
+    it('should be retrievable for submission', async () => {
+      await collector.recordEvent('touch', 123, 456, 789);
+
+      const stats = await collector.getStatsForSubmission();
+      expect(stats.length).toBe(1);
+      expect(stats[0].type).toBe('event');
+      expect(stats[0].tag).toBe('touch');
+    });
+
+    it('should handle missing db gracefully', async () => {
+      const c = new StatsCollector();
+      // Should not throw
+      await c.recordEvent('touch', 123, 456, 789);
+    });
+
+    it('should coexist with layout and widget stats', async () => {
+      await collector.startLayout(123, 789);
+      await collector.endLayout(123, 789);
+      await collector.startWidget(111, 123, 789);
+      await collector.endWidget(111, 123, 789);
+      await collector.recordEvent('touch', 123, 456, 789);
+
+      const stats = await collector.getAllStats();
+      expect(stats.length).toBe(3);
+      expect(stats.some(s => s.type === 'layout')).toBe(true);
+      expect(stats.some(s => s.type === 'media')).toBe(true);
+      expect(stats.some(s => s.type === 'event')).toBe(true);
+    });
+  });
+
   describe('stats submission flow', () => {
     it('should get unsubmitted stats', async () => {
       // Create some stats
@@ -440,6 +504,45 @@ describe('formatStats', () => {
     // Should contain date in YYYY-MM-DD HH:MM:SS format
     expect(xml).toMatch(/fromdt="\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}"/);
     expect(xml).toMatch(/todt="\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}"/);
+  });
+
+  it('should format event stat', () => {
+    const stats = [{
+      type: 'event',
+      tag: 'touch',
+      layoutId: 123,
+      widgetId: 456,
+      scheduleId: 789,
+      start: new Date('2026-02-10T12:00:00Z'),
+      end: new Date('2026-02-10T12:00:00Z'),
+      duration: 0,
+      count: 1
+    }];
+
+    const xml = formatStats(stats);
+    expect(xml).toContain('type="event"');
+    expect(xml).toContain('tag="touch"');
+    expect(xml).toContain('widgetid="456"');
+    expect(xml).toContain('layoutid="123"');
+    expect(xml).toContain('scheduleid="789"');
+    expect(xml).toContain('duration="0"');
+  });
+
+  it('should escape XML in event tag', () => {
+    const stats = [{
+      type: 'event',
+      tag: 'touch&click<script>',
+      layoutId: 123,
+      widgetId: 456,
+      scheduleId: 789,
+      start: new Date('2026-02-10T12:00:00Z'),
+      end: new Date('2026-02-10T12:00:00Z'),
+      duration: 0,
+      count: 1
+    }];
+
+    const xml = formatStats(stats);
+    expect(xml).toContain('tag="touch&amp;click&lt;script&gt;"');
   });
 
   it('should handle missing end date', () => {

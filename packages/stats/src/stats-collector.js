@@ -273,6 +273,48 @@ export class StatsCollector {
   }
 
   /**
+   * Record an event stat (point-in-time engagement data)
+   *
+   * Creates an instant stat entry with no duration. Used for tracking
+   * interactive touches, webhook triggers, and other engagement events.
+   * Unlike layout/widget stats, events have no start/end cycle.
+   *
+   * @param {string} tag - Event tag describing the interaction (e.g. 'touch', 'webhook')
+   * @param {number} layoutId - Layout ID where the event occurred
+   * @param {number} widgetId - Widget ID that triggered the event
+   * @param {number} scheduleId - Schedule ID for the current schedule
+   * @returns {Promise<void>}
+   */
+  async recordEvent(tag, layoutId, widgetId, scheduleId) {
+    if (!this.db) {
+      log.warn('Stats database not initialized');
+      return;
+    }
+
+    const now = new Date();
+    const stat = {
+      type: 'event',
+      tag,
+      layoutId,
+      widgetId,
+      scheduleId,
+      start: now,
+      end: now,
+      duration: 0,
+      count: 1,
+      submitted: 0
+    };
+
+    try {
+      await this._saveStat(stat);
+      log.debug(`Recorded event '${tag}' for widget ${widgetId} in layout ${layoutId}`);
+    } catch (error) {
+      log.error(`Failed to record event '${tag}':`, error);
+      throw error;
+    }
+  }
+
+  /**
    * Get stats ready for submission to CMS
    *
    * Returns unsubmitted stats up to the specified limit.
@@ -382,7 +424,7 @@ export class StatsCollector {
       const hour = stat.start instanceof Date
         ? stat.start.toISOString().slice(0, 13)
         : new Date(stat.start).toISOString().slice(0, 13);
-      const key = `${stat.type}|${stat.layoutId}|${stat.mediaId || ''}|${stat.scheduleId}|${hour}`;
+      const key = `${stat.type}|${stat.layoutId}|${stat.mediaId || ''}|${stat.widgetId || ''}|${stat.tag || ''}|${stat.scheduleId}|${hour}`;
 
       if (groups.has(key)) {
         const group = groups.get(key);
@@ -584,6 +626,16 @@ export function formatStats(stats) {
     // Add mediaId for media stats
     if (stat.type === 'media' && stat.mediaId) {
       attrs.push(`mediaid="${stat.mediaId}"`);
+    }
+
+    // Add tag and widgetId for event stats
+    if (stat.type === 'event') {
+      if (stat.tag) {
+        attrs.push(`tag="${escapeXml(stat.tag)}"`);
+      }
+      if (stat.widgetId) {
+        attrs.push(`widgetid="${stat.widgetId}"`);
+      }
     }
 
     // Add count and duration
