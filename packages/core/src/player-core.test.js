@@ -2000,4 +2000,143 @@ describe('PlayerCore', () => {
     });
   });
 
+  describe('Layout Blacklisting', () => {
+    it('should not blacklist after fewer than threshold failures', () => {
+      core.reportLayoutFailure(100, 'render error');
+      core.reportLayoutFailure(100, 'render error');
+
+      expect(core.isLayoutBlacklisted(100)).toBe(false);
+      expect(core.getBlacklistedLayouts()).toEqual([]);
+    });
+
+    it('should blacklist after threshold consecutive failures', () => {
+      const spy = vi.fn();
+      core.on('layout-blacklisted', spy);
+
+      core.reportLayoutFailure(100, 'render error');
+      core.reportLayoutFailure(100, 'render error');
+      core.reportLayoutFailure(100, 'render error');
+
+      expect(core.isLayoutBlacklisted(100)).toBe(true);
+      expect(core.getBlacklistedLayouts()).toEqual([100]);
+      expect(spy).toHaveBeenCalledWith({
+        layoutId: 100,
+        reason: 'render error',
+        failures: 3
+      });
+    });
+
+    it('should report blacklisted layout to CMS via blackList', () => {
+      core.reportLayoutFailure(100, 'parse error');
+      core.reportLayoutFailure(100, 'parse error');
+      core.reportLayoutFailure(100, 'parse error');
+
+      expect(mockXmds.blackList).toHaveBeenCalledWith(100, 'layout', 'parse error');
+    });
+
+    it('should remove layout from blacklist on success', () => {
+      core.reportLayoutFailure(100, 'error');
+      core.reportLayoutFailure(100, 'error');
+      core.reportLayoutFailure(100, 'error');
+      expect(core.isLayoutBlacklisted(100)).toBe(true);
+
+      const spy = vi.fn();
+      core.on('layout-unblacklisted', spy);
+      core.reportLayoutSuccess(100);
+
+      expect(core.isLayoutBlacklisted(100)).toBe(false);
+      expect(spy).toHaveBeenCalledWith({ layoutId: 100 });
+    });
+
+    it('should reset blacklist on RequiredFiles change', async () => {
+      core.reportLayoutFailure(100, 'error');
+      core.reportLayoutFailure(100, 'error');
+      core.reportLayoutFailure(100, 'error');
+      expect(core.isLayoutBlacklisted(100)).toBe(true);
+
+      const spy = vi.fn();
+      core.on('blacklist-reset', spy);
+
+      // Trigger collection (RequiredFiles changes since _lastCheckRf is null)
+      await core.collect();
+
+      expect(core.isLayoutBlacklisted(100)).toBe(false);
+      expect(spy).toHaveBeenCalled();
+    });
+
+    it('should skip blacklisted layouts in getNextLayout', () => {
+      mockSchedule.getCurrentLayouts.mockReturnValue(['100.xlf', '200.xlf', '300.xlf']);
+
+      // Blacklist layout 100
+      core.reportLayoutFailure(100, 'error');
+      core.reportLayoutFailure(100, 'error');
+      core.reportLayoutFailure(100, 'error');
+
+      core._currentLayoutIndex = 0; // Would normally pick 100
+      const next = core.getNextLayout();
+      expect(next.layoutId).toBe(200);
+    });
+
+    it('should skip blacklisted layouts in advanceToNextLayout', () => {
+      mockSchedule.getCurrentLayouts.mockReturnValue(['100.xlf', '200.xlf', '300.xlf']);
+      core._currentLayoutIndex = 0;
+      core.currentLayoutId = 100;
+
+      // Blacklist layout 200
+      core.reportLayoutFailure(200, 'error');
+      core.reportLayoutFailure(200, 'error');
+      core.reportLayoutFailure(200, 'error');
+
+      const spy = vi.fn();
+      core.on('layout-prepare-request', spy);
+      core.advanceToNextLayout();
+
+      // Should skip 200 and advance to 300
+      expect(spy).toHaveBeenCalledWith(300);
+    });
+
+    it('should fall back to first layout if all are blacklisted', () => {
+      mockSchedule.getCurrentLayouts.mockReturnValue(['100.xlf', '200.xlf']);
+
+      core.reportLayoutFailure(100, 'error');
+      core.reportLayoutFailure(100, 'error');
+      core.reportLayoutFailure(100, 'error');
+      core.reportLayoutFailure(200, 'error');
+      core.reportLayoutFailure(200, 'error');
+      core.reportLayoutFailure(200, 'error');
+
+      // getNextLayout should still return something (never blank screen)
+      const next = core.getNextLayout();
+      expect(next).not.toBeNull();
+      expect(next.layoutId).toBe(100);
+    });
+
+    it('should skip blacklisted in peekNextLayout', () => {
+      mockSchedule.getCurrentLayouts.mockReturnValue(['100.xlf', '200.xlf', '300.xlf']);
+      core._currentLayoutIndex = 0;
+      core.currentLayoutId = 100;
+
+      // Blacklist layout 200
+      core.reportLayoutFailure(200, 'error');
+      core.reportLayoutFailure(200, 'error');
+      core.reportLayoutFailure(200, 'error');
+
+      const peek = core.peekNextLayout();
+      expect(peek.layoutId).toBe(300);
+    });
+
+    it('should track multiple layouts independently', () => {
+      core.reportLayoutFailure(100, 'error A');
+      core.reportLayoutFailure(100, 'error A');
+      core.reportLayoutFailure(200, 'error B');
+
+      expect(core.isLayoutBlacklisted(100)).toBe(false); // Only 2 failures
+      expect(core.isLayoutBlacklisted(200)).toBe(false); // Only 1 failure
+
+      core.reportLayoutFailure(100, 'error A');
+      expect(core.isLayoutBlacklisted(100)).toBe(true);  // 3 failures
+      expect(core.isLayoutBlacklisted(200)).toBe(false);  // Still 1
+    });
+  });
+
 });
