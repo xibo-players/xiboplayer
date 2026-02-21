@@ -677,10 +677,41 @@ describe('RestClient - MediaInventory', () => {
   });
 });
 
-// ─── BlackList (always SOAP) ─────────────────────────────────────────
+// ─── BlackList ───────────────────────────────────────────────────────
 
 describe('RestClient - BlackList', () => {
-  it('should return false since REST has no BlackList endpoint', async () => {
+  let mockFetch;
+
+  beforeEach(() => {
+    mockFetch = vi.fn();
+    global.fetch = mockFetch;
+  });
+
+  it('should POST to /blacklist endpoint', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      headers: { get: () => 'application/json' },
+      json: () => Promise.resolve({ success: true }),
+    });
+
+    const client = createRestClient();
+    const result = await client.blackList('42', 'media', 'Broken file');
+
+    expect(result).toBe(true);
+    expect(mockFetch).toHaveBeenCalledWith(
+      expect.stringContaining('/blacklist'),
+      expect.objectContaining({ method: 'POST' })
+    );
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body);
+    expect(body.mediaId).toBe('42');
+    expect(body.type).toBe('media');
+    expect(body.reason).toBe('Broken file');
+  });
+
+  it('should return false on failure', async () => {
+    mockFetch.mockRejectedValue(new Error('Network error'));
+
     const client = createRestClient();
     const result = await client.blackList('42', 'media', 'Broken');
     expect(result).toBe(false);
