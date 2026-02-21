@@ -386,6 +386,9 @@ export class PlayerCore extends EventEmitter {
         this.emit('sync-config', regResult.syncConfig);
       }
 
+      // Extract config from display tags (key|value convention)
+      this._applyTagConfig(regResult.tags);
+
       this.emit('register-complete', regResult);
 
       // Initialize XMR if available
@@ -905,6 +908,34 @@ export class PlayerCore extends EventEmitter {
    * @returns {{latitude: number, longitude: number}}
    * @private
    */
+  /**
+   * Extract config values from CMS display tags using key|value convention.
+   * Tags like "geoApiKey|AIzaSy..." are parsed and applied to player config.
+   * @param {string[]} tags - Array of tag strings from RegisterDisplay
+   * @private
+   */
+  _applyTagConfig(tags) {
+    if (!Array.isArray(tags) || tags.length === 0) return;
+
+    const TAG_CONFIG_MAP = {
+      'geoApiKey': 'googleGeoApiKey',
+    };
+
+    for (const tag of tags) {
+      const pipeIdx = tag.indexOf('|');
+      if (pipeIdx === -1) continue;
+
+      const key = tag.substring(0, pipeIdx);
+      const value = tag.substring(pipeIdx + 1);
+      const configKey = TAG_CONFIG_MAP[key];
+
+      if (configKey && value && this.config) {
+        log.info(`Config from CMS tag: ${key} → ${configKey}`);
+        this.config[configKey] = value;
+      }
+    }
+  }
+
   _applyLocation(lat, lng, source) {
     log.info(`Geolocation (${source}): ${lat.toFixed(4)}, ${lng.toFixed(4)}`);
 

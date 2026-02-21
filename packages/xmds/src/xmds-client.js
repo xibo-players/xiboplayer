@@ -181,16 +181,24 @@ export class XmdsClient {
     }
 
     const settings = {};
+    const tags = [];
     for (const child of display.children) {
-      if (!['commands', 'file'].includes(child.tagName.toLowerCase())) {
-        settings[child.tagName] = child.textContent;
+      const name = child.tagName.toLowerCase();
+      if (name === 'commands' || name === 'file') continue;
+      if (name === 'tags') {
+        // Parse <tags><tag>value</tag>...</tags> into array
+        for (const tagEl of child.querySelectorAll('tag')) {
+          if (tagEl.textContent) tags.push(tagEl.textContent);
+        }
+        continue;
       }
+      settings[child.tagName] = child.textContent;
     }
 
     const checkRf = display.getAttribute('checkRf') || '';
     const checkSchedule = display.getAttribute('checkSchedule') || '';
 
-    return { code, message, settings, checkRf, checkSchedule };
+    return { code, message, settings, tags, checkRf, checkSchedule };
   }
 
   /**

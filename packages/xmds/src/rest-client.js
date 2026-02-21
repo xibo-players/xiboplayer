@@ -169,8 +169,16 @@ export class RestClient {
     }
 
     const settings = {};
+    let tags = [];
     for (const [key, value] of Object.entries(display)) {
       if (key === '@attributes' || key === 'commands' || key === 'file') continue;
+      if (key === 'tags') {
+        // Parse tags: array of strings, or array of {tag: "value"} objects
+        if (Array.isArray(value)) {
+          tags = value.map(t => typeof t === 'object' ? (t.tag || t.value || '') : String(t)).filter(Boolean);
+        }
+        continue;
+      }
       settings[key] = typeof value === 'object' ? JSON.stringify(value) : String(value);
     }
 
@@ -187,7 +195,7 @@ export class RestClient {
       isLead: String(display.syncGroup) === 'lead',
     } : null;
 
-    return { code, message, settings, checkRf, checkSchedule, syncConfig };
+    return { code, message, settings, tags, checkRf, checkSchedule, syncConfig };
   }
 
   /**
