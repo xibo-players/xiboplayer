@@ -1820,4 +1820,171 @@ describe('PlayerCore', () => {
     });
   });
 
+  describe('Scheduled Commands', () => {
+    it('should initialize _executedCommands as empty Set', () => {
+      expect(core._executedCommands).toBeInstanceOf(Set);
+      expect(core._executedCommands.size).toBe(0);
+    });
+
+    it('should detect and emit scheduled commands whose time has arrived', () => {
+      const spy = createSpy();
+      core.on('scheduled-command', spy);
+
+      const pastDate = new Date(Date.now() - 60000).toISOString(); // 1 min ago
+      mockSchedule.getCommands = vi.fn(() => [
+        { code: 'reboot', date: pastDate }
+      ]);
+
+      core._processScheduledCommands();
+
+      expect(spy).toHaveBeenCalledTimes(1);
+      expect(spy).toHaveBeenCalledWith({ code: 'reboot', date: pastDate });
+    });
+
+    it('should not execute commands whose time has not arrived', () => {
+      const spy = createSpy();
+      core.on('scheduled-command', spy);
+
+      const futureDate = new Date(Date.now() + 3600000).toISOString(); // 1 hour from now
+      mockSchedule.getCommands = vi.fn(() => [
+        { code: 'reboot', date: futureDate }
+      ]);
+
+      core._processScheduledCommands();
+
+      expect(spy).not.toHaveBeenCalled();
+    });
+
+    it('should not re-execute already executed commands', () => {
+      const spy = createSpy();
+      core.on('scheduled-command', spy);
+
+      const pastDate = new Date(Date.now() - 60000).toISOString();
+      mockSchedule.getCommands = vi.fn(() => [
+        { code: 'reboot', date: pastDate }
+      ]);
+
+      core._processScheduledCommands();
+      core._processScheduledCommands(); // Call again
+
+      expect(spy).toHaveBeenCalledTimes(1);
+    });
+
+    it('should handle collectNow command directly without emitting scheduled-command', () => {
+      vi.useFakeTimers();
+
+      const spy = createSpy();
+      core.on('scheduled-command', spy);
+
+      const pastDate = new Date(Date.now() - 60000).toISOString();
+      mockSchedule.getCommands = vi.fn(() => [
+        { code: 'collectNow', date: pastDate }
+      ]);
+
+      core._processScheduledCommands();
+
+      // collectNow is handled internally, not emitted as scheduled-command
+      expect(spy).not.toHaveBeenCalled();
+      expect(core._executedCommands.has(`collectNow|${pastDate}`)).toBe(true);
+
+      vi.useRealTimers();
+    });
+
+    it('should clear _executedCommands when schedule changes during collection', async () => {
+      // Pre-populate executed commands
+      core._executedCommands.add('reboot|2026-01-01');
+      core._executedCommands.add('restart|2026-01-02');
+      expect(core._executedCommands.size).toBe(2);
+
+      await core.collect();
+
+      // Schedule was fetched (new CRC), so _executedCommands should be cleared
+      expect(core._executedCommands.size).toBe(0);
+    });
+
+    it('should skip commands with missing code or date', () => {
+      const spy = createSpy();
+      core.on('scheduled-command', spy);
+
+      const pastDate = new Date(Date.now() - 60000).toISOString();
+      mockSchedule.getCommands = vi.fn(() => [
+        { code: '', date: pastDate },       // Empty code
+        { code: 'reboot', date: '' },       // Empty date
+        { code: null, date: pastDate },      // Null code
+        { code: 'restart', date: pastDate }  // Valid — should execute
+      ]);
+
+      core._processScheduledCommands();
+
+      expect(spy).toHaveBeenCalledTimes(1);
+      expect(spy).toHaveBeenCalledWith({ code: 'restart', date: pastDate });
+    });
+
+    it('should skip commands with invalid date format', () => {
+      const spy = createSpy();
+      core.on('scheduled-command', spy);
+
+      mockSchedule.getCommands = vi.fn(() => [
+        { code: 'reboot', date: 'not-a-date' }
+      ]);
+
+      core._processScheduledCommands();
+
+      expect(spy).not.toHaveBeenCalled();
+    });
+
+    it('should handle multiple commands in one pass', () => {
+      const spy = createSpy();
+      core.on('scheduled-command', spy);
+
+      const pastDate1 = new Date(Date.now() - 120000).toISOString();
+      const pastDate2 = new Date(Date.now() - 60000).toISOString();
+      const futureDate = new Date(Date.now() + 3600000).toISOString();
+      mockSchedule.getCommands = vi.fn(() => [
+        { code: 'reboot', date: pastDate1 },
+        { code: 'restart', date: pastDate2 },
+        { code: 'shutdown', date: futureDate }  // Future — should not execute
+      ]);
+
+      core._processScheduledCommands();
+
+      expect(spy).toHaveBeenCalledTimes(2);
+      expect(spy).toHaveBeenCalledWith({ code: 'reboot', date: pastDate1 });
+      expect(spy).toHaveBeenCalledWith({ code: 'restart', date: pastDate2 });
+    });
+
+    it('should do nothing when schedule has no getCommands method', () => {
+      delete mockSchedule.getCommands;
+
+      // Should not throw
+      expect(() => core._processScheduledCommands()).not.toThrow();
+    });
+
+    it('should do nothing when no commands are scheduled', () => {
+      const spy = createSpy();
+      core.on('scheduled-command', spy);
+
+      mockSchedule.getCommands = vi.fn(() => []);
+
+      core._processScheduledCommands();
+
+      expect(spy).not.toHaveBeenCalled();
+    });
+
+    it('should be called during collection cycle', async () => {
+      const spy = createSpy();
+      core.on('scheduled-command', spy);
+
+      const pastDate = new Date(Date.now() - 60000).toISOString();
+      mockSchedule.getCommands = vi.fn(() => [
+        { code: 'reboot', date: pastDate }
+      ]);
+
+      await core.collect();
+
+      expect(spy).toHaveBeenCalledTimes(1);
+      expect(spy).toHaveBeenCalledWith({ code: 'reboot', date: pastDate });
+    });
+  });
+
 });
