@@ -111,7 +111,7 @@ export class RequestHandler {
 
     // Handle widget resources (bundle.min.js, fonts)
     // Uses pendingFetches for deduplication — concurrent requests share one fetch
-    if (url.pathname.includes('xmds.php') &&
+    if ((url.pathname.includes('xmds.php') || url.pathname.includes('pwa/file')) &&
         (url.searchParams.get('fileType') === 'bundle' ||
          url.searchParams.get('fileType') === 'fontCss' ||
          url.searchParams.get('fileType') === 'font')) {
@@ -167,8 +167,8 @@ export class RequestHandler {
       }
     }
 
-    // Handle XMDS media requests (XLR compatibility)
-    if (url.pathname.includes('xmds.php') && url.searchParams.has('file')) {
+    // Handle XMDS media requests (XLR compatibility + PWA file downloads)
+    if ((url.pathname.includes('xmds.php') || url.pathname.includes('pwa/file')) && url.searchParams.has('file')) {
       const filename = url.searchParams.get('file');
       const fileId = filename.split('.')[0];
       const fileType = url.searchParams.get('type');

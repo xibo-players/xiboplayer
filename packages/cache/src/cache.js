@@ -405,9 +405,9 @@ export class CacheManager {
     }
 
     // Rewrite absolute CMS signed URLs to local cache paths
-    // Matches: https://cms/xmds.php?file=bundle.min.js&...&X-Amz-Signature=...
+    // Matches: https://cms/xmds.php?file=... or https://cms/pwa/file?file=...
     // These absolute URLs bypass the <base> tag entirely, causing slow CMS fetches
-    const cmsUrlRegex = /https?:\/\/[^"'\s)]+xmds\.php\?[^"'\s)]*file=([^&"'\s)]+)[^"'\s)]*/g;
+    const cmsUrlRegex = /https?:\/\/[^"'\s)]+(?:xmds\.php|pwa\/file)\?[^"'\s)]*file=([^&"'\s)]+)[^"'\s)]*/g;
     const staticResources = [];
     modifiedHtml = modifiedHtml.replace(cmsUrlRegex, (match, filename) => {
       const localPath = `${BASE}/cache/static/${filename}`;
