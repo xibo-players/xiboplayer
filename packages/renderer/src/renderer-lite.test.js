@@ -155,6 +155,121 @@ describe('RendererLite', () => {
         direction: 'S'
       });
     });
+
+    it('should parse region exit transition from options', () => {
+      const xlf = `
+        <layout>
+          <region id="r1" width="960" height="540" top="0" left="0">
+            <options>
+              <exitTransType>fadeOut</exitTransType>
+              <exitTransDuration>500</exitTransDuration>
+              <exitTransDirection>N</exitTransDirection>
+            </options>
+            <media id="m1" type="image" duration="10">
+              <options><uri>test.png</uri></options>
+            </media>
+          </region>
+        </layout>
+      `;
+
+      const layout = renderer.parseXlf(xlf);
+      const region = layout.regions[0];
+
+      expect(region.exitTransition).toEqual({
+        type: 'fadeOut',
+        duration: 500,
+        direction: 'N'
+      });
+    });
+
+    it('should parse region exit transition with defaults for missing duration and direction', () => {
+      const xlf = `
+        <layout>
+          <region id="r1" width="960" height="540" top="0" left="0">
+            <options>
+              <exitTransType>flyOut</exitTransType>
+            </options>
+            <media id="m1" type="image" duration="10">
+              <options><uri>test.png</uri></options>
+            </media>
+          </region>
+        </layout>
+      `;
+
+      const layout = renderer.parseXlf(xlf);
+      const region = layout.regions[0];
+
+      expect(region.exitTransition).toEqual({
+        type: 'flyOut',
+        duration: 1000,
+        direction: 'N'
+      });
+    });
+
+    it('should set exitTransition to null when region has no options', () => {
+      const xlf = `
+        <layout>
+          <region id="r1" width="960" height="540" top="0" left="0">
+            <media id="m1" type="image" duration="10">
+              <options><uri>test.png</uri></options>
+            </media>
+          </region>
+        </layout>
+      `;
+
+      const layout = renderer.parseXlf(xlf);
+      const region = layout.regions[0];
+
+      expect(region.exitTransition).toBeNull();
+    });
+
+    it('should set exitTransition to null when region options have no exitTransType', () => {
+      const xlf = `
+        <layout>
+          <region id="r1" width="960" height="540" top="0" left="0">
+            <options>
+              <someOtherOption>value</someOtherOption>
+            </options>
+            <media id="m1" type="image" duration="10">
+              <options><uri>test.png</uri></options>
+            </media>
+          </region>
+        </layout>
+      `;
+
+      const layout = renderer.parseXlf(xlf);
+      const region = layout.regions[0];
+
+      expect(region.exitTransition).toBeNull();
+    });
+
+    it('should not confuse media options with region options for exit transitions', () => {
+      const xlf = `
+        <layout>
+          <region id="r1" width="960" height="540" top="0" left="0">
+            <media id="m1" type="image" duration="10">
+              <options>
+                <uri>test.png</uri>
+                <transOut>fadeOut</transOut>
+                <transOutDuration>1500</transOutDuration>
+              </options>
+            </media>
+          </region>
+        </layout>
+      `;
+
+      const layout = renderer.parseXlf(xlf);
+      const region = layout.regions[0];
+
+      // Region should have no exit transition (only media has transOut)
+      expect(region.exitTransition).toBeNull();
+      // Widget should have its own out transition
+      expect(region.widgets[0].transitions.out).toEqual({
+        type: 'fadeOut',
+        duration: 1500,
+        direction: 'N'
+      });
+    });
   });
 
   describe('enableStat parsing', () => {

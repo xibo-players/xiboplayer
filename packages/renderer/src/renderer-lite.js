@@ -398,8 +398,25 @@ export class RendererLite {
         left: parseInt(regionEl.getAttribute('left')),
         zindex: parseInt(regionEl.getAttribute('zindex') || '0'),
         actions: this.parseActions(regionEl),
+        exitTransition: null,
         widgets: []
       };
+
+      // Parse region-level options (exit transitions)
+      // Use direct children only to avoid matching <options> inside <media>
+      const regionOptionsEl = Array.from(regionEl.children).find(el => el.tagName === 'options');
+      if (regionOptionsEl) {
+        const exitTransType = regionOptionsEl.querySelector('exitTransType');
+        if (exitTransType && exitTransType.textContent) {
+          const exitTransDuration = regionOptionsEl.querySelector('exitTransDuration');
+          const exitTransDirection = regionOptionsEl.querySelector('exitTransDirection');
+          region.exitTransition = {
+            type: exitTransType.textContent,
+            duration: parseInt((exitTransDuration && exitTransDuration.textContent) || '1000'),
+            direction: (exitTransDirection && exitTransDirection.textContent) || 'N'
+          };
+        }
+      }
 
       // Parse media/widgets
       for (const mediaEl of regionEl.querySelectorAll('media')) {
@@ -2030,7 +2047,21 @@ export class RendererLite {
           v.removeAttribute('src');
           v.load();
         });
-        region.element.remove();
+        // Apply region exit transition if configured, then remove
+        if (region.config && region.config.exitTransition) {
+          const animation = Transitions.apply(
+            region.element, region.config.exitTransition, false,
+            region.width, region.height
+          );
+          if (animation) {
+            const el = region.element;
+            animation.onfinish = () => el.remove();
+          } else {
+            region.element.remove();
+          }
+        } else {
+          region.element.remove();
+        }
       }
       // Revoke blob URLs
       if (oldLayoutId) {
@@ -2178,8 +2209,22 @@ export class RendererLite {
           this.stopWidget(regionId, region.currentIndex);
         }
 
-        // Remove region element
-        region.element.remove();
+        // Apply region exit transition if configured, then remove
+        if (region.config && region.config.exitTransition) {
+          const animation = Transitions.apply(
+            region.element, region.config.exitTransition, false,
+            region.width, region.height
+          );
+          if (animation) {
+            // Remove element after exit transition completes
+            const el = region.element;
+            animation.onfinish = () => el.remove();
+          } else {
+            region.element.remove();
+          }
+        } else {
+          region.element.remove();
+        }
       }
 
       // Revoke media blob URLs from cache
