@@ -155,7 +155,8 @@ export class XmdsClient {
       operatingSystem: os,
       macAddress: this.config.macAddress || 'n/a',
       xmrChannel: this.config.xmrChannel,
-      xmrPubKey: this.config.xmrPubKey || ''
+      xmrPubKey: this.config.xmrPubKey || '',
+      licenceResult: 'licensed'
     });
 
     return this.parseRegisterDisplayResponse(xml);
