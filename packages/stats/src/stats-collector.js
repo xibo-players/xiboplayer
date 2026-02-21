@@ -126,7 +126,7 @@ export class StatsCollector {
       const prev = this.inProgressStats.get(key);
       prev.end = new Date();
       prev.duration = Math.floor((prev.end - prev.start) / 1000);
-      await this._saveStat(prev);
+      await this._saveStatSplit(prev);
       this.inProgressStats.delete(key);
       log.debug(`Layout ${layoutId} replay - ended previous cycle (${prev.duration}s)`);
     }
@@ -174,9 +174,9 @@ export class StatsCollector {
     stat.end = new Date();
     stat.duration = Math.floor((stat.end - stat.start) / 1000);
 
-    // Save to database
+    // Save to database (splitting at hour boundaries for CMS aggregation)
     try {
-      await this._saveStat(stat);
+      await this._saveStatSplit(stat);
       this.inProgressStats.delete(key);
       log.debug(`Ended tracking layout ${layoutId} (${stat.duration}s)`);
     } catch (error) {
@@ -211,7 +211,7 @@ export class StatsCollector {
       const prev = this.inProgressStats.get(key);
       prev.end = new Date();
       prev.duration = Math.floor((prev.end - prev.start) / 1000);
-      await this._saveStat(prev);
+      await this._saveStatSplit(prev);
       this.inProgressStats.delete(key);
       log.debug(`Widget ${mediaId} replay - ended previous cycle (${prev.duration}s)`);
     }
@@ -261,9 +261,9 @@ export class StatsCollector {
     stat.end = new Date();
     stat.duration = Math.floor((stat.end - stat.start) / 1000);
 
-    // Save to database
+    // Save to database (splitting at hour boundaries for CMS aggregation)
     try {
-      await this._saveStat(stat);
+      await this._saveStatSplit(stat);
       this.inProgressStats.delete(key);
       log.debug(`Ended tracking widget ${mediaId} (${stat.duration}s)`);
     } catch (error) {
@@ -535,6 +535,65 @@ export class StatsCollector {
         }
       };
     });
+  }
+
+  /**
+   * Split a stat record at hour boundaries.
+   * If a stat spans multiple hours (e.g. 12:50→13:10), it is split into
+   * separate records at each hour boundary for correct CMS aggregation.
+   * Returns an array of one or more stat objects.
+   * @param {Object} stat - Finalized stat with start, end, duration
+   * @returns {Object[]}
+   * @private
+   */
+  _splitAtHourBoundaries(stat) {
+    const start = stat.start;
+    const end = stat.end;
+
+    // No split needed if start and end are in the same hour
+    if (start.getFullYear() === end.getFullYear() &&
+        start.getMonth() === end.getMonth() &&
+        start.getDate() === end.getDate() &&
+        start.getHours() === end.getHours()) {
+      return [stat];
+    }
+
+    const results = [];
+    let segStart = new Date(start.getTime());
+
+    while (segStart < end) {
+      // Next hour boundary: top of the next hour from segStart
+      const nextHour = new Date(segStart.getTime());
+      nextHour.setMinutes(0, 0, 0);
+      nextHour.setHours(nextHour.getHours() + 1);
+
+      const segEnd = nextHour < end ? nextHour : end;
+      const duration = Math.floor((segEnd - segStart) / 1000);
+
+      results.push({
+        ...stat,
+        start: new Date(segStart.getTime()),
+        end: new Date(segEnd.getTime()),
+        duration,
+        count: 1
+      });
+
+      segStart = segEnd;
+    }
+
+    return results;
+  }
+
+  /**
+   * Save a stat to IndexedDB, splitting at hour boundaries first.
+   * @param {Object} stat - Finalized stat with start, end, duration
+   * @private
+   */
+  async _saveStatSplit(stat) {
+    const parts = this._splitAtHourBoundaries(stat);
+    for (const part of parts) {
+      await this._saveStat(part);
+    }
   }
 
   /**
