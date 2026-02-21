@@ -1422,6 +1422,17 @@ export class RendererLite {
 
       const duration = widget.duration * 1000;
       region.timer = setTimeout(() => {
+        // Emit widgetAction if widget has a webhook URL configured
+        if (widget.webhookUrl) {
+          this.emit('widgetAction', {
+            type: 'durationEnd',
+            widgetId: widget.id,
+            layoutId: this.currentLayoutId,
+            regionId,
+            url: widget.webhookUrl
+          });
+        }
+
         hideFn(regionId, widgetIndex);
 
         const nextIndex = (region.currentIndex + 1) % region.widgets.length;
