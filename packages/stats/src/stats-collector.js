@@ -109,11 +109,19 @@ export class StatsCollector {
    *
    * @param {number} layoutId - Layout ID from CMS
    * @param {number} scheduleId - Schedule ID that triggered this layout
+   * @param {Object} [options] - Options
+   * @param {boolean} [options.enableStat=true] - Whether stats are enabled for this layout
    * @returns {Promise<void>}
    */
-  async startLayout(layoutId, scheduleId) {
+  async startLayout(layoutId, scheduleId, options) {
     if (!this.db) {
       log.warn('Stats database not initialized');
+      return;
+    }
+
+    // Respect enableStat flag from XLF (layout/widget level stat suppression)
+    if (options?.enableStat === false) {
+      log.debug(`Stats disabled for layout ${layoutId} (enableStat=false)`);
       return;
     }
 
@@ -196,11 +204,19 @@ export class StatsCollector {
    * @param {number} layoutId - Parent layout ID
    * @param {number} scheduleId - Schedule ID
    * @param {string|number} [widgetId] - Widget ID (for non-library widgets with no mediaId)
+   * @param {Object} [options] - Options
+   * @param {boolean} [options.enableStat=true] - Whether stats are enabled for this widget
    * @returns {Promise<void>}
    */
-  async startWidget(mediaId, layoutId, scheduleId, widgetId) {
+  async startWidget(mediaId, layoutId, scheduleId, widgetId, options) {
     if (!this.db) {
       log.warn('Stats database not initialized');
+      return;
+    }
+
+    // Respect enableStat flag from XLF (layout/widget level stat suppression)
+    if (options?.enableStat === false) {
+      log.debug(`Stats disabled for widget ${mediaId} (enableStat=false)`);
       return;
     }
 
