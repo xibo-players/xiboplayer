@@ -378,6 +378,7 @@ export class RendererLite {
       duration: layoutDurationAttr ? parseInt(layoutDurationAttr) : 0, // 0 = calculate from widgets
       bgcolor: layoutEl.getAttribute('bgcolor') || '#000000',
       background: layoutEl.getAttribute('background') || null, // Background image fileId
+      enableStat: layoutEl.getAttribute('enableStat') !== '0', // absent or "1" = enabled
       regions: []
     };
 
@@ -495,6 +496,7 @@ export class RendererLite {
       useDuration, // Whether to use specified duration (1) or media length (0)
       id,
       fileId, // Media library file ID for cache lookup
+      enableStat: mediaEl.getAttribute('enableStat') !== '0', // absent or "1" = enabled
       options,
       raw,
       transitions,
@@ -1318,7 +1320,8 @@ export class RendererLite {
         this.emit('widgetStart', {
           widgetId: widget.id, regionId, layoutId: this.currentLayoutId,
           mediaId: parseInt(widget.fileId || widget.id) || null,
-          type: widget.type, duration: widget.duration
+          type: widget.type, duration: widget.duration,
+          enableStat: widget.enableStat
         });
       }
     } catch (error) {
@@ -1342,7 +1345,8 @@ export class RendererLite {
       this.emit('widgetEnd', {
         widgetId: widget.id, regionId, layoutId: this.currentLayoutId,
         mediaId: parseInt(widget.fileId || widget.id) || null,
-        type: widget.type
+        type: widget.type,
+        enableStat: widget.enableStat
       });
     }
   }

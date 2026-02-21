@@ -326,6 +326,17 @@ export class RestClient {
    * SubmitStats - submit proof of play statistics
    * POST /stats → JSON acknowledgement
    */
+  /**
+   * ReportFaults - submit fault data to CMS for dashboard alerts
+   * POST /fault → JSON acknowledgement
+   * @param {string} faultJson - JSON-encoded fault data
+   * @returns {Promise<boolean>}
+   */
+  async reportFaults(faultJson) {
+    const result = await this.restSend('POST', '/fault', { fault: faultJson });
+    return result?.success === true;
+  }
+
   async submitStats(statsXml) {
     try {
       // Accept array (JSON-native) or string (XML) — send under the right key
