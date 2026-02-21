@@ -70,6 +70,68 @@ describe('XmdsClient - RegisterDisplay', () => {
   });
 });
 
+describe('XmdsClient - URL construction', () => {
+  let client;
+  let mockFetch;
+
+  beforeEach(() => {
+    client = new XmdsClient({
+      cmsAddress: 'https://cms.example.com',
+      cmsKey: 'test-server-key',
+      hardwareKey: 'test-hardware-key',
+      retryOptions: { maxRetries: 0 }
+    });
+
+    mockFetch = vi.fn();
+    global.fetch = mockFetch;
+  });
+
+  it('should include &method= query parameter in SOAP URLs', async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      text: async () => `<?xml version="1.0"?>
+<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+  <soap:Body>
+    <RegisterDisplayResponse>
+      <display code="READY" message="ok"></display>
+    </RegisterDisplayResponse>
+  </soap:Body>
+</soap:Envelope>`
+    });
+
+    await client.call('RegisterDisplay', {
+      serverKey: 'test-server-key',
+      hardwareKey: 'test-hardware-key'
+    });
+
+    const url = mockFetch.mock.calls[0][0];
+    expect(url).toBe('https://cms.example.com/xmds.php?v=5&method=RegisterDisplay');
+  });
+
+  it('should append method to proxy URLs with existing query params', async () => {
+    // Simulate Electron proxy URL that already has ?cms=...
+    client.rewriteXmdsUrl = () => '/xmds-proxy?cms=https%3A%2F%2Fcms.example.com';
+
+    mockFetch.mockResolvedValue({
+      ok: true,
+      text: async () => `<?xml version="1.0"?>
+<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+  <soap:Body>
+    <ScheduleResponse><result></result></ScheduleResponse>
+  </soap:Body>
+</soap:Envelope>`
+    });
+
+    await client.call('Schedule', {
+      serverKey: 'test-server-key',
+      hardwareKey: 'test-hardware-key'
+    });
+
+    const url = mockFetch.mock.calls[0][0];
+    expect(url).toContain('&v=5&method=Schedule');
+  });
+});
+
 describe('XmdsClient - SubmitLog', () => {
   let client;
   let mockFetch;
@@ -104,7 +166,7 @@ describe('XmdsClient - SubmitLog', () => {
     await client.submitLog(logXml);
 
     expect(mockFetch).toHaveBeenCalledWith(
-      'https://cms.example.com/xmds.php?v=5',
+      'https://cms.example.com/xmds.php?v=5&method=SubmitLog',
       expect.objectContaining({
         method: 'POST',
         headers: {
@@ -245,7 +307,7 @@ describe('XmdsClient - SubmitScreenShot', () => {
     await client.submitScreenShot(base64Image);
 
     expect(mockFetch).toHaveBeenCalledWith(
-      'https://cms.example.com/xmds.php?v=5',
+      'https://cms.example.com/xmds.php?v=5&method=SubmitScreenShot',
       expect.objectContaining({
         method: 'POST',
         headers: {
@@ -389,7 +451,7 @@ describe('XmdsClient - BlackList', () => {
     await client.blackList('42', 'media', 'Corrupt file');
 
     expect(mockFetch).toHaveBeenCalledWith(
-      'https://cms.example.com/xmds.php?v=5',
+      'https://cms.example.com/xmds.php?v=5&method=BlackList',
       expect.objectContaining({
         method: 'POST',
         headers: {
@@ -517,6 +579,80 @@ describe('XmdsClient - BlackList', () => {
   });
 });
 
+describe('XmdsClient - ReportFaults', () => {
+  let client;
+  let mockFetch;
+
+  beforeEach(() => {
+    client = new XmdsClient({
+      cmsAddress: 'https://cms.example.com',
+      cmsKey: 'test-server-key',
+      hardwareKey: 'test-hardware-key',
+      retryOptions: { maxRetries: 0 }
+    });
+
+    mockFetch = vi.fn();
+    global.fetch = mockFetch;
+  });
+
+  it('should build correct SOAP envelope for ReportFaults with JSON fault data', async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      text: async () => `<?xml version="1.0"?>
+<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+  <soap:Body>
+    <ReportFaultsResponse>
+      <success>true</success>
+    </ReportFaultsResponse>
+  </soap:Body>
+</soap:Envelope>`
+    });
+
+    const fault = JSON.stringify([{
+      code: 'LAYOUT_LOAD_FAILED',
+      reason: 'Missing resource',
+      date: '2026-02-21 10:00:00',
+      layoutId: 5
+    }]);
+
+    await client.reportFaults(fault);
+
+    expect(mockFetch).toHaveBeenCalledWith(
+      'https://cms.example.com/xmds.php?v=5&method=ReportFaults',
+      expect.objectContaining({
+        method: 'POST',
+        headers: {
+          'Content-Type': 'text/xml; charset=utf-8'
+        }
+      })
+    );
+
+    const body = mockFetch.mock.calls[0][1].body;
+    expect(body).toContain('<tns:ReportFaults>');
+    expect(body).toContain('<serverKey xsi:type="xsd:string">test-server-key</serverKey>');
+    expect(body).toContain('<hardwareKey xsi:type="xsd:string">test-hardware-key</hardwareKey>');
+    expect(body).toContain('<fault xsi:type="xsd:string">');
+    expect(body).toContain('LAYOUT_LOAD_FAILED');
+  });
+
+  it('should handle SOAP fault', async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      text: async () => `<?xml version="1.0"?>
+<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+  <soap:Body>
+    <soap:Fault>
+      <faultcode>Server</faultcode>
+      <faultstring>Display not licensed</faultstring>
+    </soap:Fault>
+  </soap:Body>
+</soap:Envelope>`
+    });
+
+    await expect(client.reportFaults('[]')).rejects.toThrow('SOAP Fault: Display not licensed');
+  });
+});
+
 describe('XmdsClient - NotifyStatus', () => {
   let client;
   let mockFetch;
@@ -565,7 +701,7 @@ describe('XmdsClient - NotifyStatus', () => {
     await client.notifyStatus(status);
 
     expect(mockFetch).toHaveBeenCalledWith(
-      'https://cms.example.com/xmds.php?v=5',
+      'https://cms.example.com/xmds.php?v=5&method=NotifyStatus',
       expect.objectContaining({
         method: 'POST',
         headers: {
@@ -781,7 +917,7 @@ describe('XmdsClient - MediaInventory', () => {
     await client.mediaInventory(inventoryXml);
 
     expect(mockFetch).toHaveBeenCalledWith(
-      'https://cms.example.com/xmds.php?v=5',
+      'https://cms.example.com/xmds.php?v=5&method=MediaInventory',
       expect.objectContaining({
         method: 'POST',
         headers: {

@@ -157,6 +157,86 @@ describe('RendererLite', () => {
     });
   });
 
+  describe('enableStat parsing', () => {
+    it('should parse enableStat="1" as true on layout', () => {
+      const xlf = `
+        <layout enableStat="1">
+          <region id="r1">
+            <media id="m1" type="image" duration="10"></media>
+          </region>
+        </layout>
+      `;
+      const layout = renderer.parseXlf(xlf);
+      expect(layout.enableStat).toBe(true);
+    });
+
+    it('should parse enableStat="0" as false on layout', () => {
+      const xlf = `
+        <layout enableStat="0">
+          <region id="r1">
+            <media id="m1" type="image" duration="10"></media>
+          </region>
+        </layout>
+      `;
+      const layout = renderer.parseXlf(xlf);
+      expect(layout.enableStat).toBe(false);
+    });
+
+    it('should default enableStat to true when absent on layout', () => {
+      const xlf = `
+        <layout>
+          <region id="r1">
+            <media id="m1" type="image" duration="10"></media>
+          </region>
+        </layout>
+      `;
+      const layout = renderer.parseXlf(xlf);
+      expect(layout.enableStat).toBe(true);
+    });
+
+    it('should parse enableStat="0" as false on widget', () => {
+      const xlf = `
+        <layout>
+          <region id="r1">
+            <media id="m1" type="image" duration="10" enableStat="0">
+              <options><uri>test.png</uri></options>
+            </media>
+          </region>
+        </layout>
+      `;
+      const layout = renderer.parseXlf(xlf);
+      expect(layout.regions[0].widgets[0].enableStat).toBe(false);
+    });
+
+    it('should parse enableStat="1" as true on widget', () => {
+      const xlf = `
+        <layout>
+          <region id="r1">
+            <media id="m1" type="image" duration="10" enableStat="1">
+              <options><uri>test.png</uri></options>
+            </media>
+          </region>
+        </layout>
+      `;
+      const layout = renderer.parseXlf(xlf);
+      expect(layout.regions[0].widgets[0].enableStat).toBe(true);
+    });
+
+    it('should default enableStat to true when absent on widget', () => {
+      const xlf = `
+        <layout>
+          <region id="r1">
+            <media id="m1" type="image" duration="10">
+              <options><uri>test.png</uri></options>
+            </media>
+          </region>
+        </layout>
+      `;
+      const layout = renderer.parseXlf(xlf);
+      expect(layout.regions[0].widgets[0].enableStat).toBe(true);
+    });
+  });
+
   describe('Region Creation', () => {
     it('should create region element with correct positioning', async () => {
       const regionConfig = {

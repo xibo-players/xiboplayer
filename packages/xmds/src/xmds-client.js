@@ -73,7 +73,7 @@ export class XmdsClient {
    */
   async call(method, params = {}) {
     const xmdsUrl = this.rewriteXmdsUrl(this.config.cmsAddress);
-    const url = `${xmdsUrl}${xmdsUrl.includes('?') ? '&' : '?'}v=${this.schemaVersion}`;
+    const url = `${xmdsUrl}${xmdsUrl.includes('?') ? '&' : '?'}v=${this.schemaVersion}&method=${method}`;
     const body = this.buildEnvelope(method, params);
 
     log.debug(`${method}`, params);
@@ -354,6 +354,19 @@ export class XmdsClient {
    * @param {string} statsXml - XML-encoded stats string
    * @returns {Promise<boolean>} - true if stats were successfully submitted
    */
+  /**
+   * ReportFaults - submit fault data to CMS for dashboard alerts
+   * @param {string} faultJson - JSON-encoded fault data
+   * @returns {Promise<boolean>}
+   */
+  async reportFaults(faultJson) {
+    return this.call('ReportFaults', {
+      serverKey: this.config.cmsKey,
+      hardwareKey: this.config.hardwareKey,
+      fault: faultJson
+    });
+  }
+
   async submitStats(statsXml) {
     try {
       const xml = await this.call('SubmitStats', {
