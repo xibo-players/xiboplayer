@@ -1228,6 +1228,8 @@ export class RendererLite {
         return await this.renderWebpage(widget, region);
       case 'localvideo':
         return await this.renderVideo(widget, region);
+      case 'videoin':
+        return await this.renderVideoIn(widget, region);
       case 'powerpoint':
       case 'flash':
         // Legacy Windows-only types — show placeholder instead of failing silently
@@ -1259,6 +1261,18 @@ export class RendererLite {
     // Restart video or audio on widget show (even if looping)
     const mediaEl = this.findMediaElement(element, 'VIDEO') || this.findMediaElement(element, 'AUDIO');
     if (mediaEl) {
+      // Re-acquire webcam stream if it was stopped during _hideWidget()
+      if (mediaEl.tagName === 'VIDEO' && mediaEl._mediaConstraints && !mediaEl._mediaStream) {
+        navigator.mediaDevices.getUserMedia(mediaEl._mediaConstraints).then(stream => {
+          mediaEl.srcObject = stream;
+          mediaEl._mediaStream = stream;
+          this.log.info(`Webcam stream re-acquired for widget ${widget.id}`);
+        }).catch(e => {
+          this.log.warn('Failed to re-acquire webcam stream:', e.message);
+        });
+        return; // srcObject auto-plays, no need for _restartMediaElement
+      }
+
       this._restartMediaElement(mediaEl);
       this.log.info(`${mediaEl.tagName === 'VIDEO' ? 'Video' : 'Audio'} restarted: ${widget.fileId || widget.id}`);
     }
@@ -1552,6 +1566,13 @@ export class RendererLite {
 
     const videoEl = widgetElement.querySelector('video');
     if (videoEl && widget.options.loop !== '1') videoEl.pause();
+
+    // Stop MediaStream tracks (webcam/mic) to release the device
+    if (videoEl?._mediaStream) {
+      videoEl._mediaStream.getTracks().forEach(t => t.stop());
+      videoEl._mediaStream = null;
+      videoEl.srcObject = null;
+    }
 
     const audioEl = widgetElement.querySelector('audio');
     if (audioEl && widget.options.loop !== '1') audioEl.pause();
@@ -1939,6 +1960,65 @@ export class RendererLite {
     });
 
     this.log.info('Video element created:', fileId, video.src);
+
+    return video;
+  }
+
+  /**
+   * Render videoin (webcam/microphone) widget.
+   * Uses getUserMedia() to capture live video from camera hardware.
+   * @param {Object} widget - Widget config with options (sourceId, showFullScreen, mirror, mute, captureAudio)
+   * @param {Object} region - Region dimensions (width, height)
+   * @returns {HTMLVideoElement}
+   */
+  async renderVideoIn(widget, region) {
+    const video = document.createElement('video');
+    video.className = 'renderer-lite-widget';
+    video.style.width = '100%';
+    video.style.height = '100%';
+    video.style.objectFit = widget.options.showFullScreen === '1' ? 'cover' : 'contain';
+    video.autoplay = true;
+    video.playsInline = true;
+    video.controls = false;
+    video.muted = widget.options.mute !== '0'; // Muted by default to prevent audio feedback
+
+    // Mirror mode (front-facing camera)
+    if (widget.options.mirror === '1') {
+      video.style.transform = 'scaleX(-1)';
+    }
+
+    // Build getUserMedia constraints
+    const videoConstraints = {
+      width: { ideal: region.width },
+      height: { ideal: region.height },
+    };
+    const deviceId = widget.options.sourceId || widget.options.deviceId;
+    if (deviceId) {
+      videoConstraints.deviceId = { exact: deviceId };
+    } else {
+      videoConstraints.facingMode = widget.options.facingMode || 'environment';
+    }
+
+    const constraints = {
+      video: videoConstraints,
+      audio: widget.options.captureAudio === '1',
+    };
+
+    // Store constraints for re-acquisition after layout transitions
+    video._mediaConstraints = constraints;
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia(constraints);
+      video.srcObject = stream;
+      video._mediaStream = stream;
+      this.log.info(`Webcam stream acquired for widget ${widget.id} (tracks: ${stream.getTracks().length})`);
+    } catch (e) {
+      this.log.warn(`getUserMedia failed for widget ${widget.id}: ${e.message}`);
+      return this._renderUnsupportedPlaceholder(
+        { ...widget, type: 'Camera unavailable' },
+        region
+      );
+    }
 
     return video;
   }
