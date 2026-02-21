@@ -451,12 +451,28 @@ describe('RendererLite', () => {
       expect(element.style.objectFit).toBe('fill');
     });
 
-    it('should apply objectFit contain when scaleType is center', async () => {
+    it('should apply objectFit none when scaleType is center (natural size)', async () => {
       const widget = {
         type: 'image',
         id: 'm1',
         fileId: '1',
         options: { uri: 'test.png', scaleType: 'center' },
+        duration: 10,
+        transitions: { in: null, out: null }
+      };
+
+      const region = { width: 1920, height: 1080 };
+      const element = await renderer.renderImage(widget, region);
+
+      expect(element.style.objectFit).toBe('none');
+    });
+
+    it('should apply objectFit contain when scaleType is fit', async () => {
+      const widget = {
+        type: 'image',
+        id: 'm1',
+        fileId: '1',
+        options: { uri: 'test.png', scaleType: 'fit' },
         duration: 10,
         transitions: { in: null, out: null }
       };
