@@ -28,11 +28,9 @@ const BASE = (typeof window !== 'undefined')
  * @param {string} regionId - Region ID
  * @param {string} mediaId - Media ID
  * @param {string} html - Widget HTML content
- * @param {object} [options]
- * @param {string} [options.cmsUrl] - CMS base URL for proxying data requests
  * @returns {Promise<string>} Cache key URL
  */
-export async function cacheWidgetHtml(layoutId, regionId, mediaId, html, { cmsUrl } = {}) {
+export async function cacheWidgetHtml(layoutId, regionId, mediaId, html) {
   const cacheKey = `${BASE}/cache/widget/${layoutId}/${regionId}/${mediaId}`;
   const cache = await caches.open(CACHE_NAME);
 
@@ -50,21 +48,6 @@ export async function cacheWidgetHtml(layoutId, regionId, mediaId, html, { cmsUr
     // No head tag, prepend base tag
     modifiedHtml = baseTag + html;
   }
-
-  // Rewrite /pwa/getData URLs to local cache paths and pre-fetch data
-  // Widget HTML contains: url: "/pwa/getData?widgetId=184&serverKey=...&hardwareKey=..."
-  // This resolves to the SW origin (not CMS) → 404. Rewrite to cache path and pre-fetch.
-  const dataUrlRegex = /\/pwa\/getData\?([^"'\s]+)/g;
-  const dataResources = [];
-  modifiedHtml = modifiedHtml.replace(dataUrlRegex, (match, queryString) => {
-    const params = new URLSearchParams(queryString);
-    const widgetId = params.get('widgetId');
-    if (!widgetId) return match;
-    const localPath = `${BASE}/cache/data/${widgetId}.json`;
-    dataResources.push({ widgetId, originalUrl: match });
-    log.info(`Rewrote data URL: widgetId=${widgetId} → ${localPath}`);
-    return localPath;
-  });
 
   // Rewrite absolute CMS signed URLs to local cache paths
   // Matches: https://cms/xmds.php?file=... or https://cms/pwa/file?file=...
@@ -193,37 +176,6 @@ export async function cacheWidgetHtml(layoutId, regionId, mediaId, html, { cmsUr
         }
       } catch (error) {
         log.warn(`Failed to cache static resource: ${filename}`, error);
-      }
-    }));
-  }
-
-  // Fetch and cache widget data (RSS, dataset, etc.)
-  // Data URLs were rewritten from /pwa/getData?widgetId=X&auth... to /player/pwa/cache/data/X.json
-  if (dataResources.length > 0 && cmsUrl) {
-    const dataCache = await caches.open(CACHE_NAME);
-    await Promise.all(dataResources.map(async ({ widgetId, originalUrl }) => {
-      const dataKey = `${BASE}/cache/data/${widgetId}.json`;
-      try {
-        // Construct absolute CMS URL from relative /pwa/getData path
-        const fullUrl = cmsUrl.replace(/\/$/, '') + originalUrl;
-        log.info(`Fetching widget data: widgetId=${widgetId} from ${fullUrl}`);
-        const resp = await fetch(fullUrl);
-        if (!resp.ok) {
-          log.warn(`Widget data fetch failed: widgetId=${widgetId} (HTTP ${resp.status})`);
-          return;
-        }
-        const json = await resp.text();
-        const dataCacheUrl = new URL(dataKey, window.location.origin);
-        await dataCache.put(dataCacheUrl, new Response(json, {
-          headers: {
-            'Content-Type': 'application/json',
-            'Access-Control-Allow-Origin': '*',
-            'Cache-Control': 'public, max-age=300' // 5 min — data refreshes on next collection
-          }
-        }));
-        log.info(`Cached widget data: widgetId=${widgetId} (${json.length} bytes)`);
-      } catch (error) {
-        log.warn(`Failed to cache widget data: widgetId=${widgetId}`, error);
       }
     }));
   }
