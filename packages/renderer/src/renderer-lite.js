@@ -2207,7 +2207,9 @@ export class RendererLite {
       try {
         const pdfjsModule = await import('pdfjs-dist');
         window.pdfjsLib = pdfjsModule;
-        window.pdfjsLib.GlobalWorkerOptions.workerSrc = `${window.location.origin}/player/pdf.worker.min.mjs`;
+        // Derive worker path from current page location (works for /player/pwa/ and /player/)
+        const basePath = window.location.pathname.replace(/\/[^/]*$/, '/');
+        window.pdfjsLib.GlobalWorkerOptions.workerSrc = `${window.location.origin}${basePath}pdf.worker.min.mjs`;
       } catch (error) {
         this.log.error('PDF.js not available:', error);
         container.innerHTML = '<div style="color:white;padding:20px;text-align:center;">PDF viewer unavailable</div>';
