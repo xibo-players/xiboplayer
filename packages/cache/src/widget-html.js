@@ -35,8 +35,8 @@ export async function cacheWidgetHtml(layoutId, regionId, mediaId, html) {
   const cache = await caches.open(CACHE_NAME);
 
   // Inject <base> tag to fix relative paths for widget dependencies
-  // Widget HTML has relative paths like "bundle.min.js" that should resolve to /player/cache/media/
-  const baseTag = '<base href="/player/cache/media/">';
+  // Widget HTML has relative paths like "bundle.min.js" that should resolve to cache/media/
+  const baseTag = `<base href="${BASE}/cache/media/">`;
   let modifiedHtml = html;
 
   // Insert base tag after <head> opening tag
