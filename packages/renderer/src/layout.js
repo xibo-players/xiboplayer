@@ -132,8 +132,7 @@ export class LayoutTranslator {
           log.info(`Got resource HTML (${raw.length} chars)`);
 
           // Store widget HTML in cache and save cache key for iframe src generation
-          const cmsUrl = this.xmds?.config?.cmsAddress || this.xmds?.config?.restApiUrl;
-          const widgetCacheKey = await cacheWidgetHtml(layoutId, regionId, id, raw, { cmsUrl });
+          const widgetCacheKey = await cacheWidgetHtml(layoutId, regionId, id, raw);
           options.widgetCacheKey = widgetCacheKey;
 
           // Success - break retry loop
