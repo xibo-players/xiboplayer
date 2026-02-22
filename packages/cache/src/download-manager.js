@@ -98,6 +98,20 @@ export function isUrlExpired(url, graceSeconds = 30) {
 }
 
 /**
+ * Rewrite an absolute CMS URL through the local proxy when running behind
+ * the proxy server (Chromium kiosk or Electron).
+ * Detection: SW/window on localhost:8765 = proxy mode.
+ */
+export function rewriteUrlForProxy(url) {
+  if (!url.startsWith('http')) return url;
+  const loc = typeof self !== 'undefined' ? self.location : undefined;
+  if (!loc || loc.hostname !== 'localhost' || loc.port !== '8765') return url;
+  const parsed = new URL(url);
+  const cmsOrigin = parsed.origin;
+  return `/file-proxy?cms=${encodeURIComponent(cmsOrigin)}&url=${encodeURIComponent(parsed.pathname + parsed.search)}`;
+}
+
+/**
  * DownloadTask - Single HTTP fetch unit
  *
  * Handles exactly one HTTP request: either a full small file GET or a single Range GET
@@ -120,7 +134,7 @@ export class DownloadTask {
     if (isUrlExpired(url)) {
       throw new Error(`URL expired for ${this.fileInfo.type}/${this.fileInfo.id} — waiting for fresh URL from next collection cycle`);
     }
-    return url;
+    return rewriteUrlForProxy(url);
   }
 
   async start() {
@@ -207,7 +221,7 @@ export class FileDownload {
     if (isUrlExpired(url)) {
       throw new Error(`URL expired for ${this.fileInfo.type}/${this.fileInfo.id} — waiting for fresh URL from next collection cycle`);
     }
-    return url;
+    return rewriteUrlForProxy(url);
   }
 
   wait() {

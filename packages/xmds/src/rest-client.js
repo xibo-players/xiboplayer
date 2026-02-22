@@ -36,6 +36,32 @@ export class RestClient {
   }
 
   /**
+   * Check if running behind the local proxy (Electron or Chromium kiosk).
+   */
+  _isProxyMode() {
+    return typeof window !== 'undefined' &&
+      (window.electronAPI?.isElectron ||
+       (window.location.hostname === 'localhost' && window.location.port === '8765'));
+  }
+
+  /**
+   * Rewrite an absolute REST URL to go through /rest-proxy.
+   * Preserves all query params from the original URL.
+   */
+  _rewriteForProxy(urlString) {
+    if (!this._isProxyMode() || !urlString.startsWith('http')) return urlString;
+    const parsed = new URL(urlString);
+    const proxyUrl = new URL('/rest-proxy', window.location.origin);
+    proxyUrl.searchParams.set('cms', parsed.origin);
+    proxyUrl.searchParams.set('path', parsed.pathname);
+    // Forward all original query params
+    for (const [key, value] of parsed.searchParams) {
+      proxyUrl.searchParams.set(key, value);
+    }
+    return proxyUrl.toString();
+  }
+
+  /**
    * Make a REST GET request with optional ETag caching.
    * Returns the parsed JSON body, or cached data on 304.
    */
@@ -57,7 +83,7 @@ export class RestClient {
 
     log.debug(`GET ${path}`, queryParams);
 
-    const response = await fetchWithRetry(url.toString(), {
+    const response = await fetchWithRetry(this._rewriteForProxy(url.toString()), {
       method: 'GET',
       headers,
     }, this.retryOptions);
@@ -107,7 +133,7 @@ export class RestClient {
 
     log.debug(`${method} ${path}`);
 
-    const response = await fetchWithRetry(url.toString(), {
+    const response = await fetchWithRetry(this._rewriteForProxy(url.toString()), {
       method,
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

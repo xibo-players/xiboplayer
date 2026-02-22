@@ -5,7 +5,7 @@
  * Uses XLF-driven media resolution to enqueue downloads in playback order.
  */
 
-import { LayoutTaskBuilder, BARRIER } from '@xiboplayer/cache/download-manager';
+import { LayoutTaskBuilder, BARRIER, rewriteUrlForProxy } from '@xiboplayer/cache/download-manager';
 import { formatBytes, BASE } from './sw-utils.js';
 import { SWLogger } from './chunk-config.js';
 import { extractMediaIdsFromXlf } from './xlf-parser.js';
@@ -244,7 +244,7 @@ export class MessageHandler {
         if (existing) {
           xlfText = await existing.clone().text();
         } else {
-          const resp = await fetch(xlfFile.path);
+          const resp = await fetch(rewriteUrlForProxy(xlfFile.path));
           if (!resp.ok) { this.log.warn(`XLF fetch failed: ${layoutId} (${resp.status})`); return; }
           const blob = await resp.blob();
           await this.cacheManager.put(cacheKey, blob, 'text/xml');
@@ -264,7 +264,7 @@ export class MessageHandler {
         const cacheKey = `${BASE}/cache/layout/${layoutId}`;
         const existing = await this.cacheManager.get(cacheKey);
         if (!existing && xlfFile.path) {
-          const resp = await fetch(xlfFile.path);
+          const resp = await fetch(rewriteUrlForProxy(xlfFile.path));
           if (resp.ok) {
             const blob = await resp.blob();
             await this.cacheManager.put(cacheKey, blob, 'text/xml');
