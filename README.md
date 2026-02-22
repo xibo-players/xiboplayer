@@ -33,6 +33,7 @@ All packages are published to npm under the [`@xiboplayer`](https://www.npmjs.co
 - **Log batching** — aggregated log submission aligned with upstream CMS spec
 - **Multi-display sync** — BroadcastChannel-based lead/follower synchronization for video walls
 - **Timeline prediction** — deterministic future schedule simulation for proactive content preloading
+- **Accurate timeline durations** — probes video metadata and sums sequential widgets per region for correct layout timing, with remaining-duration display for the currently playing layout
 - **Weather criteria** — weather-based schedule evaluation for conditional content display
 - **Geolocation fallback chain** — browser Geolocation API → Google API → IP-based lookup
 - **CMS tag config parsing** — display tag configuration (e.g. geoApiKey|value) from RegisterDisplay
@@ -52,7 +53,7 @@ All packages are published to npm under the [`@xiboplayer`](https://www.npmjs.co
 - **Fault reporting agent** — independent 60s fault submission cycle for faster CMS alerts
 - **Layout blacklisting** — tracks consecutive render failures, auto-blacklists after 3 failures, reports to CMS via BlackList XMDS
 - **CMS REST API client** — 77 methods covering layouts, campaigns, schedules, commands, displays, playlists, datasets, notifications, folders, tags, and display group actions
-- **1258 tests** across 31 test suites
+- **1263 tests** across 31 test suites
 
 ## Packages
 
@@ -169,7 +170,7 @@ pnpm install
 ### Testing
 
 ```bash
-pnpm test              # run all tests (1258 tests across 31 suites)
+pnpm test              # run all tests (1263 tests across 31 suites)
 pnpm test:watch        # watch mode
 pnpm test:coverage     # with coverage report
 ```

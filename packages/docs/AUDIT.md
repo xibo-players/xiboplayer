@@ -1,6 +1,6 @@
 # XiboPlayer SDK — Spec Compliance Audit
 
-**Date:** 2026-02-21
+**Date:** 2026-02-22
 **Scope:** All `@xiboplayer/*` packages + PWA player
 **Method:** Compared against Xibo developer docs, upstream XLR, .NET/Electron players, and arexibo
 
@@ -134,7 +134,7 @@ All handlers implemented: `collectNow`, `screenShot`, `licenceCheck`, `changeLay
 | Renderer | Browser DOM | GTK4/WebView | Different approach |
 | Offline mode | ✅ (IndexedDB) | ✅ (SQLite) | Both robust |
 | Package system | npm monorepo | Single binary | Different trade-offs |
-| Test coverage | 1258 tests | ~200 tests | SDK more tested |
+| Test coverage | 1263 tests | ~200 tests | SDK more tested |
 
 ## Prioritized Gap List — Resolution Status
 
