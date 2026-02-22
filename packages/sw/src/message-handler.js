@@ -330,10 +330,24 @@ export class MessageHandler {
       }
     }
 
-    // Warn about unclaimed media (in CMS file list but not referenced by any XLF)
+    // Enqueue unclaimed media (in CMS file list but not referenced by any XLF)
+    // This includes widget data files (enriched from type=widget to type=media)
+    // and any other files the CMS wants the player to have.
     const unclaimed = [...mediaFiles.keys()].filter(id => !claimed.has(id));
     if (unclaimed.length > 0) {
-      this.log.warn(`${unclaimed.length} media not in any XLF: ${unclaimed.join(', ')}`);
+      this.log.info(`${unclaimed.length} media not in any XLF: ${unclaimed.join(', ')}`);
+      const builder = new LayoutTaskBuilder(queue);
+      for (const id of unclaimed) {
+        const file = mediaFiles.get(id);
+        if (file) {
+          const enqueued = await this._enqueueFile(dm, builder, file, enqueuedTasks);
+          if (enqueued) enqueuedCount++;
+        }
+      }
+      const orderedTasks = await builder.build();
+      if (orderedTasks.length > 0) {
+        queue.enqueueOrderedTasks(orderedTasks);
+      }
     }
 
     const activeCount = queue.running;
