@@ -251,10 +251,12 @@ export class RendererLite {
     this.container.style.height = '100vh'; // Use viewport height, not percentage
     this.container.style.overflow = 'hidden';
 
-    // Watch for container resize to rescale layout
+    // Watch for container resize to rescale layout (debounced to avoid spam)
     if (typeof ResizeObserver !== 'undefined') {
+      let resizeTimer = null;
       this.resizeObserver = new ResizeObserver(() => {
-        this.rescaleRegions();
+        if (resizeTimer) clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(() => this.rescaleRegions(), 150);
       });
       this.resizeObserver.observe(this.container);
     }
