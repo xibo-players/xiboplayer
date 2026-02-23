@@ -21,5 +21,6 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/xibo-players/xiboplayer.git"
-  }
+  },
+  "homepage": "https://xiboplayer.org"
 }

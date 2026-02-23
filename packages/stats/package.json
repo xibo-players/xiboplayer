@@ -33,5 +33,6 @@
     "type": "git",
     "url": "git+https://github.com/xibo-players/xiboplayer.git",
     "directory": "packages/stats"
-  }
+  },
+  "homepage": "https://xiboplayer.org"
 }
