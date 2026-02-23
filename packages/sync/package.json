@@ -29,5 +29,6 @@
     "type": "git",
     "url": "git+https://github.com/xibo-players/xiboplayer.git",
     "directory": "packages/sync"
-  }
+  },
+  "homepage": "https://xiboplayer.org"
 }
