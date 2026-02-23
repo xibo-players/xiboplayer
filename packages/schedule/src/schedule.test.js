@@ -707,4 +707,74 @@ describe('ScheduleManager - Actions and Commands', () => {
       expect(windowMs).toBeGreaterThanOrEqual(60 * 60 * 1000); // at least 1 hour
     });
   });
+
+  describe('getDependantsMap', () => {
+    it('should return empty map when no schedule', () => {
+      const map = manager.getDependantsMap();
+      expect(map.size).toBe(0);
+    });
+
+    it('should collect per-layout dependants from standalone layouts', () => {
+      manager.setSchedule({
+        layouts: [
+          { file: '472.xlf', dependants: ['11.pdf', 'video.mp4'] },
+          { file: '500.xlf', dependants: ['logo.png'] },
+        ],
+        campaigns: [],
+      });
+      const map = manager.getDependantsMap();
+      expect(map.get(472)).toEqual(['11.pdf', 'video.mp4']);
+      expect(map.get(500)).toEqual(['logo.png']);
+    });
+
+    it('should collect per-layout dependants from campaign layouts', () => {
+      manager.setSchedule({
+        layouts: [],
+        campaigns: [
+          {
+            id: 'c1',
+            layouts: [
+              { file: '300.xlf', dependants: ['font.woff2'] },
+            ],
+          },
+        ],
+      });
+      const map = manager.getDependantsMap();
+      expect(map.get(300)).toEqual(['font.woff2']);
+    });
+
+    it('should merge global dependants with per-layout dependants', () => {
+      manager.setSchedule({
+        dependants: ['global-font.woff2'],
+        layouts: [
+          { file: '472.xlf', dependants: ['11.pdf'] },
+        ],
+        campaigns: [],
+      });
+      const map = manager.getDependantsMap();
+      expect(map.get(472)).toEqual(['global-font.woff2', '11.pdf']);
+    });
+
+    it('should skip layouts with no dependants', () => {
+      manager.setSchedule({
+        layouts: [
+          { file: '100.xlf', dependants: [] },
+          { file: '200.xlf', dependants: ['bg.jpg'] },
+        ],
+        campaigns: [],
+      });
+      const map = manager.getDependantsMap();
+      expect(map.has(100)).toBe(false);
+      expect(map.get(200)).toEqual(['bg.jpg']);
+    });
+
+    it('should handle file IDs without .xlf extension', () => {
+      manager.setSchedule({
+        layouts: [{ file: '472', dependants: ['11.pdf'] }],
+        campaigns: [],
+      });
+      const map = manager.getDependantsMap();
+      expect(map.get(472)).toEqual(['11.pdf']);
+    });
+  });
 });

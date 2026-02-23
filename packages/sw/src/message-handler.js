@@ -200,14 +200,17 @@ export class MessageHandler {
   /**
    * Handle DOWNLOAD_FILES with XLF-driven media resolution.
    *
-   * Accepts { layoutOrder: number[], files: Array } from PlayerCore.
+   * Accepts { layoutOrder: number[], files: Array, layoutDependants: Object } from PlayerCore.
    * Builds lookup maps from the flat CMS file list, fetches/parses XLFs to
    * discover which media each layout needs, then enqueues per-layout chunks
    * with barriers in playback order.
    *
-   * @param {{ layoutOrder: number[], files: Array }} payload
+   * layoutDependants maps layoutId → filenames (from CMS schedule dependants).
+   * Used to claim sub-playlist media into the parent layout's download batch.
+   *
+   * @param {{ layoutOrder: number[], files: Array, layoutDependants?: Object }} payload
    */
-  async handleDownloadFiles({ layoutOrder, files }) {
+  async handleDownloadFiles({ layoutOrder, files, layoutDependants }) {
     const dm = this.downloadManager;
     const queue = dm.queue;
     let enqueuedCount = 0;
@@ -295,18 +298,55 @@ export class MessageHandler {
       queue.enqueueOrderedTasks(resourceTasks);
     }
 
-    // ── Step 3: For each layout in play order, get media from XLF + enqueue ──
+    // ── Step 3: For each layout in play order, merge XLF + non-scheduled + dependants ──
     const claimed = new Set(); // Track media IDs already claimed by a layout
 
-    // Process scheduled layouts first (in play order), then non-scheduled
-    const allLayoutIds = [...layoutOrder, ...[...layoutMediaMap.keys()].filter(id => !layoutOrder.includes(id))];
+    // Non-scheduled layouts (sub-playlists, overlays, default) — their media
+    // should download alongside the scheduled layout that uses them.
+    const nonScheduledIds = [...layoutMediaMap.keys()].filter(id => !layoutOrder.includes(id));
 
-    for (const layoutId of allLayoutIds) {
+    // Build reverse lookup: filename → mediaId (for dependants matching).
+    // Dependant filenames from the CMS schedule (e.g. "11.pdf") match the
+    // saveAs field on RequiredFiles entries.
+    const filenameToMediaId = new Map();
+    for (const [id, file] of mediaFiles) {
+      if (file.saveAs) {
+        filenameToMediaId.set(file.saveAs, id);
+      }
+    }
+
+    // Convert layoutDependants (plain object from postMessage) to a Map
+    const depMap = new Map();
+    if (layoutDependants) {
+      for (const [id, filenames] of Object.entries(layoutDependants)) {
+        depMap.set(parseInt(id, 10), filenames);
+      }
+    }
+
+    for (const layoutId of layoutOrder) {
       const xlfMediaIds = layoutMediaMap.get(layoutId);
       if (!xlfMediaIds) continue;
 
+      // Merge three sources of media for this layout:
+      // 1. XLF-extracted media IDs (direct references in the layout's XLF)
+      // 2. Non-scheduled layout media (sub-playlists, overlays whose XLFs
+      //    are separate but whose media is needed when this layout plays)
+      // 3. Dependant filenames (CMS-declared files needed before playback)
+      const allMediaIds = new Set(xlfMediaIds);
+      for (const nsId of nonScheduledIds) {
+        const nsMediaIds = layoutMediaMap.get(nsId);
+        if (nsMediaIds) {
+          for (const id of nsMediaIds) allMediaIds.add(id);
+        }
+      }
+      const deps = depMap.get(layoutId) || [];
+      for (const filename of deps) {
+        const mediaId = filenameToMediaId.get(filename);
+        if (mediaId) allMediaIds.add(mediaId);
+      }
+
       const matched = [];
-      for (const id of xlfMediaIds) {
+      for (const id of allMediaIds) {
         if (claimed.has(id)) continue; // Already claimed by earlier layout
         const file = mediaFiles.get(id);
         if (file) {
