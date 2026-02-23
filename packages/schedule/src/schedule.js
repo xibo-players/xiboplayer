@@ -42,6 +42,36 @@ export class ScheduleManager {
   }
 
   /**
+   * Get dependants map: layoutId → filenames that must be cached before that layout plays.
+   * Includes both per-layout and global dependants.
+   * Used by download manager to prioritize sub-playlist media alongside its parent layout.
+   * @returns {Map<number, string[]>} layoutId → dependant filenames
+   */
+  getDependantsMap() {
+    const map = new Map();
+    if (!this.schedule) return map;
+
+    const globalDeps = this.schedule.dependants || [];
+
+    const addLayout = (layout) => {
+      const id = parseInt(String(layout.file || layout.id).replace('.xlf', ''), 10);
+      const deps = [...globalDeps, ...(layout.dependants || [])];
+      if (deps.length > 0) map.set(id, deps);
+    };
+
+    if (this.schedule.layouts) {
+      for (const layout of this.schedule.layouts) addLayout(layout);
+    }
+    if (this.schedule.campaigns) {
+      for (const campaign of this.schedule.campaigns) {
+        for (const layout of campaign.layouts) addLayout(layout);
+      }
+    }
+
+    return map;
+  }
+
+  /**
    * Check if a schedule item is active based on recurrence rules.
    * Supports Week, Day, and Month recurrence types.
    */

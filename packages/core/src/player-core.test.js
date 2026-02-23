@@ -60,6 +60,7 @@ describe('PlayerCore', () => {
     mockSchedule = {
       setSchedule: vi.fn(),
       getCurrentLayouts: vi.fn(() => ['100.xlf']),
+      getDependantsMap: vi.fn(() => new Map()),
       getDataConnectors: vi.fn(() => []),
       findActionByTrigger: vi.fn(() => null)
     };

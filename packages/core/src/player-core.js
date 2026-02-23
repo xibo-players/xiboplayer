@@ -478,7 +478,7 @@ export class PlayerCore extends EventEmitter {
           const nextWindow = this.displaySettings.getNextDownloadWindow?.();
           log.info(`Outside download window, skipping downloads${nextWindow ? ` (next: ${nextWindow.toLocaleTimeString()})` : ''}`);
         } else {
-          this.emit('download-request', { layoutOrder, files });
+          this.emit('download-request', { layoutOrder, files, layoutDependants: Object.fromEntries(this.schedule.getDependantsMap()) });
         }
 
         // Non-blocking cache analysis (stale media detection)
