@@ -25,9 +25,10 @@ const SKIP_HEADERS = ['transfer-encoding', 'connection', 'content-encoding', 'co
  * @param {string} [options.cmsConfig.cmsUrl] — CMS server URL
  * @param {string} [options.cmsConfig.cmsKey] — CMS server key
  * @param {string} [options.cmsConfig.displayName] — display name for registration
+ * @param {string} [options.configFilePath] — absolute path to config.json (for POST /config writeback)
  * @returns {import('express').Express}
  */
-export function createProxyApp({ pwaPath, appVersion = '0.0.0', cmsConfig } = {}) {
+export function createProxyApp({ pwaPath, appVersion = '0.0.0', cmsConfig, configFilePath } = {}) {
   const app = express();
 
   app.use(cors({
@@ -41,6 +42,31 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', cmsConfig } = {}
   app.use(express.text({ type: 'application/xml', limit: '50mb' }));
   app.use(express.json({ limit: '10mb' }));
   app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+  // Make cmsConfig updatable (POST /config can change it at runtime)
+  let currentCmsConfig = cmsConfig ? { ...cmsConfig } : null;
+
+  // ─── POST /config — write config.json and update in-memory config ────
+  app.post('/config', (req, res) => {
+    console.log('[Config] POST /config received:', JSON.stringify(req.body));
+    const { cmsUrl, cmsKey, displayName, hardwareKey, xmrChannel } = req.body;
+    if (!cmsUrl) return res.status(400).json({ error: 'cmsUrl is required' });
+
+    // Update in-memory config (takes effect on next page load injection)
+    currentCmsConfig = { cmsUrl, cmsKey: cmsKey || '', displayName: displayName || '' };
+
+    // Write config.json (host-specific path passed as option)
+    if (configFilePath) {
+      const configData = { cmsUrl, cmsKey, displayName };
+      if (hardwareKey) configData.hardwareKey = hardwareKey;
+      if (xmrChannel) configData.xmrChannel = xmrChannel;
+      fs.mkdirSync(path.dirname(configFilePath), { recursive: true });
+      fs.writeFileSync(configFilePath, JSON.stringify(configData, null, 2));
+      console.log(`[Config] Wrote config.json: ${configFilePath}`);
+    }
+
+    res.json({ ok: true });
+  });
 
   // ─── XMDS SOAP Proxy ──────────────────────────────────────────────
   app.all('/xmds-proxy', async (req, res) => {
@@ -157,14 +183,15 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', cmsConfig } = {}
   // ─── CMS config injection helper ──────────────────────────────────
   // Build a <script> tag that pre-seeds localStorage with CMS connection
   // params from the config file, so the PWA skips the setup screen.
-  let cmsConfigScript = '';
-  if (cmsConfig && cmsConfig.cmsUrl) {
+  // Uses currentCmsConfig (mutable ref) so POST /config changes take effect.
+  function buildConfigScript() {
+    if (!currentCmsConfig || !currentCmsConfig.cmsUrl) return '';
     const configJson = JSON.stringify({
-      cmsUrl: cmsConfig.cmsUrl,
-      cmsKey: cmsConfig.cmsKey || '',
-      displayName: cmsConfig.displayName || '',
+      cmsUrl: currentCmsConfig.cmsUrl,
+      cmsKey: currentCmsConfig.cmsKey || '',
+      displayName: currentCmsConfig.displayName || '',
     });
-    cmsConfigScript = `<script>
+    return `<script>
 (function(){
   try {
     var existing = {};
@@ -177,16 +204,21 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', cmsConfig } = {}
   } catch(e) { console.warn('[ConfigInject] Failed:', e); }
 })();
 </script>`;
-    console.log(`[Proxy] CMS config injection enabled for ${cmsConfig.cmsUrl}`);
+  }
+
+  if (currentCmsConfig && currentCmsConfig.cmsUrl) {
+    console.log(`[Proxy] CMS config injection enabled for ${currentCmsConfig.cmsUrl}`);
   }
 
   /**
    * Send index.html, optionally injecting the CMS config script.
    * The script is inserted right before the first <script> tag so it runs
-   * before the PWA's own config check.
+   * before the PWA's own config check.  Rebuilt on every request so that
+   * POST /config changes are picked up without restarting the server.
    */
   function sendIndexHtml(res) {
     const indexPath = path.join(pwaPath, 'index.html');
+    const cmsConfigScript = buildConfigScript();
     if (!cmsConfigScript) {
       return res.sendFile(indexPath);
     }
@@ -201,12 +233,10 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', cmsConfig } = {}
     res.type('html').send(injected);
   }
 
-  // Serve index.html with config injection before static middleware,
-  // so the injected version takes priority over the static file.
-  if (cmsConfigScript) {
-    app.get('/player/', (req, res) => sendIndexHtml(res));
-    app.get('/player/index.html', (req, res) => sendIndexHtml(res));
-  }
+  // Always serve index.html through sendIndexHtml so config injection
+  // works dynamically (POST /config can enable it at runtime).
+  app.get('/player/', (req, res) => sendIndexHtml(res));
+  app.get('/player/index.html', (req, res) => sendIndexHtml(res));
 
   // ─── Serve PWA static files ────────────────────────────────────────
   app.use('/player', express.static(pwaPath, {
@@ -216,7 +246,7 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', cmsConfig } = {}
         res.setHeader('Service-Worker-Allowed', '/player/');
       }
     },
-    index: cmsConfigScript ? false : 'index.html',
+    index: false,
   }));
 
   app.get('/', (req, res) => res.redirect('/player/'));
@@ -244,8 +274,8 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', cmsConfig } = {}
  * @param {string} [options.appVersion='0.0.0']
  * @returns {Promise<{ server: import('http').Server, port: number }>}
  */
-export function startServer({ port = 8765, pwaPath, appVersion = '0.0.0', cmsConfig } = {}) {
-  const app = createProxyApp({ pwaPath, appVersion, cmsConfig });
+export function startServer({ port = 8765, pwaPath, appVersion = '0.0.0', cmsConfig, configFilePath } = {}) {
+  const app = createProxyApp({ pwaPath, appVersion, cmsConfig, configFilePath });
 
   return new Promise((resolve, reject) => {
     const server = app.listen(port, 'localhost', () => {

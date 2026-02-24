@@ -58,46 +58,44 @@ export class Config {
 
     // Try to load from localStorage
     const json = localStorage.getItem(STORAGE_KEY);
+    let config = {};
 
     if (json) {
       try {
-        const config = JSON.parse(json);
-
-        // CRITICAL: Hardware key must persist
-        if (!config.hardwareKey || config.hardwareKey.length < 10) {
-          console.error('[Config] CRITICAL: Invalid/missing hardwareKey in localStorage!');
-          config.hardwareKey = this.generateStableHardwareKey();
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(config));
-          this._backupHardwareKey(config.hardwareKey);
-        } else {
-          console.log('[Config] ✓ Loaded existing hardwareKey:', config.hardwareKey);
-        }
-
-        return config;
+        config = JSON.parse(json);
       } catch (e) {
-        console.error('[Config] Failed to parse config from localStorage:', e);
-        // Fall through to create new config
+        console.error('[Config] Failed to parse localStorage config:', e);
       }
     }
 
-    // No config in localStorage - first time setup
-    console.log('[Config] No config in localStorage - first time setup');
+    // ── Single validation gate (same path for fresh + pre-seeded) ──
+    let changed = false;
 
-    const newConfig = {
-      cmsUrl: '',
-      cmsKey: '',
-      displayName: '',
-      hardwareKey: this.generateStableHardwareKey(),
-      xmrChannel: this.generateXmrChannel()
-    };
+    if (!config.hardwareKey || config.hardwareKey.length < 10) {
+      console.warn('[Config] Missing/invalid hardwareKey — generating');
+      config.hardwareKey = this.generateStableHardwareKey();
+      this._backupHardwareKey(config.hardwareKey);
+      changed = true;
+    } else {
+      console.log('[Config] ✓ Loaded existing hardwareKey:', config.hardwareKey);
+    }
 
-    // Save immediately
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(newConfig));
-    this._backupHardwareKey(newConfig.hardwareKey);
-    console.log('[Config] ✓ Saved new config to localStorage');
-    console.log('[Config] Hardware key will persist across reloads:', newConfig.hardwareKey);
+    if (!config.xmrChannel) {
+      console.warn('[Config] Missing xmrChannel — generating');
+      config.xmrChannel = this.generateXmrChannel();
+      changed = true;
+    }
 
-    return newConfig;
+    // Ensure optional fields have defaults
+    config.cmsUrl = config.cmsUrl || '';
+    config.cmsKey = config.cmsKey || '';
+    config.displayName = config.displayName || '';
+
+    if (changed) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(config));
+    }
+
+    return config;
   }
 
   /**
@@ -320,7 +318,14 @@ export class Config {
     }
     return this.data.hardwareKey;
   }
-  get xmrChannel() { return this.data.xmrChannel; }
+  get xmrChannel() {
+    if (!this.data.xmrChannel) {
+      console.warn('[Config] xmrChannel missing at access time — generating');
+      this.data.xmrChannel = this.generateXmrChannel();
+      this.save();
+    }
+    return this.data.xmrChannel;
+  }
   get xmrPubKey() { return this.data.xmrPubKey || ''; }
   get xmrPrivKey() { return this.data.xmrPrivKey || ''; }
 

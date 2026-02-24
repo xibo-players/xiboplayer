@@ -444,7 +444,8 @@ describe('Config', () => {
       config = new Config();
 
       expect(config.isConfigured()).toBe(false);
-      expect(config.cmsUrl).toBeNull();
+      // null values are normalized to empty strings by the validation gate
+      expect(config.cmsUrl).toBe('');
     });
 
     it('should handle very long strings', () => {
