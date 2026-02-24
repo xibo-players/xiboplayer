@@ -92,12 +92,12 @@ describe('createProxyApp', () => {
   // Regression: CMS widget JS requests /player/cache/media/193.json
   // which must be within the SW scope (/player/) to be intercepted.
   // Previously PWA was at /player/pwa/ and these requests 404'd.
-  it('serves /player/cache/* paths within SW scope (RSS widget data)', async () => {
+  it('returns 404 for /player/cache/*.json (virtual SW paths, not real files)', async () => {
     const app = makeApp();
-    // /player/cache/media/193.json is a virtual path handled by SW in-browser,
-    // but Express should serve the SPA fallback (not 404)
+    // /player/cache/media/193.json is a virtual path handled by the Service Worker.
+    // Express correctly returns 404 for file-extension paths that don't exist on disk —
+    // serving HTML fallback for a .json request would cause MIME type errors.
     const res = await request(app, 'GET', '/player/cache/media/193.json');
-    expect(res.status).toBe(200);
-    expect(res.body).toContain('test'); // SPA fallback
+    expect(res.status).toBe(404);
   });
 });
