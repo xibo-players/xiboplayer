@@ -689,30 +689,33 @@ export class RendererLite {
       maxRegionDuration = Math.max(maxRegionDuration, regionDuration);
     }
 
-    // If we calculated a different duration, update layout
-    if (maxRegionDuration > 0 && maxRegionDuration !== this.currentLayout.duration) {
+    // If we calculated a LONGER duration, update layout.
+    // Never downgrade — widgets with useDuration=0 start at duration=0
+    // until loadedmetadata fires, so early calculations undercount.
+    if (maxRegionDuration > 0 && maxRegionDuration > this.currentLayout.duration) {
       const oldDuration = this.currentLayout.duration;
       this.currentLayout.duration = maxRegionDuration;
 
       this.log.info(`Layout duration updated: ${oldDuration}s → ${maxRegionDuration}s (based on video metadata)`);
       this.emit('layoutDurationUpdated', this.currentLayoutId, maxRegionDuration);
 
-      // Reset layout timer with new duration — but only if a timer is already running.
+      // Reset layout timer with REMAINING time — not full duration.
       // If startLayoutTimerWhenReady() hasn't fired yet (still waiting for widgets),
       // it will pick up the updated duration when it starts the timer.
       if (this.layoutTimer) {
         clearTimeout(this.layoutTimer);
 
-        const layoutDurationMs = this.currentLayout.duration * 1000;
+        const elapsed = Date.now() - (this._layoutTimerStartedAt || Date.now());
+        const remainingMs = Math.max(1000, this.currentLayout.duration * 1000 - elapsed);
         this.layoutTimer = setTimeout(() => {
           this.log.info(`Layout ${this.currentLayoutId} duration expired (${this.currentLayout.duration}s)`);
           if (this.currentLayoutId) {
             this.layoutEndEmitted = true;
             this.emit('layoutEnd', this.currentLayoutId);
           }
-        }, layoutDurationMs);
+        }, remainingMs);
 
-        this.log.info(`Layout timer reset to ${this.currentLayout.duration}s`);
+        this.log.info(`Layout timer adjusted to ${(remainingMs / 1000).toFixed(1)}s remaining (elapsed ${(elapsed / 1000).toFixed(1)}s of ${this.currentLayout.duration}s)`);
       } else {
         this.log.info(`Layout duration updated to ${maxRegionDuration}s (timer not yet started, will use new value)`);
       }
@@ -1941,17 +1944,28 @@ export class RendererLite {
     }
 
     // Detect video duration for dynamic layout timing (when useDuration=0)
+    // Capture the layout ID at creation time — if the layout changes before
+    // loadedmetadata fires (e.g. video was preloaded for next layout), we must
+    // NOT update the current layout's duration with a different layout's video.
+    const createdForLayoutId = this.currentLayoutId;
     video.addEventListener('loadedmetadata', () => {
       const videoDuration = Math.floor(video.duration);
       this.log.info(`Video ${fileId} duration detected: ${videoDuration}s`);
 
-      // If widget has useDuration=0, update widget duration with actual video length
+      // Always update widget duration — it's the widget's own data, safe
+      // even if this video was preloaded for a different layout.
       if (widget.duration === 0 || widget.useDuration === 0) {
         widget.duration = videoDuration;
         this.log.info(`Updated widget ${widget.id} duration to ${videoDuration}s (useDuration=0)`);
 
-        // Recalculate layout duration if needed
-        this.updateLayoutDuration();
+        // Only recalculate current layout's timer if this video belongs to it.
+        // Preloaded layouts will pick up the corrected widget.duration when
+        // they start playing (via updateLayoutDuration() in swapToPreloadedLayout).
+        if (this.currentLayoutId === createdForLayoutId) {
+          this.updateLayoutDuration();
+        } else {
+          this.log.info(`Video ${fileId} duration set but layout timer not updated (preloaded for layout ${createdForLayoutId}, current is ${this.currentLayoutId})`);
+        }
       }
     });
 
@@ -2086,6 +2100,7 @@ export class RendererLite {
     });
 
     // Detect audio duration for dynamic layout timing (when useDuration=0)
+    const audioCreatedForLayoutId = this.currentLayoutId;
     audio.addEventListener('loadedmetadata', () => {
       const audioDuration = Math.floor(audio.duration);
       this.log.info(`Audio ${fileId} duration detected: ${audioDuration}s`);
@@ -2093,7 +2108,12 @@ export class RendererLite {
       if (widget.duration === 0 || widget.useDuration === 0) {
         widget.duration = audioDuration;
         this.log.info(`Updated widget ${widget.id} duration to ${audioDuration}s (useDuration=0)`);
-        this.updateLayoutDuration();
+
+        if (this.currentLayoutId === audioCreatedForLayoutId) {
+          this.updateLayoutDuration();
+        } else {
+          this.log.info(`Audio ${fileId} duration set but layout timer not updated (preloaded for layout ${audioCreatedForLayoutId}, current is ${this.currentLayoutId})`);
+        }
       }
     });
 

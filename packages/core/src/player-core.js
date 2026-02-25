@@ -270,20 +270,14 @@ export class PlayerCore extends EventEmitter {
 
     if (layoutFiles.length > 0) {
       if (this.currentLayoutId) {
-        const currentStillScheduled = layoutFiles.some(f =>
-          parseLayoutFile(f) === this.currentLayoutId
-        );
-        if (currentStillScheduled) {
-          log.debug(`Layout ${this.currentLayoutId} still in schedule${context ? ` (${context.toLowerCase()})` : ''}, continuing playback`);
-          this.emit('layout-already-playing', this.currentLayoutId);
-        } else {
-          const next = this.getNextLayout();
-          if (next) {
-            log.info(`${prefix}switching to layout ${next.layoutId}${!context ? ` (from ${this.currentLayoutId})` : ''}`);
-            this.emit('layout-prepare-request', next.layoutId);
-          }
-        }
+        // A layout is playing — NEVER interrupt it.
+        // The queue is rebuilt in background (via _buildLayoutDurations + logUpcomingTimeline below).
+        // The playing layout ends only when its timer fires (layoutEnd event),
+        // at which point advanceToNextLayout() pops from the already-updated queue.
+        log.info(`Layout ${this.currentLayoutId} playing — queue updated in background, playback continues`);
+        this.emit('layout-already-playing', this.currentLayoutId);
       } else {
+        // No layout playing — start one from the queue
         const next = this.getNextLayout();
         if (next) {
           log.info(`${prefix}switching to layout ${next.layoutId}`);
@@ -1677,7 +1671,14 @@ export class PlayerCore extends EventEmitter {
 
     this._layoutDurations.set(file, duration);
     log.debug(`[Timeline] Duration corrected: layout ${file} ${prev || '?'}s → ${duration}s`);
-    this.logUpcomingTimeline();
+
+    // Debounce timeline recalculation — multiple video loadedmetadata events
+    // can fire within milliseconds; collapse them into one recalculation.
+    if (this._timelineRecalcTimer) clearTimeout(this._timelineRecalcTimer);
+    this._timelineRecalcTimer = setTimeout(() => {
+      this._timelineRecalcTimer = null;
+      this.logUpcomingTimeline();
+    }, 500);
   }
 
   /**
@@ -1692,6 +1693,11 @@ export class PlayerCore extends EventEmitter {
     if (this._faultReportingInterval) {
       clearInterval(this._faultReportingInterval);
       this._faultReportingInterval = null;
+    }
+
+    if (this._timelineRecalcTimer) {
+      clearTimeout(this._timelineRecalcTimer);
+      this._timelineRecalcTimer = null;
     }
 
     if (this.xmr) {
