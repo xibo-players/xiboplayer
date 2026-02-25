@@ -100,12 +100,12 @@ export function isUrlExpired(url, graceSeconds = 30) {
 /**
  * Rewrite an absolute CMS URL through the local proxy when running behind
  * the proxy server (Chromium kiosk or Electron).
- * Detection: SW/window on localhost:8765 = proxy mode.
+ * Detection: SW/window on localhost (any port) = proxy mode.
  */
 export function rewriteUrlForProxy(url) {
   if (!url.startsWith('http')) return url;
   const loc = typeof self !== 'undefined' ? self.location : undefined;
-  if (!loc || loc.hostname !== 'localhost' || loc.port !== '8765') return url;
+  if (!loc || loc.hostname !== 'localhost') return url;
   const parsed = new URL(url);
   const cmsOrigin = parsed.origin;
   return `/file-proxy?cms=${encodeURIComponent(cmsOrigin)}&url=${encodeURIComponent(parsed.pathname + parsed.search)}`;
