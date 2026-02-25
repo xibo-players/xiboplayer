@@ -34,6 +34,12 @@ const DEFAULT_MAX_CHUNKS_PER_FILE = 3; // Max parallel chunk downloads per file
 const CHUNK_THRESHOLD = 100 * 1024 * 1024; // Files > 100MB get chunked
 const MAX_RETRIES = 3;
 const RETRY_DELAY_MS = 500; // Fast: 500ms, 1s, 1.5s → total ~3s
+
+// getData (widget data) retry config — CMS "cache not ready" (HTTP 500) resolves
+// when the XTR task runs (30-120s). Use longer backoff to ride it out.
+const GETDATA_MAX_RETRIES = 4;
+const GETDATA_RETRY_DELAYS = [15_000, 30_000, 60_000, 120_000]; // 15s, 30s, 60s, 120s
+const GETDATA_REENQUEUE_DELAY_MS = 60_000; // Re-add to queue after 60s if all retries fail
 const URGENT_CONCURRENCY = 2; // Slots when urgent chunk is active (bandwidth focus)
 const FETCH_TIMEOUT_MS = 600_000; // 10 minutes — 100MB chunk at ~2 Mbps
 const HEAD_TIMEOUT_MS = 15_000; // 15 seconds for HEAD requests
@@ -127,6 +133,8 @@ export class DownloadTask {
     this.blob = null;
     this._parentFile = null;
     this._priority = PRIORITY.normal;
+    // Widget data (getData) uses longer retry backoff — CMS "cache not ready" is transient
+    this.isGetData = fileInfo.isGetData || false;
   }
 
   getUrl() {
@@ -144,7 +152,9 @@ export class DownloadTask {
       headers['Range'] = `bytes=${this.rangeStart}-${this.rangeEnd}`;
     }
 
-    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    const maxRetries = this.isGetData ? GETDATA_MAX_RETRIES : MAX_RETRIES;
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
       const ac = new AbortController();
       const timer = setTimeout(() => ac.abort(), FETCH_TIMEOUT_MS);
       try {
@@ -163,10 +173,12 @@ export class DownloadTask {
 
       } catch (error) {
         const msg = ac.signal.aborted ? `Timeout after ${FETCH_TIMEOUT_MS / 1000}s` : error.message;
-        if (attempt < MAX_RETRIES) {
-          const delay = RETRY_DELAY_MS * attempt;
+        if (attempt < maxRetries) {
+          const delay = this.isGetData
+            ? GETDATA_RETRY_DELAYS[attempt - 1]
+            : RETRY_DELAY_MS * attempt;
           const chunkLabel = this.chunkIndex != null ? ` chunk ${this.chunkIndex}` : '';
-          log.warn(`[DownloadTask] ${this.fileInfo.type}/${this.fileInfo.id}${chunkLabel} attempt ${attempt}/${MAX_RETRIES} failed: ${msg}. Retrying in ${delay / 1000}s...`);
+          log.warn(`[DownloadTask] ${this.fileInfo.type}/${this.fileInfo.id}${chunkLabel} attempt ${attempt}/${maxRetries} failed: ${msg}. Retrying in ${delay / 1000}s...`);
           await new Promise(resolve => setTimeout(resolve, delay));
         } else {
           this.state = 'failed';
@@ -859,6 +871,22 @@ export class DownloadQueue {
         this.running--;
         task._parentFile._runningCount--;
         this._activeTasks = this._activeTasks.filter(t => t !== task);
+
+        // getData (widget data): defer re-enqueue instead of permanent failure.
+        // CMS "cache not ready" resolves when the XTR task runs (30-120s).
+        if (task.isGetData) {
+          log.warn(`[DownloadQueue] getData ${key} failed all retries, scheduling re-enqueue in ${GETDATA_REENQUEUE_DELAY_MS / 1000}s`);
+          setTimeout(() => {
+            task.state = 'pending';
+            task._parentFile.state = 'downloading';
+            this.queue.push(task);
+            log.info(`[DownloadQueue] getData ${key} re-enqueued for retry`);
+            this.processQueue();
+          }, GETDATA_REENQUEUE_DELAY_MS);
+          this.processQueue();
+          return;
+        }
+
         this.processQueue();
         task._parentFile.onTaskFailed(task, err);
       });
