@@ -644,13 +644,18 @@ export class ScheduleManager {
       dynamicLayouts: options.dynamicLayouts || new Set(),
     });
 
+    const prevLayoutSet = this._queueLayoutSet;
     this._scheduleQueue = result;
     this._queueLayoutSet = layoutSetKey;
-    // Reset position when queue is rebuilt
-    this._queuePosition = 0;
+
+    // Position only resets when we get a genuinely new set of layouts.
+    // Duration corrections rebuild the queue but don't change position.
+    if (prevLayoutSet !== layoutSetKey) {
+      this._queuePosition = 0;
+    }
 
     if (result.queue.length > 0) {
-      log.info(`[Schedule] Built queue: ${result.queue.length} entries, period ${result.periodSeconds}s`);
+      log.info(`[Schedule] Built queue: ${result.queue.length} entries, period ${result.periodSeconds}s (pos ${this._queuePosition})`);
       log.info(`[Schedule] Queue: ${result.queue.map(e => `${e.layoutId}(${e.duration}s)`).join(' → ')}`);
     }
 
@@ -707,8 +712,10 @@ export class ScheduleManager {
    */
   _invalidateQueue() {
     this._scheduleQueue = null;
-    this._queueLayoutSet = null;
-    this._queuePosition = 0;
+    // Keep _queueLayoutSet so getScheduleQueue() can detect whether the
+    // layout set actually changed.  Position only resets on new layouts.
+    // Resetting on every setSchedule() caused the player to replay position 0
+    // endlessly because collections happen more often than layout cycles.
   }
 
   /**
