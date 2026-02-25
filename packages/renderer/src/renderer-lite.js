@@ -209,7 +209,6 @@ export class RendererLite {
     this._paused = false;
     this._layoutTimerStartedAt = null;  // Date.now() when layout timer started
     this._layoutTimerDurationMs = null; // Total layout duration in ms
-    this._layoutTimerRemaining = null;  // ms remaining when paused
     this.widgetTimers = new Map(); // widgetId => timer
     this.mediaUrlCache = new Map(); // fileId => blob URL (for parallel pre-fetching)
     this.layoutBlobUrls = new Map(); // layoutId => Set<blobUrl> (for lifecycle tracking)
@@ -3153,20 +3152,12 @@ export class RendererLite {
   }
 
   /**
-   * Pause playback: stop layout timer, pause all media, stop widget cycling.
-   * The layout timer's remaining time is saved so resume() can restart it.
+   * Pause playback: pause all media, stop widget cycling.
+   * The layout timer keeps running — schedule is authoritative.
    */
   pause() {
     if (this._paused) return;
     this._paused = true;
-
-    // Save remaining layout time
-    if (this.layoutTimer && this._layoutTimerStartedAt) {
-      const elapsed = Date.now() - this._layoutTimerStartedAt;
-      this._layoutTimerRemaining = Math.max(0, this._layoutTimerDurationMs - elapsed);
-      clearTimeout(this.layoutTimer);
-      this.layoutTimer = null;
-    }
 
     // Stop all region widget-cycling timers
     for (const [, region] of this.regions) {
@@ -3180,7 +3171,7 @@ export class RendererLite {
     this._forEachMedia(el => el.pause());
 
     this.emit('paused');
-    this.log.info('Playback paused');
+    this.log.info('Playback paused (layout timer continues)');
   }
 
   /**
@@ -3191,26 +3182,12 @@ export class RendererLite {
   }
 
   /**
-   * Resume playback: restart layout timer with remaining time, resume media and widget cycling.
+   * Resume playback: resume media and widget cycling.
+   * Layout timer was never paused — no need to restore it.
    */
   resume() {
     if (!this._paused) return;
     this._paused = false;
-
-    // Resume layout timer with remaining time
-    if (this._layoutTimerRemaining != null && this._layoutTimerRemaining > 0) {
-      this._layoutTimerStartedAt = Date.now();
-      this._layoutTimerDurationMs = this._layoutTimerRemaining;
-      const layoutId = this.currentLayoutId;
-      this.layoutTimer = setTimeout(() => {
-        this.log.info(`Layout ${layoutId} duration expired (resumed)`);
-        if (this.currentLayoutId) {
-          this.layoutEndEmitted = true;
-          this.emit('layoutEnd', this.currentLayoutId);
-        }
-      }, this._layoutTimerRemaining);
-      this._layoutTimerRemaining = null;
-    }
 
     // Resume all video/audio
     this._forEachMedia(el => el.play().catch(() => {}));
