@@ -227,6 +227,11 @@ export class MessageHandler {
           || (f.path && (f.path.includes('bundle.min') || f.path.includes('fonts')))) {
         resources.push(f);
       } else {
+        // Flag widget data files (getData) for longer retry backoff.
+        // CMS returns HTTP 500 "cache not ready" until the XTR task runs.
+        if (f.path && f.path.includes('getData')) {
+          f.isGetData = true;
+        }
         mediaFiles.set(String(f.id), f);
       }
     }
