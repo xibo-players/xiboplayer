@@ -41,7 +41,7 @@ export class RestClient {
   _isProxyMode() {
     return typeof window !== 'undefined' &&
       (window.electronAPI?.isElectron ||
-       (window.location.hostname === 'localhost' && window.location.port === '8765'));
+       window.location.hostname === 'localhost');
   }
 
   /**

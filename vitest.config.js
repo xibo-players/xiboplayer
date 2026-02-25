@@ -8,6 +8,9 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'jsdom',
+    environmentOptions: {
+      jsdom: { url: 'https://cms.example.com' }
+    },
     setupFiles: './vitest.setup.js',
     exclude: [
       '**/node_modules/**',
