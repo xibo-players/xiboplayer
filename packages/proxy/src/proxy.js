@@ -12,8 +12,90 @@ import fs from 'fs';
 import path from 'path';
 import express from 'express';
 import cors from 'cors';
+import { DiskCache } from './disk-cache.js';
 
 const SKIP_HEADERS = ['transfer-encoding', 'connection', 'content-encoding', 'content-length'];
+
+/**
+ * Serve a chunked file from DiskCache with Range support.
+ * Reads only the chunks needed for the requested range.
+ */
+function serveChunkedFile(req, res, diskCache, key, meta, contentType) {
+  const totalSize = meta.size || 0;
+  const chunkSize = meta.chunkSize;
+  const numChunks = meta.numChunks;
+  const rangeHeader = req.headers.range;
+
+  if (!totalSize || !chunkSize || !numChunks) {
+    return res.status(500).json({ error: 'Incomplete chunk metadata' });
+  }
+
+  let start = 0;
+  let end = totalSize - 1;
+  let isRange = false;
+
+  if (rangeHeader) {
+    const parts = rangeHeader.replace(/bytes=/, '').split('-');
+    start = parseInt(parts[0], 10);
+    end = parts[1] ? parseInt(parts[1], 10) : totalSize - 1;
+    isRange = true;
+  }
+
+  const responseLen = end - start + 1;
+  const startChunk = Math.floor(start / chunkSize);
+  const endChunk = Math.floor(end / chunkSize);
+
+  res.status(isRange ? 206 : 200);
+  res.setHeader('Content-Type', contentType);
+  res.setHeader('Content-Length', responseLen);
+  res.setHeader('Accept-Ranges', 'bytes');
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  if (isRange) {
+    res.setHeader('Content-Range', `bytes ${start}-${end}/${totalSize}`);
+  }
+
+  // Stream chunks sequentially
+  let bytesWritten = 0;
+  let currentChunk = startChunk;
+
+  const writeNextChunk = () => {
+    if (currentChunk > endChunk || bytesWritten >= responseLen) {
+      res.end();
+      return;
+    }
+
+    const chunkStart = currentChunk * chunkSize;
+    const chunkEnd = Math.min(chunkStart + chunkSize - 1, totalSize - 1);
+
+    // Calculate the byte range within this chunk
+    const readStart = currentChunk === startChunk ? start - chunkStart : 0;
+    const readEnd = currentChunk === endChunk ? end - chunkStart : chunkEnd - chunkStart;
+
+    const stream = diskCache.getChunkReadStream(key, currentChunk, {
+      start: readStart, end: readEnd,
+    });
+
+    if (!stream) {
+      // Chunk not available yet (progressive download)
+      res.status(404).end();
+      return;
+    }
+
+    currentChunk++;
+    stream.on('data', (chunk) => {
+      bytesWritten += chunk.length;
+      res.write(chunk);
+    });
+    stream.on('end', writeNextChunk);
+    stream.on('error', (err) => {
+      console.error(`[DiskCache] Chunk stream error: ${err.message}`);
+      if (!res.headersSent) res.status(500).end();
+      else res.end();
+    });
+  };
+
+  writeNextChunk();
+}
 
 /**
  * Create a configured Express app with CORS proxy routes and PWA static serving.
@@ -26,9 +108,10 @@ const SKIP_HEADERS = ['transfer-encoding', 'connection', 'content-encoding', 'co
  * @param {string} [options.cmsConfig.cmsKey] — CMS server key
  * @param {string} [options.cmsConfig.displayName] — display name for registration
  * @param {string} [options.configFilePath] — absolute path to config.json (for POST /config writeback)
+ * @param {string} [options.dataDir] — absolute path to data directory (for DiskCache media storage)
  * @returns {import('express').Express}
  */
-export function createProxyApp({ pwaPath, appVersion = '0.0.0', cmsConfig, configFilePath } = {}) {
+export function createProxyApp({ pwaPath, appVersion = '0.0.0', cmsConfig, configFilePath, dataDir } = {}) {
   const app = express();
 
   app.use(cors({
@@ -151,6 +234,14 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', cmsConfig, confi
     }
   });
 
+  // ─── DiskCache initialization ──────────────────────────────────────
+  let diskCache = null;
+  if (dataDir) {
+    diskCache = new DiskCache(path.join(dataDir, 'media'));
+    diskCache.init();
+    console.log(`[Proxy] DiskCache enabled: ${path.join(dataDir, 'media')}`);
+  }
+
   // ─── File Download Proxy ───────────────────────────────────────────
   app.get('/file-proxy', async (req, res) => {
     try {
@@ -176,12 +267,151 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', cmsConfig, confi
       });
       res.setHeader('Access-Control-Allow-Origin', '*');
       const buffer = await response.arrayBuffer();
+
+      // Save to disk cache if cacheKey is provided
+      if (diskCache && req.query.cacheKey) {
+        try {
+          const cacheKey = req.query.cacheKey;
+          const chunkIndex = req.query.chunkIndex;
+          const contentType = response.headers.get('content-type') || 'application/octet-stream';
+
+          if (chunkIndex !== undefined) {
+            const meta = {
+              contentType,
+              md5: req.query.md5 || null,
+              chunked: true,
+            };
+            // Add size info if available from Content-Range header
+            const contentRange = response.headers.get('content-range');
+            if (contentRange) {
+              const totalMatch = contentRange.match(/\/(\d+)/);
+              if (totalMatch) meta.size = parseInt(totalMatch[1]);
+            }
+            diskCache.putChunk(cacheKey, parseInt(chunkIndex), Buffer.from(buffer), meta);
+            console.log(`[DiskCache] Stored chunk ${chunkIndex}: ${cacheKey} (${buffer.byteLength} bytes)`);
+          } else {
+            diskCache.put(cacheKey, Buffer.from(buffer), {
+              contentType, size: buffer.byteLength, md5: req.query.md5 || null,
+            });
+            console.log(`[DiskCache] Stored: ${cacheKey} (${buffer.byteLength} bytes)`);
+          }
+        } catch (cacheErr) {
+          console.error('[DiskCache] Write error (non-fatal):', cacheErr.message);
+        }
+      }
+
       res.send(Buffer.from(buffer));
       console.log(`[FileProxy] ${response.status} (${buffer.byteLength} bytes)`);
     } catch (error) {
       console.error('[FileProxy] Error:', error.message);
       res.status(500).json({ error: 'File proxy error', message: error.message });
     }
+  });
+
+  // ─── Media Cache — Serve files from DiskCache ─────────────────────
+  // GET /media-cache/:type/* — serve cached file with Range support
+  app.get('/media-cache/:type/{*splat}', (req, res) => {
+    if (!diskCache) return res.status(501).json({ error: 'DiskCache not configured' });
+
+    const key = `${req.params.type}/${req.params.splat}`;
+    const info = diskCache.has(key);
+    if (!info.exists) return res.status(404).end();
+
+    const meta = info.metadata || {};
+    const contentType = meta.contentType || 'application/octet-stream';
+
+    if (info.chunked) {
+      // Chunked file — serve via assembled chunk reads
+      return serveChunkedFile(req, res, diskCache, key, meta, contentType);
+    }
+
+    // Whole file — serve with Range support via fs.createReadStream
+    const filePath = diskCache.getPath(key);
+    if (!filePath) return res.status(404).end();
+
+    const fileSize = meta.size || fs.statSync(filePath).size;
+    const rangeHeader = req.headers.range;
+
+    if (rangeHeader) {
+      const parts = rangeHeader.replace(/bytes=/, '').split('-');
+      const start = parseInt(parts[0], 10);
+      const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+      const chunkLen = end - start + 1;
+
+      res.status(206);
+      res.setHeader('Content-Type', contentType);
+      res.setHeader('Content-Length', chunkLen);
+      res.setHeader('Content-Range', `bytes ${start}-${end}/${fileSize}`);
+      res.setHeader('Accept-Ranges', 'bytes');
+      res.setHeader('Access-Control-Allow-Origin', '*');
+
+      const stream = diskCache.getReadStream(key, { start, end });
+      stream.pipe(res);
+    } else {
+      res.status(200);
+      res.setHeader('Content-Type', contentType);
+      res.setHeader('Content-Length', fileSize);
+      res.setHeader('Accept-Ranges', 'bytes');
+      res.setHeader('Access-Control-Allow-Origin', '*');
+
+      const stream = diskCache.getReadStream(key);
+      stream.pipe(res);
+    }
+  });
+
+  // HEAD /media-cache/:type/* — existence + size check
+  app.head('/media-cache/:type/{*splat}', (req, res) => {
+    if (!diskCache) return res.status(501).end();
+
+    const key = `${req.params.type}/${req.params.splat}`;
+    const info = diskCache.has(key);
+    if (!info.exists) return res.status(404).end();
+
+    const meta = info.metadata || {};
+    res.setHeader('Content-Length', meta.size || 0);
+    res.setHeader('Content-Type', meta.contentType || 'application/octet-stream');
+    res.setHeader('Accept-Ranges', 'bytes');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.status(200).end();
+  });
+
+  // POST /media-cache/delete — delete files from cache
+  app.post('/media-cache/delete', express.json(), (req, res) => {
+    if (!diskCache) return res.status(501).json({ error: 'DiskCache not configured' });
+
+    const { files } = req.body;
+    if (!files || !Array.isArray(files)) {
+      return res.status(400).json({ error: 'files array required' });
+    }
+
+    let deleted = 0;
+    for (const file of files) {
+      const key = `${file.type}/${file.id}`;
+      if (diskCache.delete(key)) {
+        deleted++;
+        console.log(`[DiskCache] Deleted: ${key}`);
+      }
+    }
+
+    res.json({ success: true, deleted, total: files.length });
+  });
+
+  // POST /media-cache/mark-complete — mark chunked download as complete
+  app.post('/media-cache/mark-complete', express.json(), (req, res) => {
+    if (!diskCache) return res.status(501).json({ error: 'DiskCache not configured' });
+
+    const { cacheKey } = req.body;
+    if (!cacheKey) return res.status(400).json({ error: 'cacheKey required' });
+
+    diskCache.markComplete(cacheKey);
+    console.log(`[DiskCache] Marked complete: ${cacheKey}`);
+    res.json({ success: true });
+  });
+
+  // GET /media-cache/list — list all cached files
+  app.get('/media-cache-list', (req, res) => {
+    if (!diskCache) return res.status(501).json({ error: 'DiskCache not configured' });
+    res.json({ files: diskCache.listFiles() });
   });
 
   // ─── CMS config injection helper ──────────────────────────────────
@@ -278,8 +508,8 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', cmsConfig, confi
  * @param {string} [options.appVersion='0.0.0']
  * @returns {Promise<{ server: import('http').Server, port: number }>}
  */
-export function startServer({ port = 8765, pwaPath, appVersion = '0.0.0', cmsConfig, configFilePath } = {}) {
-  const app = createProxyApp({ pwaPath, appVersion, cmsConfig, configFilePath });
+export function startServer({ port = 8765, pwaPath, appVersion = '0.0.0', cmsConfig, configFilePath, dataDir } = {}) {
+  const app = createProxyApp({ pwaPath, appVersion, cmsConfig, configFilePath, dataDir });
 
   return new Promise((resolve, reject) => {
     const server = app.listen(port, 'localhost', () => {

@@ -98,70 +98,51 @@ class ServiceWorkerBackend extends EventEmitter {
   }
 
   /**
-   * Get file from cache (via Service Worker)
+   * Get file from cache (via proxy DiskCache)
+   * Hits /media-cache directly — bypasses SW fetch interception entirely.
    * @param {string} type - 'media', 'layout', 'widget'
    * @param {string} id - File ID
    * @returns {Promise<Blob|null>}
    */
   async getFile(type, id) {
-    // Wait for SW fetch handler to be ready (eliminates race condition)
+    // Wait for SW to be ready (still needed for download orchestration)
     if (!this.fetchReady) {
-      log.debug(`Waiting for SW fetch handler to be ready before fetching ${type}/${id}...`);
+      log.debug(`Waiting for SW ready before getFile ${type}/${id}...`);
       await this.fetchReadyPromise;
-      log.debug(`SW fetch handler ready, proceeding with fetch`);
     }
 
-    // Service Worker serves files via fetch interception
-    // Construct cache URL and fetch it
-    const cacheUrl = `${BASE}/cache/${type}/${id}`;
-
-    log.debug(`getFile(${type}, ${id}) → fetching ${cacheUrl}`);
-    log.debug(`About to call fetch()...`);
+    const url = `/media-cache/${type}/${id}`;
+    log.debug(`getFile(${type}, ${id}) → ${url}`);
 
     try {
-      log.debug(`Calling fetch(${cacheUrl})...`);
-      const response = await fetch(cacheUrl);
-      log.debug(`fetch returned, status:`, response.status, response.statusText);
-
+      const response = await fetch(url);
       if (!response.ok) {
-        log.debug(`Response not OK (${response.status}), returning null`);
-        if (response.status === 404) {
-          return null; // Not cached
-        }
+        if (response.status === 404) return null;
         throw new Error(`Failed to get file: ${response.status}`);
       }
-
-      log.debug(`Response OK, getting blob...`);
       const blob = await response.blob();
       log.debug(`Got blob, size:`, blob.size);
       return blob;
     } catch (error) {
-      log.error('getFile EXCEPTION:', error);
-      log.error('Error name:', error.name);
-      log.error('Error message:', error.message);
+      log.error('getFile error:', error.message);
       return null;
     }
   }
 
   /**
-   * Check if file exists in cache (supports both whole files and chunked storage)
-   * Service Worker's CacheManager.fileExists() handles the logic internally
+   * Check if file exists in cache (via proxy DiskCache HEAD)
+   * Goes directly to proxy — no SW interception overhead.
    * @param {string} type - 'media', 'layout', 'widget'
    * @param {string} id - File ID
    * @returns {Promise<boolean>}
    */
   async hasFile(type, id) {
-    // Wait for SW fetch handler to be ready
     if (!this.fetchReady) {
       await this.fetchReadyPromise;
     }
 
-    const cacheUrl = `${BASE}/cache/${type}/${id}`;
-
     try {
-      // SW's handleRequest uses CacheManager.fileExists() internally
-      // Returns 200 for both whole files and chunked files (via metadata check)
-      const response = await fetch(cacheUrl, { method: 'HEAD' });
+      const response = await fetch(`/media-cache/${type}/${id}`, { method: 'HEAD' });
       return response.ok;
     } catch (error) {
       return false;

@@ -142,7 +142,20 @@ export class DownloadTask {
     if (isUrlExpired(url)) {
       throw new Error(`URL expired for ${this.fileInfo.type}/${this.fileInfo.id} — waiting for fresh URL from next collection cycle`);
     }
-    return rewriteUrlForProxy(url);
+    let proxyUrl = rewriteUrlForProxy(url);
+
+    // Append cache key params so the proxy can save to DiskCache
+    if (proxyUrl.startsWith('/file-proxy')) {
+      const cacheKey = `${this.fileInfo.type || 'media'}/${this.fileInfo.id}`;
+      proxyUrl += `&cacheKey=${encodeURIComponent(cacheKey)}`;
+      if (this.chunkIndex != null) {
+        proxyUrl += `&chunkIndex=${this.chunkIndex}`;
+      }
+      if (this.fileInfo.md5) {
+        proxyUrl += `&md5=${encodeURIComponent(this.fileInfo.md5)}`;
+      }
+    }
+    return proxyUrl;
   }
 
   async start() {
@@ -233,7 +246,17 @@ export class FileDownload {
     if (isUrlExpired(url)) {
       throw new Error(`URL expired for ${this.fileInfo.type}/${this.fileInfo.id} — waiting for fresh URL from next collection cycle`);
     }
-    return rewriteUrlForProxy(url);
+    let proxyUrl = rewriteUrlForProxy(url);
+
+    // Append cache key for DiskCache (same as DownloadTask)
+    if (proxyUrl.startsWith('/file-proxy')) {
+      const cacheKey = `${this.fileInfo.type || 'media'}/${this.fileInfo.id}`;
+      proxyUrl += `&cacheKey=${encodeURIComponent(cacheKey)}`;
+      if (this.fileInfo.md5) {
+        proxyUrl += `&md5=${encodeURIComponent(this.fileInfo.md5)}`;
+      }
+    }
+    return proxyUrl;
   }
 
   wait() {

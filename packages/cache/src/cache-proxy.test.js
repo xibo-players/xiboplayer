@@ -262,12 +262,12 @@ describe('ServiceWorkerBackend', () => {
   });
 
   describe('getFile()', () => {
-    it('should fetch from cache URL with correct BASE path', async () => {
+    it('should fetch from proxy /media-cache URL', async () => {
       const { proxy } = await createInitialisedProxy();
 
       const testBlob = createTestBlob(1024);
       global.fetch = vi.fn((url) => {
-        if (url === `${BASE}/cache/media/123`) {
+        if (url === `/media-cache/media/123`) {
           return Promise.resolve({
             ok: true,
             status: 200,
@@ -280,7 +280,7 @@ describe('ServiceWorkerBackend', () => {
       const blob = await proxy.getFile('media', '123');
 
       expect(blob).toBe(testBlob);
-      expect(global.fetch).toHaveBeenCalledWith(`${BASE}/cache/media/123`);
+      expect(global.fetch).toHaveBeenCalledWith(`/media-cache/media/123`);
     });
 
     it('should return null for 404', async () => {
@@ -352,11 +352,11 @@ describe('ServiceWorkerBackend', () => {
   });
 
   describe('isCached()', () => {
-    it('should perform HEAD request to check if cached', async () => {
+    it('should perform HEAD request to proxy /media-cache', async () => {
       const { proxy } = await createInitialisedProxy();
 
       global.fetch = vi.fn((url, options) => {
-        if (url === `${BASE}/cache/media/123` && options?.method === 'HEAD') {
+        if (url === `/media-cache/media/123` && options?.method === 'HEAD') {
           return Promise.resolve({ ok: true, status: 200 });
         }
         return Promise.resolve({ ok: false, status: 404 });
@@ -365,7 +365,7 @@ describe('ServiceWorkerBackend', () => {
       const cached = await proxy.isCached('media', '123');
 
       expect(cached).toBe(true);
-      expect(global.fetch).toHaveBeenCalledWith(`${BASE}/cache/media/123`, { method: 'HEAD' });
+      expect(global.fetch).toHaveBeenCalledWith(`/media-cache/media/123`, { method: 'HEAD' });
     });
 
     it('should return false for 404', async () => {
