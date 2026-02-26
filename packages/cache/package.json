@@ -7,8 +7,11 @@
   "exports": {
     ".": "./src/index.js",
     "./cache": "./src/cache.js",
-    "./cache-proxy": "./src/cache-proxy.js",
-    "./download-manager": "./src/download-manager.js"
+    "./store-client": "./src/store-client.js",
+    "./download-client": "./src/download-client.js",
+    "./download-manager": "./src/download-manager.js",
+    "./cache-analyzer": "./src/cache-analyzer.js",
+    "./widget-html": "./src/widget-html.js"
   },
   "scripts": {
     "test": "vitest run",
