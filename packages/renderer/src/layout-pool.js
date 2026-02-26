@@ -101,7 +101,7 @@ export class LayoutPool {
 
   /**
    * Evict a specific layout from the pool.
-   * Revokes blob URLs and removes the container from the DOM.
+   * Releases video/audio resources, revokes blob URLs, and removes the container from the DOM.
    * @param {number} layoutId
    */
   evict(layoutId) {
@@ -109,6 +109,22 @@ export class LayoutPool {
     if (!entry) return;
 
     log.info(`Evicting layout ${layoutId} from pool`);
+
+    // Stop any active region timers
+    if (entry.regions) {
+      for (const [regionId, region] of entry.regions) {
+        if (region.timer) {
+          clearTimeout(region.timer);
+          region.timer = null;
+        }
+      }
+    }
+
+    // Release all video/audio resources BEFORE removing from DOM.
+    // Removing a <video> with an active src leaks decoded frame buffers.
+    if (entry.container) {
+      LayoutPool.releaseMediaElements(entry.container);
+    }
 
     // Revoke blob URLs
     if (entry.blobUrls && entry.blobUrls.size > 0) {
@@ -127,16 +143,6 @@ export class LayoutPool {
       }
     }
 
-    // Stop any active region timers
-    if (entry.regions) {
-      for (const [regionId, region] of entry.regions) {
-        if (region.timer) {
-          clearTimeout(region.timer);
-          region.timer = null;
-        }
-      }
-    }
-
     // Remove container from DOM
     if (entry.container && entry.container.parentNode) {
       entry.container.remove();
@@ -147,6 +153,48 @@ export class LayoutPool {
     // Clear hot reference if this was the hot layout
     if (this.hotLayoutId === layoutId) {
       this.hotLayoutId = null;
+    }
+  }
+
+  /**
+   * Release all video and audio elements inside a container.
+   * Must be called BEFORE removing the container from the DOM —
+   * browsers keep decoded frame buffers alive for detached <video> elements
+   * that still have a src.
+   *
+   * @param {HTMLElement} container
+   */
+  static releaseMediaElements(container) {
+    let videoCount = 0;
+    let hlsCount = 0;
+
+    container.querySelectorAll('video').forEach(v => {
+      // Destroy hls.js instance if attached (stored by renderVideo)
+      if (v._hlsInstance) {
+        v._hlsInstance.destroy();
+        v._hlsInstance = null;
+        hlsCount++;
+      }
+      // Stop MediaStream tracks (webcam/mic)
+      if (v._mediaStream) {
+        v._mediaStream.getTracks().forEach(t => t.stop());
+        v._mediaStream = null;
+        v.srcObject = null;
+      }
+      v.pause();
+      v.removeAttribute('src');
+      v.load(); // Forces browser to release decoded buffers
+      videoCount++;
+    });
+
+    container.querySelectorAll('audio').forEach(a => {
+      a.pause();
+      a.removeAttribute('src');
+      a.load();
+    });
+
+    if (videoCount > 0) {
+      log.info(`Released ${videoCount} video(s)${hlsCount ? ` (${hlsCount} HLS)` : ''}`);
     }
   }
 
