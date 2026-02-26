@@ -1,0 +1,25 @@
+name: Deprecate old npm versions
+on: workflow_dispatch
+
+jobs:
+  deprecate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Setup npm auth
+        run: echo "//registry.npmjs.org/:_authToken=${{ secrets.NPM_TOKEN }}" > ~/.npmrc
+
+      - name: Deprecate all versions < 0.5.10
+        run: |
+          PACKAGES="@xiboplayer/cache @xiboplayer/core @xiboplayer/crypto @xiboplayer/proxy @xiboplayer/renderer @xiboplayer/schedule @xiboplayer/settings @xiboplayer/stats @xiboplayer/sw @xiboplayer/sync @xiboplayer/utils @xiboplayer/xmds @xiboplayer/xmr"
+          for pkg in $PACKAGES; do
+            echo "Deprecating $pkg@<0.5.10..."
+            npm deprecate "$pkg@<0.5.10" "Outdated — upgrade to 0.5.11" || true
+          done
+
+      - name: Also deprecate 0.5.9 (broken exports)
+        run: |
+          PACKAGES="@xiboplayer/cache @xiboplayer/core @xiboplayer/crypto @xiboplayer/proxy @xiboplayer/renderer @xiboplayer/schedule @xiboplayer/settings @xiboplayer/stats @xiboplayer/sw @xiboplayer/sync @xiboplayer/utils @xiboplayer/xmds @xiboplayer/xmr"
+          for pkg in $PACKAGES; do
+            echo "Deprecating $pkg@0.5.9..."
+            npm deprecate "$pkg@0.5.9" "Broken package exports — upgrade to 0.5.11" || true
+          done
