@@ -1923,10 +1923,12 @@ export class RendererLite {
             const hls = new Hls({ enableWorker: true, lowLatencyMode: true });
             hls.loadSource(videoSrc);
             hls.attachMedia(video);
+            video._hlsInstance = hls; // Store for cleanup on eviction
             hls.on(Hls.Events.ERROR, (_event, data) => {
               if (data.fatal) {
                 this.log.error(`HLS fatal error: ${data.type}`, data.details);
                 hls.destroy();
+                video._hlsInstance = null;
               }
             });
             this.log.info(`HLS stream (hls.js): ${fileId}`);
@@ -2670,12 +2672,8 @@ export class RendererLite {
           clearTimeout(region.timer);
           region.timer = null;
         }
-        // Release video resources
-        region.element.querySelectorAll('video').forEach(v => {
-          v.pause();
-          v.removeAttribute('src');
-          v.load();
-        });
+        // Release video/audio resources before removing from DOM
+        LayoutPool.releaseMediaElements(region.element);
         // Apply region exit transition if configured, then remove
         if (region.config && region.config.exitTransition) {
           const animation = Transitions.apply(
@@ -2837,6 +2835,9 @@ export class RendererLite {
         if (region.widgets.length > 0) {
           this.stopWidget(regionId, region.currentIndex);
         }
+
+        // Release video/audio resources before removing from DOM
+        LayoutPool.releaseMediaElements(region.element);
 
         // Apply region exit transition if configured, then remove
         if (region.config && region.config.exitTransition) {
