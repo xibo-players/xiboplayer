@@ -55,13 +55,21 @@ function serveChunkedFile(req, res, store, key, meta, contentType) {
     res.setHeader('Content-Range', `bytes ${start}-${end}/${totalSize}`);
   }
 
-  // Stream chunks sequentially
+  // Stream chunks sequentially with backpressure handling.
+  // Without backpressure, res.write() queues data in memory when the
+  // client reads slower than disk I/O, causing multi-GB heap growth.
   let bytesWritten = 0;
   let currentChunk = startChunk;
+  let destroyed = false;
+
+  // Clean up on client disconnect
+  req.on('close', () => {
+    destroyed = true;
+  });
 
   const writeNextChunk = () => {
-    if (currentChunk > endChunk || bytesWritten >= responseLen) {
-      res.end();
+    if (destroyed || currentChunk > endChunk || bytesWritten >= responseLen) {
+      if (!destroyed) res.end();
       return;
     }
 
@@ -78,14 +86,21 @@ function serveChunkedFile(req, res, store, key, meta, contentType) {
 
     if (!stream) {
       // Chunk not available yet (progressive download)
-      res.status(404).end();
+      if (!res.headersSent) res.status(404).end();
+      else res.end();
       return;
     }
 
     currentChunk++;
-    stream.on('data', (chunk) => {
-      bytesWritten += chunk.length;
-      res.write(chunk);
+    stream.on('data', (data) => {
+      if (destroyed) { stream.destroy(); return; }
+      bytesWritten += data.length;
+      const ok = res.write(data);
+      if (!ok) {
+        // Backpressure: pause reading until client drains
+        stream.pause();
+        res.once('drain', () => stream.resume());
+      }
     });
     stream.on('end', writeNextChunk);
     stream.on('error', (err) => {
