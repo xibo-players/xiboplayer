@@ -99,6 +99,17 @@
   <!-- Player rendering container -->
   <div id="player-container"></div>
 
+  <!-- Remove status bar overlay unless explicitly enabled in config -->
+  <script>
+    try {
+      var cfg = JSON.parse(localStorage.getItem('xibo_config') || '{}');
+      var hover = cfg.controls && cfg.controls.mouse && cfg.controls.mouse.statusBarOnHover;
+      if (hover !== true) {
+        document.getElementById('overlay').remove();
+      }
+    } catch (e) {}
+  </script>
+
   <!-- Check for configuration before loading player -->
   <script>
     // TEMP: Force debug level for testing (shows video controls, verbose logging)
