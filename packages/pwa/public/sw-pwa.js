@@ -18,15 +18,15 @@ import { VERSION as CACHE_VERSION } from '@xiboplayer/cache';
 import {
   RequestHandler,
   MessageHandler,
-  calculateChunkConfig,
-  SWLogger
+  calculateChunkConfig
 } from '@xiboplayer/sw';
+import { createLogger } from '@xiboplayer/utils';
 import { BASE } from '@xiboplayer/sw/utils';
 
 // ── Configuration ──────────────────────────────────────────────────────────
 const SW_VERSION = __BUILD_DATE__;
 
-const log = new SWLogger('SW');
+const log = createLogger('SW');
 
 // ── Device-adaptive chunk config ───────────────────────────────────────────
 const CHUNK_CONFIG = calculateChunkConfig(log);

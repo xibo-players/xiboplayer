@@ -1,38 +1,8 @@
 /**
- * Service Worker logger and chunk configuration
+ * Chunk configuration for Service Worker downloads
  */
 
-/**
- * Simple logger for Service Worker context.
- * Uses console but can be configured via self.swLogLevel.
- */
-export class SWLogger {
-  constructor(name) {
-    this.name = name;
-    // Default level: INFO (can be changed via self.swLogLevel = 'DEBUG')
-    this.level = (typeof self !== 'undefined' && self.swLogLevel) || 'INFO';
-  }
-
-  debug(...args) {
-    if (this.level === 'DEBUG') {
-      console.log(`[${this.name}] DEBUG:`, ...args);
-    }
-  }
-
-  info(...args) {
-    if (this.level === 'DEBUG' || this.level === 'INFO') {
-      console.log(`[${this.name}]`, ...args);
-    }
-  }
-
-  warn(...args) {
-    console.warn(`[${this.name}]`, ...args);
-  }
-
-  error(...args) {
-    console.error(`[${this.name}]`, ...args);
-  }
-}
+import { createLogger } from '@xiboplayer/utils';
 
 /**
  * Calculate optimal chunk size based on available device memory.
@@ -42,7 +12,7 @@ export class SWLogger {
  * @returns {{ chunkSize: number, blobCacheSize: number, threshold: number, concurrency: number }}
  */
 export function calculateChunkConfig(log) {
-  if (!log) log = new SWLogger('ChunkConfig');
+  if (!log) log = createLogger('ChunkConfig');
 
   // Try to detect device memory (Chrome only for now)
   const deviceMemoryGB = (typeof navigator !== 'undefined' && navigator.deviceMemory) || null;
