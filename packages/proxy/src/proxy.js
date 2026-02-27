@@ -125,9 +125,10 @@ function serveChunkedFile(req, res, store, key, meta, contentType) {
  * @param {string} [options.cmsConfig.displayName] — display name for registration
  * @param {string} [options.configFilePath] — absolute path to config.json (for POST /config writeback)
  * @param {string} [options.dataDir] — absolute path to data directory (for ContentStore storage)
+ * @param {object} [options.playerConfig] — extra config fields to inject into localStorage (e.g. controls)
  * @returns {import('express').Express}
  */
-export function createProxyApp({ pwaPath, appVersion = '0.0.0', cmsConfig, configFilePath, dataDir } = {}) {
+export function createProxyApp({ pwaPath, appVersion = '0.0.0', cmsConfig, configFilePath, dataDir, playerConfig } = {}) {
   const app = express();
 
   app.use(cors({
@@ -508,22 +509,27 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', cmsConfig, confi
   // params from the config file, so the PWA skips the setup screen.
   // Uses currentCmsConfig (mutable ref) so POST /config changes take effect.
   function buildConfigScript() {
-    if (!currentCmsConfig || !currentCmsConfig.cmsUrl) return '';
-    const configJson = JSON.stringify({
-      cmsUrl: currentCmsConfig.cmsUrl,
-      cmsKey: currentCmsConfig.cmsKey || '',
-      displayName: currentCmsConfig.displayName || '',
-    });
+    const hasCms = currentCmsConfig && currentCmsConfig.cmsUrl;
+    const hasPlayerConfig = playerConfig && Object.keys(playerConfig).length > 0;
+    if (!hasCms && !hasPlayerConfig) return '';
+
+    const configObj = {
+      ...(hasCms ? {
+        cmsUrl: currentCmsConfig.cmsUrl,
+        cmsKey: currentCmsConfig.cmsKey || '',
+        displayName: currentCmsConfig.displayName || '',
+      } : {}),
+      ...(playerConfig || {}),
+    };
+    const configJson = JSON.stringify(configObj);
     return `<script>
 (function(){
   try {
     var existing = {};
     try { existing = JSON.parse(localStorage.getItem('xibo_config') || '{}'); } catch(e) {}
     var injected = ${configJson};
-    if (existing.cmsUrl !== injected.cmsUrl || existing.cmsKey !== injected.cmsKey || existing.displayName !== injected.displayName) {
-      var merged = Object.assign({}, existing, injected);
-      localStorage.setItem('xibo_config', JSON.stringify(merged));
-    }
+    var merged = Object.assign({}, existing, injected);
+    localStorage.setItem('xibo_config', JSON.stringify(merged));
   } catch(e) { console.warn('[ConfigInject] Failed:', e); }
 })();
 </script>`;
@@ -531,6 +537,9 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', cmsConfig, confi
 
   if (currentCmsConfig && currentCmsConfig.cmsUrl) {
     console.log(`[Proxy] CMS config injection enabled for ${currentCmsConfig.cmsUrl}`);
+  }
+  if (playerConfig && Object.keys(playerConfig).length > 0) {
+    console.log(`[Proxy] Player config injection enabled:`, JSON.stringify(playerConfig));
   }
 
   /**
@@ -617,8 +626,8 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', cmsConfig, confi
  * @param {string} [options.appVersion='0.0.0']
  * @returns {Promise<{ server: import('http').Server, port: number }>}
  */
-export function startServer({ port = 8765, pwaPath, appVersion = '0.0.0', cmsConfig, configFilePath, dataDir } = {}) {
-  const app = createProxyApp({ pwaPath, appVersion, cmsConfig, configFilePath, dataDir });
+export function startServer({ port = 8765, pwaPath, appVersion = '0.0.0', cmsConfig, configFilePath, dataDir, playerConfig } = {}) {
+  const app = createProxyApp({ pwaPath, appVersion, cmsConfig, configFilePath, dataDir, playerConfig });
 
   return new Promise((resolve, reject) => {
     const server = app.listen(port, 'localhost', () => {
