@@ -8,7 +8,7 @@
 
 import { LayoutTaskBuilder, BARRIER, toProxyUrl } from '@xiboplayer/cache/download-manager';
 import { formatBytes, BASE } from './sw-utils.js';
-import { SWLogger } from './chunk-config.js';
+import { createLogger } from '@xiboplayer/utils';
 import { extractMediaIdsFromXlf } from './xlf-parser.js';
 
 export class MessageHandler {
@@ -21,7 +21,7 @@ export class MessageHandler {
   constructor(downloadManager, config) {
     this.downloadManager = downloadManager;
     this.config = config;
-    this.log = new SWLogger('SW Message');
+    this.log = createLogger('SW Message');
   }
 
   /**

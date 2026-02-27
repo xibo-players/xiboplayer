@@ -7,7 +7,7 @@
  */
 
 import { BASE } from './sw-utils.js';
-import { SWLogger } from './chunk-config.js';
+import { createLogger } from '@xiboplayer/utils';
 
 export class RequestHandler {
   /**
@@ -16,7 +16,7 @@ export class RequestHandler {
   constructor(downloadManager) {
     this.downloadManager = downloadManager;
     this.pendingFetches = new Map(); // filename → Promise<Response> for deduplication
-    this.log = new SWLogger('SW');
+    this.log = createLogger('SW');
   }
 
   /**

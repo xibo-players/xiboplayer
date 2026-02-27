@@ -133,6 +133,9 @@ if (typeof window !== 'undefined') {
   } else {
     globalConfig.setGlobalLevel('WARNING');
   }
+} else if (typeof self !== 'undefined' && self.swLogLevel) {
+  // Service Worker context: use self.swLogLevel (set before importing this module)
+  globalConfig.setGlobalLevel(self.swLogLevel);
 }
 
 // Factory function — loggers follow global level by default (reactive)
