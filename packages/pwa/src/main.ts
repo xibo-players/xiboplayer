@@ -1342,8 +1342,10 @@ class PwaPlayer {
         return; // Keep playing current layout until media is ready
       }
 
-      // Fetch widget HTML for all widgets in the layout
-      await this.fetchWidgetHtml(xlfXml, layoutId);
+      // Fetch widget HTML (skip if already preloaded — was fetched during preload)
+      if (!this.renderer.hasPreloadedLayout(layoutId)) {
+        await this.fetchWidgetHtml(xlfXml, layoutId);
+      }
 
       // Render layout
       await this.renderer.renderLayout(xlfXml, layoutId);

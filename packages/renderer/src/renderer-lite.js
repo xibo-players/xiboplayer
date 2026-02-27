@@ -2443,6 +2443,10 @@ export class RendererLite {
    * @param {number} layoutId - Layout ID
    * @returns {Promise<boolean>} true if preload succeeded, false on failure
    */
+  hasPreloadedLayout(layoutId) {
+    return this.layoutPool.has(layoutId);
+  }
+
   async preloadLayout(xlfXml, layoutId) {
     // Don't preload if already in pool
     if (this.layoutPool.has(layoutId)) {
