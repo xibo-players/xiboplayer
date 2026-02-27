@@ -332,9 +332,15 @@ class PwaPlayer {
 
       // Transport auto-detection:
       // - /player/pwa-xmds/ or ?transport=xmds → forced SOAP
+      // - config.json transport: "xmds" → forced SOAP (for unpatched Xibo CMS without REST API)
       // - Otherwise → try REST, fall back to SOAP if unavailable
+      const cfgTransport = (() => {
+        try { return JSON.parse(localStorage.getItem('xibo_config') || '{}').transport; }
+        catch { return undefined; }
+      })();
       const forceXmds = PLAYER_BASE.includes('pwa-xmds')
-        || new URLSearchParams(window.location.search).get('transport') === 'xmds';
+        || new URLSearchParams(window.location.search).get('transport') === 'xmds'
+        || cfgTransport === 'xmds';
 
       if (forceXmds) {
         log.info('Using XMDS/SOAP transport (forced)');
@@ -785,11 +791,20 @@ class PwaPlayer {
     });
     this._iframeObserver.observe(document.body, { childList: true, subtree: true });
 
+    // Read control toggles from config (injected by proxy into localStorage)
+    const controls = this.getControls();
+    const { keyboard: kb = {} } = controls;
+    const debugOverlays = kb.debugOverlays === true;
+    const setupKey = kb.setupKey === true;
+    const playbackControl = kb.playbackControl === true;
+    const videoControls = kb.videoControls === true;
+
     // Keyboard / presenter remote (clicker) controls
     document.addEventListener('keydown', (e: KeyboardEvent) => {
       switch (e.key) {
         case 't':
         case 'T':
+          if (!debugOverlays) break;
           if (!this.timelineOverlay) {
             this.timelineOverlay = new TimelineOverlay(true, (layoutId) => this.skipToLayout(layoutId));
           }
@@ -797,6 +812,7 @@ class PwaPlayer {
           break;
         case 'd':
         case 'D':
+          if (!debugOverlays) break;
           if (!this.downloadOverlay) {
             this.downloadOverlay = new DownloadOverlay({ enabled: true, autoHide: false });
           }
@@ -804,6 +820,7 @@ class PwaPlayer {
           break;
         case 'v':
         case 'V': {
+          if (!videoControls) break;
           const videos = document.querySelectorAll('video');
           const show = videos.length > 0 && !videos[0].controls;
           videos.forEach(v => v.controls = show);
@@ -812,17 +829,20 @@ class PwaPlayer {
         // Playback control: next/prev/pause
         case 'ArrowRight':
         case 'PageDown':
+          if (!playbackControl) break;
           log.info('[Remote] Next layout (keyboard)');
           this.core.advanceToNextLayout();
           e.preventDefault();
           break;
         case 'ArrowLeft':
         case 'PageUp':
+          if (!playbackControl) break;
           log.info('[Remote] Previous layout (keyboard)');
           this.core.advanceToPreviousLayout();
           e.preventDefault();
           break;
         case ' ':
+          if (!playbackControl) break;
           log.info('[Remote] Toggle pause (keyboard)');
           if (this.renderer.isPaused()) {
             this.renderer.resume();
@@ -833,6 +853,7 @@ class PwaPlayer {
           break;
         case 'r':
         case 'R':
+          if (!playbackControl) break;
           if (this.core.isLayoutOverridden()) {
             log.info('[Remote] Revert to schedule (keyboard)');
             this.core.revertToSchedule();
@@ -840,6 +861,7 @@ class PwaPlayer {
           break;
         case 's':
         case 'S':
+          if (!setupKey) break;
           if (!this.setupOverlay) {
             this.setupOverlay = new SetupOverlay();
           }
@@ -850,7 +872,7 @@ class PwaPlayer {
     });
 
     // MediaSession API for multimedia keys (only fires when media is active)
-    if ('mediaSession' in navigator) {
+    if (playbackControl && 'mediaSession' in navigator) {
       navigator.mediaSession.setActionHandler('nexttrack', () => {
         log.info('[Remote] Next layout (MediaSession)');
         this.core.advanceToNextLayout();
@@ -870,6 +892,14 @@ class PwaPlayer {
     }
 
     log.info('Remote controls initialized (keyboard + MediaSession)');
+  }
+
+  /** Read controls config from localStorage (injected by proxy from config.json). */
+  private getControls(): Record<string, any> {
+    try {
+      const cfg = JSON.parse(localStorage.getItem('xibo_config') || '{}');
+      return cfg.controls || {};
+    } catch { return {}; }
   }
 
   /**
