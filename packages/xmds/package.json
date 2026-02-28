@@ -4,6 +4,7 @@
   "description": "XMDS SOAP client for Xibo CMS communication",
   "type": "module",
   "main": "./src/index.js",
+  "types": "./src/index.d.ts",
   "exports": {
     ".": "./src/index.js",
     "./xmds-client": "./src/xmds-client.js",

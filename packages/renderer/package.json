@@ -4,6 +4,7 @@
   "description": "RendererLite - Fast, efficient XLF layout rendering engine",
   "type": "module",
   "main": "./src/index.js",
+  "types": "./src/index.d.ts",
   "exports": {
     ".": "./src/index.js",
     "./renderer-lite": "./src/renderer-lite.js",

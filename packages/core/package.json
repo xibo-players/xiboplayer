@@ -4,6 +4,7 @@
   "description": "Xibo Player core orchestration and lifecycle management",
   "type": "module",
   "main": "./src/index.js",
+  "types": "./src/index.d.ts",
   "exports": {
     ".": "./src/index.js",
     "./player-core": "./src/player-core.js"

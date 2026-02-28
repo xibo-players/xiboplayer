@@ -4,6 +4,7 @@
   "description": "Offline caching and download management with parallel chunk downloads",
   "type": "module",
   "main": "./src/index.js",
+  "types": "./src/index.d.ts",
   "exports": {
     ".": "./src/index.js",
     "./cache": "./src/cache.js",
