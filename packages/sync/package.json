@@ -4,8 +4,12 @@
   "description": "Multi-display synchronization for Xibo Player",
   "type": "module",
   "main": "src/sync-manager.js",
+  "types": "src/index.d.ts",
   "exports": {
-    ".": "./src/sync-manager.js"
+    ".": {
+      "types": "./src/index.d.ts",
+      "default": "./src/sync-manager.js"
+    }
   },
   "scripts": {
     "test": "vitest run",

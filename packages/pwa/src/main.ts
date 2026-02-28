@@ -5,13 +5,9 @@
  * Platform layer handles UI, DOM manipulation, and platform-specific features.
  */
 
-// @ts-ignore - JavaScript module
 import { RendererLite } from '@xiboplayer/renderer';
-// @ts-ignore - JavaScript module
 import { StoreClient, DownloadClient } from '@xiboplayer/cache';
-// @ts-ignore - JavaScript module
 import { PlayerCore } from '@xiboplayer/core';
-// @ts-ignore - JavaScript module
 import { createLogger, registerLogSink } from '@xiboplayer/utils';
 import { DownloadOverlay, getDefaultOverlayConfig } from './download-overlay.js';
 import { TimelineOverlay, isTimelineVisible } from './timeline-overlay.js';
@@ -112,7 +108,6 @@ class PwaPlayer {
     // Tell toProxyUrl() and the SW which origin is the CMS so external URLs aren't proxied
     if (config.cmsUrl) {
       const cmsOrigin = new URL(config.cmsUrl).origin;
-      // @ts-ignore - JavaScript module
       const { setCmsOrigin } = await import('@xiboplayer/cache');
       setCmsOrigin(cmsOrigin);
       navigator.serviceWorker?.controller?.postMessage({
@@ -291,25 +286,15 @@ class PwaPlayer {
    */
   private async loadCoreModules() {
     try {
-      // @ts-ignore - JavaScript modules
       const cacheModule = await import('@xiboplayer/cache');
-      // @ts-ignore
       const xmdsModule = await import('@xiboplayer/xmds');
-      // @ts-ignore
       const scheduleModule = await import('@xiboplayer/schedule');
-      // @ts-ignore
       const configModule = await import('@xiboplayer/utils');
-      // @ts-ignore
       const xmrModule = await import('@xiboplayer/xmr');
-      // @ts-ignore
       const statsModule = await import('@xiboplayer/stats');
-      // @ts-ignore
       const displaySettingsModule = await import('@xiboplayer/settings');
-      // @ts-ignore
       const coreModule = await import('@xiboplayer/core');
-      // @ts-ignore
       const rendererModule = await import('@xiboplayer/renderer');
-      // @ts-ignore
       const syncModule = await import('@xiboplayer/sync');
 
       cacheWidgetHtml = cacheModule.cacheWidgetHtml;
