@@ -1595,6 +1595,12 @@ export class RendererLite {
     const audioEl = widgetElement.querySelector('audio');
     if (audioEl && widget.options.loop !== '1') audioEl.pause();
 
+    // Clear PDF page rotation timers
+    if (widgetElement._pageTimers) {
+      widgetElement._pageTimers.forEach(t => clearTimeout(t));
+      widgetElement._pageTimers.length = 0;
+    }
+
     // Stop audio overlays attached to this widget
     this._stopAudioOverlays(widget.id);
 
@@ -2255,29 +2261,61 @@ export class RendererLite {
       pdfUrl = `${window.location.origin}/player/cache/media/${widget.options.uri}`;
     }
 
-    // Render PDF
+    // Render PDF with multi-page rotation
     try {
       const loadingTask = window.pdfjsLib.getDocument(pdfUrl);
       const pdf = await loadingTask.promise;
-      const page = await pdf.getPage(1); // Render first page
+      const totalPages = pdf.numPages;
+      const timePerPage = (widget.duration * 1000) / totalPages;
 
-      const viewport = page.getViewport({ scale: 1 });
-      const scale = Math.min(
-        region.width / viewport.width,
-        region.height / viewport.height
-      );
-      const scaledViewport = page.getViewport({ scale });
+      this.log.info(`[PDF] ${totalPages} pages, ${Math.round(timePerPage)}ms per page`);
 
-      const canvas = document.createElement('canvas');
-      canvas.width = scaledViewport.width;
-      canvas.height = scaledViewport.height;
-      canvas.style.display = 'block';
-      canvas.style.margin = 'auto';
+      const pageTimers = [];
+      container._pageTimers = pageTimers;
+      let currentPage = 1;
 
-      const context = canvas.getContext('2d');
-      await page.render({ canvasContext: context, viewport: scaledViewport }).promise;
+      const renderPage = async (pageNum) => {
+        const page = await pdf.getPage(pageNum);
+        const viewport = page.getViewport({ scale: 1 });
+        const scale = Math.min(region.width / viewport.width, region.height / viewport.height);
+        const scaledViewport = page.getViewport({ scale });
 
-      container.appendChild(canvas);
+        const canvas = document.createElement('canvas');
+        canvas.className = 'pdf-page';
+        canvas.width = scaledViewport.width;
+        canvas.height = scaledViewport.height;
+        canvas.style.cssText = `
+          display: block; position: absolute; top: 50%; left: 50%;
+          transform: translate(-50%, -50%); opacity: 0; transition: opacity 0.5s ease-in-out;
+        `;
+        container.appendChild(canvas);
+
+        await page.render({ canvasContext: canvas.getContext('2d'), viewport: scaledViewport }).promise;
+        setTimeout(() => { canvas.style.opacity = '1'; }, 50);
+        return canvas;
+      };
+
+      const cyclePage = async () => {
+        // Fade out and remove old pages
+        const oldPages = container.querySelectorAll('.pdf-page');
+        oldPages.forEach(p => {
+          p.style.opacity = '0';
+          setTimeout(() => p.remove(), 500);
+        });
+
+        await renderPage(currentPage);
+        this.log.info(`[PDF] Page ${currentPage}/${totalPages}`);
+
+        if (totalPages > 1) {
+          const timer = setTimeout(() => {
+            currentPage = currentPage >= totalPages ? 1 : currentPage + 1;
+            cyclePage();
+          }, timePerPage);
+          pageTimers.push(timer);
+        }
+      };
+
+      await cyclePage();
 
     } catch (error) {
       this.log.error('PDF render failed:', error);
