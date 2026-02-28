@@ -7,8 +7,9 @@
  * - Interactive Control hostAddress rewriting
  * - CSS object-position fix for CMS template alignment
  *
- * Note: CSS font URL rewriting is handled by the proxy layer (proxy.js)
- * so all consumers (main thread, SW) receive pre-processed CSS.
+ * Note: CSS font URL rewriting is primarily handled by the proxy layer (proxy.js).
+ * As defense-in-depth, this module also rewrites font URLs inside CSS files
+ * before storing them, in case the proxy misses the CSS detection.
  *
  * Runs on the main thread (needs window.location for URL construction).
  * Stores content via PUT /store/... — no Cache API needed.
@@ -119,8 +120,66 @@ export async function cacheWidgetHtml(layoutId, regionId, mediaId, html) {
           'svg': 'image/svg+xml'
         }[ext] || 'application/octet-stream';
 
-        // CSS files are already rewritten by the proxy — store like any other file
-        {
+        // Defense-in-depth: rewrite font URLs inside CSS files before storing.
+        // The proxy normally handles this, but if it misses CSS detection
+        // (e.g. CMS returns unexpected Content-Type), we catch it here.
+        // Also handles truncated CSS from CMS (missing closing ');}) due to
+        // Content-Length mismatch after URL expansion).
+        if (ext === 'css') {
+          let cssText = await resp.text();
+          // Match any CMS signed URL with a file= query param in the CSS text.
+          // Uses a simple approach: find all https:// URLs with file=<name>, then
+          // filter to fonts by extension or fileType=font. This handles both normal
+          // url('...') and truncated CSS (where the closing '); is missing).
+          const CMS_SIGNED_URL_RE = /https?:\/\/[^\s'")\]]+\?[^\s'")\]]*file=([^&\s'")\]]+)[^\s'")\]]*/g;
+          const FONT_EXTS = /\.(?:woff2?|ttf|otf|eot|svg)$/i;
+          const fontJobs = [];
+
+          cssText = cssText.replace(CMS_SIGNED_URL_RE, (fullUrl, fontFilename) => {
+            if (!FONT_EXTS.test(fontFilename) && !fullUrl.includes('fileType=font')) return fullUrl;
+            fontJobs.push({ filename: fontFilename, originalUrl: fullUrl });
+            log.info(`Rewrote CSS font URL: ${fontFilename}`);
+            return `${BASE}/cache/static/${encodeURIComponent(fontFilename)}`;
+          });
+
+          // Fetch and store each referenced font file
+          await Promise.all(fontJobs.map(async (font) => {
+            try {
+              const headResp = await fetch(`/store/static/${font.filename}`, { method: 'HEAD' });
+              if (headResp.ok) return; // Already stored
+            } catch { /* proceed */ }
+            try {
+              const fontResp = await fetch(toProxyUrl(font.originalUrl));
+              if (!fontResp.ok) { fontResp.body?.cancel(); return; }
+              const fontBlob = await fontResp.blob();
+              const fontExt = font.filename.split('.').pop().toLowerCase();
+              const fontContentType = {
+                'otf': 'font/otf', 'ttf': 'font/ttf',
+                'woff': 'font/woff', 'woff2': 'font/woff2',
+                'eot': 'application/vnd.ms-fontobject', 'svg': 'image/svg+xml',
+              }[fontExt] || 'application/octet-stream';
+              const putFont = await fetch(`/store/static/${font.filename}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': fontContentType },
+                body: fontBlob,
+              });
+              putFont.body?.cancel();
+              log.info(`Stored font: ${font.filename} (${fontBlob.size} bytes)`);
+            } catch (e) {
+              log.warn(`Failed to store font: ${font.filename}`, e);
+            }
+          }));
+
+          // Store the rewritten CSS
+          const cssBlob = new Blob([cssText], { type: 'text/css' });
+          const staticResp = await fetch(`/store/static/${filename}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'text/css' },
+            body: cssBlob,
+          });
+          staticResp.body?.cancel();
+          log.info(`Stored CSS with ${fontJobs.length} rewritten font URLs: ${filename} (${cssText.length} bytes)`);
+        } else {
           const blob = await resp.blob();
           const staticResp = await fetch(`/store/static/${filename}`, {
             method: 'PUT',
