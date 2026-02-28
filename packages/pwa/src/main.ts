@@ -580,10 +580,8 @@ class PwaPlayer {
         this.updateStatus(`Downloading layout ${this.preparingLayoutId}...`);
       }
 
-      // Probe video durations for accurate timeline (metadata only, not full download)
-      this.probeLayoutDurations().catch(err => {
-        log.debug('Duration probe failed (non-blocking):', err);
-      });
+      // Duration probing is handled by the debounced re-probe (3s after last
+      // file cached) — avoids 404s from probing before downloads complete.
     });
 
     this.core.on('collection-error', (error: any) => {

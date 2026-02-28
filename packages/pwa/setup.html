@@ -483,7 +483,7 @@
       }
       successFlash.classList.add('active');
       setTimeout(() => {
-        window.location.href = '/player/index.html';
+        window.location.href = '/player/index.html' + window.location.search;
       }, 800);
     }
 
@@ -592,7 +592,7 @@
     // ── Back to Player (cancel reconfiguration) ──
     function goBackToPlayer() {
       stopPolling();
-      window.location.href = '/player/index.html';
+      window.location.href = '/player/index.html' + window.location.search;
     }
     btnBackPlayer.addEventListener('click', goBackToPlayer);
 
