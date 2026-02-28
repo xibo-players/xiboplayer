@@ -4,6 +4,7 @@
   "description": "Proof of play tracking, stats reporting, and CMS logging",
   "type": "module",
   "main": "./src/index.js",
+  "types": "./src/index.d.ts",
   "exports": {
     ".": "./src/index.js",
     "./collector": "./src/stats-collector.js"
