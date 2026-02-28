@@ -13,9 +13,25 @@ import path from 'path';
 import { Readable } from 'node:stream';
 import express from 'express';
 import cors from 'cors';
+import { createLogger, registerLogSink } from '@xiboplayer/utils';
 import { ContentStore } from './content-store.js';
 
 const SKIP_HEADERS = ['transfer-encoding', 'connection', 'content-encoding', 'content-length'];
+
+/** Redact sensitive query params (serverKey, hardwareKey, X-Amz-*) from URLs for logging */
+function redactUrl(url) {
+  return url.replace(/(?<=[?&])(serverKey|hardwareKey|X-Amz-[^=]*)=[^&]*/gi, '$1=***');
+}
+
+// Module-level loggers — one per subsystem, following @xiboplayer/utils conventions.
+// In Node (no window/localStorage), default level is WARNING. Pass 'INFO' explicitly
+// so proxy logs are always visible (these are server-side operational logs).
+const logProxy = createLogger('Proxy', 'INFO');
+const logRest  = createLogger('REST Proxy', 'INFO');
+const logFile  = createLogger('FileProxy', 'INFO');
+const logStore = createLogger('ContentStore', 'INFO');
+const logConfig = createLogger('Config', 'INFO');
+const logServer = createLogger('Server', 'INFO');
 
 /**
  * Serve a chunked file from ContentStore with Range support.
@@ -104,7 +120,7 @@ function serveChunkedFile(req, res, store, key, meta, contentType) {
     });
     stream.on('end', writeNextChunk);
     stream.on('error', (err) => {
-      console.error(`[ContentStore] Chunk stream error: ${err.message}`);
+      logStore.error(`Chunk stream error: ${err.message}`);
       if (!res.headersSent) res.status(500).end();
       else res.end();
     });
@@ -126,10 +142,14 @@ function serveChunkedFile(req, res, store, key, meta, contentType) {
  * @param {string} [options.configFilePath] — absolute path to config.json (for POST /config writeback)
  * @param {string} [options.dataDir] — absolute path to data directory (for ContentStore storage)
  * @param {object} [options.playerConfig] — extra config fields to inject into localStorage (e.g. controls)
+ * @param {function} [options.onLog] — log sink for cross-process forwarding; receives ({ level, name, args })
  * @returns {import('express').Express}
  */
-export function createProxyApp({ pwaPath, appVersion = '0.0.0', cmsConfig, configFilePath, dataDir, playerConfig } = {}) {
+export function createProxyApp({ pwaPath, appVersion = '0.0.0', cmsConfig, configFilePath, dataDir, playerConfig, onLog } = {}) {
   const app = express();
+
+  // Register cross-process log sink (e.g. Electron main → renderer DevTools)
+  if (onLog) registerLogSink(onLog);
 
   app.use(cors({
     origin: '*',
@@ -148,7 +168,7 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', cmsConfig, confi
 
   // ─── POST /config — write config.json and update in-memory config ────
   app.post('/config', (req, res) => {
-    console.log('[Config] POST /config received:', JSON.stringify(req.body));
+    logConfig.info('POST /config received:', JSON.stringify(req.body));
     const { cmsUrl, cmsKey, displayName, hardwareKey, xmrChannel } = req.body;
     if (!cmsUrl) return res.status(400).json({ error: 'cmsUrl is required' });
 
@@ -162,7 +182,7 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', cmsConfig, confi
       if (xmrChannel) configData.xmrChannel = xmrChannel;
       fs.mkdirSync(path.dirname(configFilePath), { recursive: true });
       fs.writeFileSync(configFilePath, JSON.stringify(configData, null, 2));
-      console.log(`[Config] Wrote config.json: ${configFilePath}`);
+      logConfig.info(`Wrote config.json: ${configFilePath}`);
     }
 
     res.json({ ok: true });
@@ -179,7 +199,7 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', cmsConfig, confi
       const queryString = queryParams.toString();
       const xmdsUrl = `${cmsUrl}/xmds.php${queryString ? '?' + queryString : ''}`;
 
-      console.log(`[Proxy] ${req.method} ${xmdsUrl}`);
+      logProxy.info(`${req.method} ${redactUrl(xmdsUrl)}`);
 
       const headers = {
         'Content-Type': req.headers['content-type'] || 'text/xml; charset=utf-8',
@@ -198,9 +218,9 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', cmsConfig, confi
       res.setHeader('Access-Control-Allow-Origin', '*');
       const responseText = await response.text();
       res.status(response.status).send(responseText);
-      console.log(`[Proxy] ${response.status} (${responseText.length} bytes)`);
+      logProxy.info(`${response.status} (${responseText.length} bytes)`);
     } catch (error) {
-      console.error('[Proxy] Error:', error.message);
+      logProxy.error('Error:', error.message);
       res.status(500).json({ error: 'Proxy error', message: error.message });
     }
   });
@@ -218,7 +238,7 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', cmsConfig, confi
       const queryString = queryParams.toString();
       const fullUrl = `${cmsUrl}${apiPath || ''}${queryString ? '?' + queryString : ''}`;
 
-      console.log(`[REST Proxy] ${req.method} ${fullUrl}`);
+      logRest.info(`${req.method} ${redactUrl(fullUrl)}`);
 
       const headers = { 'User-Agent': `XiboPlayer/${appVersion}` };
       if (req.headers['content-type']) headers['Content-Type'] = req.headers['content-type'];
@@ -244,9 +264,9 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', cmsConfig, confi
       res.setHeader('Access-Control-Allow-Origin', '*');
       const buffer = await response.arrayBuffer();
       res.status(response.status).send(Buffer.from(buffer));
-      console.log(`[REST Proxy] ${response.status} (${buffer.byteLength} bytes)`);
+      logRest.info(`${response.status} (${buffer.byteLength} bytes)`);
     } catch (error) {
-      console.error('[REST Proxy] Error:', error.message);
+      logRest.error('Error:', error.message);
       res.status(500).json({ error: 'REST proxy error', message: error.message });
     }
   });
@@ -256,7 +276,7 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', cmsConfig, confi
   if (dataDir) {
     store = new ContentStore(path.join(dataDir, 'media'));
     store.init();
-    console.log(`[Proxy] ContentStore enabled: ${path.join(dataDir, 'media')}`);
+    logProxy.info(`ContentStore enabled: ${path.join(dataDir, 'media')}`);
   }
 
   // ─── File Download Proxy ───────────────────────────────────────────
@@ -270,12 +290,12 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', cmsConfig, confi
       if (!cmsUrl || !fileUrl) return res.status(400).json({ error: 'Missing cms or url parameter' });
 
       const fullUrl = `${cmsUrl}${fileUrl}`;
-      console.log(`[FileProxy] GET ${fullUrl}`);
+      logFile.info(`GET ${redactUrl(fullUrl)}`);
 
       const headers = { 'User-Agent': `XiboPlayer/${appVersion}` };
       if (req.headers.range) {
         headers['Range'] = req.headers.range;
-        console.log(`[FileProxy] Range: ${req.headers.range}`);
+        logFile.info(`Range: ${req.headers.range}`);
       }
 
       const response = await fetch(fullUrl, { headers });
@@ -285,9 +305,12 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', cmsConfig, confi
           res.setHeader(key, value);
         }
       });
-      // Forward Content-Length for streaming (skipped by SKIP_HEADERS)
+      // Forward Content-Length only when the upstream didn't use compression.
+      // Node's fetch() auto-decompresses gzip/br but reports the *compressed*
+      // Content-Length — forwarding it truncates the decompressed response.
       const upstreamLength = response.headers.get('content-length');
-      if (upstreamLength) res.setHeader('Content-Length', upstreamLength);
+      const wasCompressed = response.headers.get('content-encoding');
+      if (upstreamLength && !wasCompressed) res.setHeader('Content-Length', upstreamLength);
       res.setHeader('Access-Control-Allow-Origin', '*');
 
       if (!response.body) {
@@ -297,47 +320,59 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', cmsConfig, confi
 
       // ── CSS font URL rewriting ──────────────────────────────────────
       // CSS files are tiny (~1KB) — buffer, rewrite CMS font URLs to local
-      // /player/pwa/cache/static/ paths, fetch+store the font files, then
+      // /player/cache/static/ paths, fetch+store the font files, then
       // send rewritten CSS.  This fixes CORS errors when fonts.css contains
       // absolute CMS URLs that the browser can't fetch cross-origin.
       const upstreamContentType = response.headers.get('content-type') || '';
-      const isCss = upstreamContentType.includes('text/css') || fileUrl.endsWith('.css');
+      // Detect CSS: check Content-Type, file extension, or ?file=*.css query parameter
+      // The CMS serves files via /pwa/file?file=fonts.css&... so fileUrl.endsWith('.css')
+      // fails due to trailing query params (e.g. &X-Amz-Signature=...).
+      const fileParam = new URLSearchParams(fileUrl.split('?')[1] || '').get('file') || '';
+      const isCss = upstreamContentType.includes('text/css')
+        || fileUrl.endsWith('.css')
+        || fileParam.endsWith('.css');
 
       if (isCss) {
         const cssBuffer = Buffer.from(await response.arrayBuffer());
         let cssText = cssBuffer.toString('utf-8');
 
-        const FONT_URL_RE = /url\((['"]?)(https?:\/\/[^'")\s]+\?[^'")\s]*file=([^&'")\s]+\.(?:woff2?|ttf|otf|eot|svg))[^'")\s]*)\1\)/gi;
+        // Match any CMS signed URL with a file= query param. Handles both normal
+        // url('...') and truncated CSS (where closing '); is cut off by CMS).
+        const CMS_SIGNED_URL_RE = /https?:\/\/[^\s'")\]]+\?[^\s'")\]]*file=([^&\s'")\]]+)[^\s'")\]]*/g;
         const fontJobs = [];
+        const FONT_EXTS = /\.(?:woff2?|ttf|otf|eot|svg)$/i;
 
-        cssText = cssText.replace(FONT_URL_RE, (_m, quote, fullUrl, fontFilename) => {
-          fontJobs.push({ filename: fontFilename, url: fullUrl });
-          console.log(`[FileProxy] Rewrote font URL: ${fontFilename}`);
-          return `url(${quote}/player/pwa/cache/static/${encodeURIComponent(fontFilename)}${quote})`;
+        cssText = cssText.replace(CMS_SIGNED_URL_RE, (fullUrl, filename) => {
+          if (!FONT_EXTS.test(filename) && !fullUrl.includes('fileType=font')) return fullUrl;
+          fontJobs.push({ filename, url: fullUrl });
+          logFile.info(`Rewrote font URL: ${filename}`);
+          return `/player/cache/static/${encodeURIComponent(filename)}`;
         });
 
-        // Fetch and store font files in background (non-blocking)
-        for (const { filename: fontFile, url: fontUrl } of fontJobs) {
-          if (store) {
+        // Fetch and store font files BEFORE sending CSS — the iframe renders
+        // immediately after CSS is stored, so fonts must already be available.
+        if (store) {
+          await Promise.all(fontJobs.map(async ({ filename: fontFile, url: fontUrl }) => {
             const fontStoreKey = `static/${encodeURIComponent(fontFile)}`;
-            if (store.has(fontStoreKey).exists) continue; // already stored
-            fetch(fontUrl, { headers: { 'User-Agent': `XiboPlayer/${appVersion}` } })
-              .then(r => r.ok ? r.arrayBuffer() : null)
-              .then(buf => {
-                if (!buf) return;
-                const fontExt = fontFile.split('.').pop().toLowerCase();
-                const fontContentType = {
-                  otf: 'font/otf', ttf: 'font/ttf',
-                  woff: 'font/woff', woff2: 'font/woff2',
-                  eot: 'application/vnd.ms-fontobject', svg: 'image/svg+xml',
-                }[fontExt] || 'application/octet-stream';
-                store.put(fontStoreKey, Buffer.from(buf), {
-                  contentType: fontContentType, size: buf.byteLength,
-                });
-                console.log(`[FileProxy] Stored font: ${fontFile} (${buf.byteLength} bytes)`);
-              })
-              .catch(e => console.warn(`[FileProxy] Font fetch failed: ${fontFile}`, e.message));
-          }
+            if (store.has(fontStoreKey).exists) return; // already stored
+            try {
+              const r = await fetch(fontUrl, { headers: { 'User-Agent': `XiboPlayer/${appVersion}` } });
+              if (!r.ok) return;
+              const buf = await r.arrayBuffer();
+              const fontExt = fontFile.split('.').pop().toLowerCase();
+              const fontContentType = {
+                otf: 'font/otf', ttf: 'font/ttf',
+                woff: 'font/woff', woff2: 'font/woff2',
+                eot: 'application/vnd.ms-fontobject', svg: 'image/svg+xml',
+              }[fontExt] || 'application/octet-stream';
+              store.put(fontStoreKey, Buffer.from(buf), {
+                contentType: fontContentType, size: buf.byteLength,
+              });
+              logFile.info(`Stored font: ${fontFile} (${buf.byteLength} bytes)`);
+            } catch (e) {
+              logFile.warn(`Font fetch failed: ${fontFile}`, e.message);
+            }
+          }));
         }
 
         // Store rewritten CSS if storeKey provided
@@ -346,13 +381,13 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', cmsConfig, confi
           store.put(req.query.storeKey, rewrittenBuf, {
             contentType: 'text/css', size: rewrittenBuf.length,
           });
-          console.log(`[FileProxy] Stored rewritten CSS: ${req.query.storeKey} (${rewrittenBuf.length} bytes)`);
+          logFile.info(`Stored rewritten CSS: ${req.query.storeKey} (${rewrittenBuf.length} bytes)`);
         }
 
         res.setHeader('Content-Type', 'text/css');
         res.setHeader('Content-Length', rewrittenBuf.length);
         res.send(rewrittenBuf);
-        console.log(`[FileProxy] ${response.status} CSS rewritten (${fontJobs.length} font URLs, ${rewrittenBuf.length} bytes)`);
+        logFile.info(`${response.status} CSS rewritten (${fontJobs.length} font URLs, ${rewrittenBuf.length} bytes)`);
         return;
       }
 
@@ -405,17 +440,17 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', cmsConfig, confi
             try {
               if (chunkIndex === undefined) meta.size = bytesWritten;
               commit(meta);
-              console.log(`[ContentStore] Stored${chunkIndex !== undefined ? ` chunk ${chunkIndex}` : ''}: ${storeKey} (${bytesWritten} bytes)`);
+              logStore.info(`Stored${chunkIndex !== undefined ? ` chunk ${chunkIndex}` : ''}: ${storeKey} (${bytesWritten} bytes)`);
             } catch (err) {
-              console.error('[ContentStore] Commit error (non-fatal):', err.message);
+              logStore.error('Commit error (non-fatal):', err.message);
             }
           });
           res.end();
-          console.log(`[FileProxy] ${response.status} (${bytesWritten} bytes)`);
+          logFile.info(`${response.status} (${bytesWritten} bytes)`);
         });
 
         fetchStream.on('error', (err) => {
-          console.error('[FileProxy] Stream error:', err.message);
+          logFile.error('Stream error:', err.message);
           writeStream.destroy();
           abort();
           if (!res.headersSent) res.status(500).json({ error: 'Stream error' });
@@ -425,14 +460,14 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', cmsConfig, confi
         // No store needed — stream directly to client (zero memory)
         fetchStream.pipe(res);
         fetchStream.on('error', (err) => {
-          console.error('[FileProxy] Stream error:', err.message);
+          logFile.error('Stream error:', err.message);
           if (!res.headersSent) res.status(500).json({ error: 'Stream error' });
           else res.end();
         });
-        console.log(`[FileProxy] ${response.status} streaming`);
+        logFile.info(`${response.status} streaming`);
       }
     } catch (error) {
-      console.error('[FileProxy] Error:', error.message);
+      logFile.error('Error:', error.message);
       if (!res.headersSent) res.status(500).json({ error: 'File proxy error', message: error.message });
     }
   });
@@ -447,7 +482,7 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', cmsConfig, confi
       key = `${req.params.type}/${[req.params.splat].flat().join('/')}`;
       info = store.has(key);
     } catch (err) {
-      console.error(`[ContentStore] GET lookup error for ${req.params.type}/${[req.params.splat].flat().join('/')}:`, err.message);
+      logStore.error(`GET lookup error for ${req.params.type}/${[req.params.splat].flat().join('/')}:`, err.message);
       return res.status(500).end();
     }
     if (!info.exists) return res.status(404).end();
@@ -510,7 +545,7 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', cmsConfig, confi
       res.setHeader('Access-Control-Allow-Origin', '*');
       res.status(200).end();
     } catch (err) {
-      console.error(`[ContentStore] HEAD error for ${req.params.type}/${[req.params.splat].flat().join('/')}:`, err.message);
+      logStore.error(`HEAD error for ${req.params.type}/${[req.params.splat].flat().join('/')}:`, err.message);
       res.status(500).end();
     }
   });
@@ -522,7 +557,7 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', cmsConfig, confi
     const key = `${req.params.type}/${[req.params.splat].flat().join('/')}`;
     const contentType = req.headers['content-type'] || 'application/octet-stream';
     store.put(key, req.body, { contentType, size: req.body.length });
-    console.log(`[ContentStore] PUT: ${key} (${req.body.length} bytes)`);
+    logStore.info(`PUT: ${key} (${req.body.length} bytes)`);
     res.json({ ok: true });
   });
 
@@ -540,7 +575,7 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', cmsConfig, confi
       const key = `${file.type}/${file.id}`;
       if (store.delete(key)) {
         deleted++;
-        console.log(`[ContentStore] Deleted: ${key}`);
+        logStore.info(`Deleted: ${key}`);
       }
     }
 
@@ -555,7 +590,7 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', cmsConfig, confi
     if (!storeKey) return res.status(400).json({ error: 'storeKey required' });
 
     store.markComplete(storeKey);
-    console.log(`[ContentStore] Marked complete: ${storeKey}`);
+    logStore.info(`Marked complete: ${storeKey}`);
     res.json({ success: true });
   });
 
@@ -591,16 +626,16 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', cmsConfig, confi
     var injected = ${configJson};
     var merged = Object.assign({}, existing, injected);
     localStorage.setItem('xibo_config', JSON.stringify(merged));
-  } catch(e) { console.warn('[ConfigInject] Failed:', e); }
+  } catch(e) { logConfig.warn('ConfigInject failed:', e); }
 })();
 </script>`;
   }
 
   if (currentCmsConfig && currentCmsConfig.cmsUrl) {
-    console.log(`[Proxy] CMS config injection enabled for ${currentCmsConfig.cmsUrl}`);
+    logProxy.info(`CMS config injection enabled for ${currentCmsConfig.cmsUrl}`);
   }
   if (playerConfig && Object.keys(playerConfig).length > 0) {
-    console.log(`[Proxy] Player config injection enabled:`, JSON.stringify(playerConfig));
+    logProxy.info('Player config injection enabled:', JSON.stringify(playerConfig));
   }
 
   /**
@@ -687,19 +722,19 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', cmsConfig, confi
  * @param {string} [options.appVersion='0.0.0']
  * @returns {Promise<{ server: import('http').Server, port: number }>}
  */
-export function startServer({ port = 8765, pwaPath, appVersion = '0.0.0', cmsConfig, configFilePath, dataDir, playerConfig } = {}) {
-  const app = createProxyApp({ pwaPath, appVersion, cmsConfig, configFilePath, dataDir, playerConfig });
+export function startServer({ port = 8765, pwaPath, appVersion = '0.0.0', cmsConfig, configFilePath, dataDir, playerConfig, onLog } = {}) {
+  const app = createProxyApp({ pwaPath, appVersion, cmsConfig, configFilePath, dataDir, playerConfig, onLog });
 
   return new Promise((resolve, reject) => {
     const server = app.listen(port, 'localhost', () => {
-      console.log(`[Server] Running on http://localhost:${port}`);
-      console.log(`[Server] READY`);
+      logServer.info(`Running on http://localhost:${port}`);
+      logServer.info('READY');
       resolve({ server, port });
     });
 
     server.on('error', (err) => {
       if (err.code === 'EADDRINUSE') {
-        console.error(`[Server] Port ${port} already in use. Try --port=XXXX`);
+        logServer.error(`Port ${port} already in use. Try --port=XXXX`);
       }
       reject(err);
     });

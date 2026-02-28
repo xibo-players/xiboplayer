@@ -16,6 +16,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@xiboplayer/utils": "workspace:*",
     "express": "^5.2.1",
     "cors": "^2.8.6"
   },

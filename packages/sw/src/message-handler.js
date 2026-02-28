@@ -220,8 +220,16 @@ export class MessageHandler {
     this.log.info(`Parsed ${layoutMediaMap.size} XLFs`);
 
     // ── Step 2: Enqueue resources ──
+    // Remap store keys: CMS uses type=resource/id=42, but widget HTML references
+    // /cache/static/bundle.min.js — store as static/{filename} so both match.
     const resourceBuilder = new LayoutTaskBuilder(queue);
     for (const file of resources) {
+      const filename = file.code || file.saveAs
+        || new URLSearchParams((file.path || '').split('?')[1] || '').get('file');
+      if (filename) {
+        file.type = 'static';
+        file.id = filename;
+      }
       const enqueued = await this._enqueueFile(dm, resourceBuilder, file, enqueuedTasks);
       if (enqueued) enqueuedCount++;
     }
