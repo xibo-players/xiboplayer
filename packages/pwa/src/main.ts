@@ -242,6 +242,9 @@ class PwaPlayer {
       this.timelineOverlay = new TimelineOverlay(true, (layoutId) => this.skipToLayout(layoutId));
     }
 
+    // Listen for certificate warnings from Electron main process
+    this.setupCertWarnings();
+
     // Request Screen Wake Lock to prevent display sleep
     await this.requestWakeLock();
 
@@ -279,6 +282,54 @@ class PwaPlayer {
     } catch (error: any) {
       log.warn('Wake Lock request failed:', error?.message);
     }
+  }
+
+  /**
+   * Listen for certificate warnings from Electron and show in the top bar.
+   * The #overlay bar (defined in index.html) is the status bar with
+   * #config-info (left) and #status (right). If it was removed (statusBarOnHover
+   * not set), we recreate it. Cert warnings make the bar always visible.
+   */
+  private setupCertWarnings() {
+    const warnedHosts = new Set<string>();
+
+    window.addEventListener('cert-warning', ((e: CustomEvent) => {
+      const { host, error } = e.detail;
+      if (warnedHosts.has(host)) return;
+      warnedHosts.add(host);
+
+      log.warn(`Invalid SSL certificate accepted for stream: ${host} (${error})`);
+
+      // Find or recreate the top bar
+      let overlay = document.getElementById('overlay');
+      if (!overlay) {
+        overlay = document.createElement('div');
+        overlay.id = 'overlay';
+        overlay.style.cssText = `
+          position: fixed; top: 0; left: 0; right: 0;
+          background: rgba(0, 0, 0, 0.7); padding: 10px 20px;
+          display: flex; justify-content: space-between; align-items: center;
+          font-size: 12px; z-index: 9999;
+        `;
+        document.body.appendChild(overlay);
+      }
+
+      // Find or create the cert warning span between #config-info and #status
+      let certSpan = document.getElementById('cert-warnings');
+      if (!certSpan) {
+        certSpan = document.createElement('span');
+        certSpan.id = 'cert-warnings';
+        certSpan.style.cssText = 'color: #ffaa33;';
+        const statusEl = document.getElementById('status');
+        overlay.insertBefore(certSpan, statusEl);
+      }
+
+      const hosts = [...warnedHosts].join(', ');
+      certSpan.textContent = `\u26A0 Invalid SSL cert: ${hosts}`;
+
+      // Make the bar always visible (override hover-only CSS via class)
+      overlay.classList.add('has-warnings');
+    }) as EventListener);
   }
 
   /**
