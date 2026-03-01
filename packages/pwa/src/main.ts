@@ -6,7 +6,7 @@
  */
 
 import { RendererLite } from '@xiboplayer/renderer';
-import { StoreClient, DownloadClient } from '@xiboplayer/cache';
+import { StoreClient, DownloadManager, LayoutTaskBuilder, BARRIER } from '@xiboplayer/cache';
 import { PlayerCore } from '@xiboplayer/core';
 import { createLogger, registerLogSink, PLAYER_API } from '@xiboplayer/utils';
 import { DownloadOverlay, getDefaultOverlayConfig } from './download-overlay.js';
@@ -29,7 +29,7 @@ let RestClient: any;
 let XmdsClient: any;
 let XmrWrapper: any;
 let store: StoreClient;
-let downloads: DownloadClient;
+let downloadManager: DownloadManager;
 let StatsCollector: any;
 let formatStats: any;
 let LogReporter: any;
@@ -66,7 +66,7 @@ class PwaPlayer {
   private _pendingFollowerLogs: any[] | null = null; // In-flight logs delegated to lead
   private _iframeObserver: MutationObserver | null = null; // Iframe key-forwarding observer
   private _swIcHandler: any = null; // SW Interactive Control message handler
-  private _swFileCachedHandler: any = null; // SW FILE_CACHED message handler
+  private _chunkConfig: any = null; // Device-adaptive chunk configuration
 
   async init() {
     log.info('Initializing player with RendererLite + PlayerCore...');
@@ -98,23 +98,17 @@ class PwaPlayer {
       }
     }
 
-    // Initialize StoreClient (REST) + DownloadClient (SW postMessage)
+    // Initialize StoreClient (REST) + DownloadManager (main thread)
     log.info('Initializing cache clients...');
     store = new StoreClient();
-    downloads = new DownloadClient();
-    await downloads.init();  // Waits for Service Worker to be ready and controlling
-    log.info('Cache clients ready — StoreClient + DownloadClient');
-
-    // Tell toProxyUrl() and the SW which origin is the CMS so external URLs aren't proxied
-    if (config.cmsUrl) {
-      const cmsOrigin = new URL(config.cmsUrl).origin;
-      const { setCmsOrigin } = await import('@xiboplayer/cache');
-      setCmsOrigin(cmsOrigin);
-      navigator.serviceWorker?.controller?.postMessage({
-        type: 'SET_CMS_ORIGIN',
-        data: { origin: cmsOrigin },
-      });
-    }
+    const { calculateChunkConfig } = await import('@xiboplayer/sw');
+    this._chunkConfig = calculateChunkConfig(log);
+    downloadManager = new DownloadManager({
+      concurrency: this._chunkConfig.concurrency,
+      chunkSize: this._chunkConfig.chunkSize,
+      chunksPerFile: 2,
+    });
+    log.info('Cache clients ready — StoreClient + DownloadManager');
 
     // Create renderer
     const container = document.getElementById('player-container');
@@ -186,7 +180,6 @@ class PwaPlayer {
     // Setup platform-specific event handlers
     this.setupCoreEventHandlers();
     this.setupRendererEventHandlers();
-    this.setupServiceWorkerEventHandlers();
     this.setupInteractiveControl();
     this.setupRemoteControls();
 
@@ -232,6 +225,7 @@ class PwaPlayer {
     const overlayConfig = getDefaultOverlayConfig();
     if (overlayConfig.enabled && debugOverlaysEnabled) {
       this.downloadOverlay = new DownloadOverlay(overlayConfig);
+      this.downloadOverlay.setProgressCallback(() => downloadManager.getProgress());
       log.info('Download overlay enabled (hover bottom-right corner)');
     }
 
@@ -562,11 +556,10 @@ class PwaPlayer {
     });
 
     this.core.on('download-request', async (groupedFiles: any) => {
-      // Platform handles the actual download via DownloadClient
-      // Restart overlay polling while downloads are active
+      // Download orchestration runs in main thread — no SW messaging
       this.downloadOverlay?.startUpdating();
       try {
-        // Push current JWT token to proxy for v2 API downloads
+        // Push current JWT token to proxy for cache-through CMS requests
         const token = this.xmds?._token || null;
         if (token) {
           await fetch('/auth-token', {
@@ -575,8 +568,8 @@ class PwaPlayer {
             body: JSON.stringify({ token }),
           });
         }
-        await downloads.download(groupedFiles);
-        log.info('Download request complete');
+        await this.enqueueDownloads(groupedFiles);
+        log.info('Download enqueue complete');
       } catch (error) {
         log.error('Download request failed:', error);
         this.updateStatus('Download failed: ' + error, 'error');
@@ -866,6 +859,7 @@ class PwaPlayer {
           if (!debugOverlays) break;
           if (!this.downloadOverlay) {
             this.downloadOverlay = new DownloadOverlay({ enabled: true, autoHide: false });
+            this.downloadOverlay.setProgressCallback(() => downloadManager.getProgress());
           }
           this.downloadOverlay.toggle();
           break;
@@ -1083,32 +1077,216 @@ class PwaPlayer {
   }
 
   /**
-   * Setup Service Worker event handlers (bridges SW messages to PlayerCore)
+   * Notify PlayerCore that a file download completed.
+   * Called directly from enqueueDownloads() — no SW messaging needed.
    */
-  private setupServiceWorkerEventHandlers() {
-    if (!navigator.serviceWorker) return;
+  private notifyFileCached(fileId: string, fileType: string) {
+    log.debug(`Download complete: ${fileType}/${fileId}`);
 
-    this._swFileCachedHandler = (event: any) => {
-      const { type, fileId, fileType } = event.data;
+    if (fileType === 'media' || fileType === 'layout') {
+      this.core.notifyMediaReady(parseInt(fileId), fileType);
+    }
 
-      if (type === 'FILE_CACHED') {
-        log.debug(`Service Worker cached ${fileType}/${fileId}`);
+    // Debounced duration probe — run after downloads settle
+    if (this._probeTimer) clearTimeout(this._probeTimer);
+    this._probeTimer = setTimeout(() => {
+      this._probeTimer = null;
+      this.probeLayoutDurations().catch(() => {});
+    }, 3000);
+  }
 
-        // Notify PlayerCore that file is ready
-        // Pass fileType so PlayerCore can distinguish layout files from media files
-        if (fileType === 'media' || fileType === 'layout') {
-          this.core.notifyMediaReady(parseInt(fileId), fileType);
+  /**
+   * Enqueue files for download — runs in main thread, no SW messaging.
+   * Ported from MessageHandler.handleDownloadFiles() with direct callbacks.
+   */
+  private async enqueueDownloads(data: any) {
+    const { extractMediaIdsFromXlf } = await import('@xiboplayer/sw');
+    const { layoutOrder, files, layoutDependants } = data;
+    const queue = downloadManager.queue;
+
+    /** Store key = URL path without leading / and query params */
+    const storeKeyFrom = (f: any) => (f.path || '').split('?')[0].replace(/^\/+/, '') || `${f.type || 'media'}/${f.id}`;
+
+    // Build lookup maps from flat CMS file list
+    const xlfFiles = new Map();
+    const resources: any[] = [];
+    const mediaFiles = new Map();
+    const idToKeys = new Map();
+    for (const f of files) {
+      if (f.type === 'layout') {
+        xlfFiles.set(parseInt(f.id), f);
+      } else if (f.type === 'static') {
+        resources.push(f);
+      } else {
+        if (f.path && (f.path.includes('getData') || f.path.includes('/datasets/'))) {
+          f.isGetData = true;
+        }
+        const key = `${f.type}:${f.id}`;
+        mediaFiles.set(key, f);
+        const bareId = String(f.id);
+        if (!idToKeys.has(bareId)) idToKeys.set(bareId, []);
+        idToKeys.get(bareId).push(key);
+      }
+    }
+
+    log.info(`Download: ${layoutOrder.length} layouts, ${mediaFiles.size} media, ${resources.length} resources`);
+
+    // ── Step 1: Fetch + parse all XLFs (cache-through handles store/CMS) ──
+    const layoutMediaMap = new Map();
+    const allXlfIds = [...layoutOrder, ...[...xlfFiles.keys()].filter((id: number) => !layoutOrder.includes(id))];
+    const xlfPromises = allXlfIds.map(async (layoutId: number) => {
+      const xlfFile = xlfFiles.get(layoutId);
+      if (!xlfFile?.path) return;
+
+      const storeKey = storeKeyFrom(xlfFile);
+      let xlfText: string | undefined;
+
+      // Try store first, then cache-through fetches from CMS on miss
+      try {
+        const resp = await fetch(xlfFile.path);
+        if (resp.ok) {
+          xlfText = await resp.text();
+          log.info(`Fetched XLF ${layoutId} (${xlfText.length} bytes)`);
+          this.notifyFileCached(String(layoutId), 'layout');
+        }
+      } catch (_) {}
+
+      if (xlfText) {
+        layoutMediaMap.set(layoutId, extractMediaIdsFromXlf(xlfText, log));
+      }
+    });
+    await Promise.allSettled(xlfPromises);
+    log.info(`Parsed ${layoutMediaMap.size} XLFs`);
+
+    // Helper: enqueue a file, attach completion callback
+    const enqueueFile = async (builder: any, file: any): Promise<boolean> => {
+      if (!file.path || file.path === 'null' || file.path === 'undefined') return false;
+
+      const storeKey = storeKeyFrom(file);
+
+      // Check if already stored on disk
+      try {
+        const headResp = await fetch(`/store/${storeKey}`, { method: 'HEAD' });
+        if (headResp.ok) return false;
+      } catch (_) {}
+
+      // Check if already downloading
+      if (downloadManager.getTask(storeKey)) return false;
+
+      const fileDownload = builder.addFile(file);
+      if (fileDownload.state !== 'pending') return false;
+
+      // Direct callback — no postMessage needed
+      fileDownload.wait().then((blob: any) => {
+        const fileSize = parseInt(file.size) || blob.size;
+        log.info('Download complete:', storeKey, `(${fileSize} bytes)`);
+
+        // Mark chunked files as complete
+        if (fileSize > this._chunkConfig.chunkSize) {
+          fetch('/store/mark-complete', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ storeKey }),
+          }).catch((e: any) => log.warn('mark-complete failed:', storeKey, e.message));
         }
 
-        // Debounced duration probe — run after downloads settle
-        if (this._probeTimer) clearTimeout(this._probeTimer);
-        this._probeTimer = setTimeout(() => {
-          this._probeTimer = null;
-          this.probeLayoutDurations().catch(() => {});
-        }, 3000);
-      }
+        this.notifyFileCached(String(file.id), file.type);
+        queue.removeCompleted(storeKey);
+      }).catch((err: any) => {
+        log.error('Download failed:', file.id, err);
+        queue.removeCompleted(storeKeyFrom(file));
+      });
+      return true;
     };
-    navigator.serviceWorker.addEventListener('message', this._swFileCachedHandler);
+
+    // ── Step 2: Enqueue resources ──
+    const resourceBuilder = new LayoutTaskBuilder(queue);
+    for (const file of resources) {
+      await enqueueFile(resourceBuilder, file);
+    }
+    const resourceTasks = await resourceBuilder.build();
+    if (resourceTasks.length > 0) {
+      resourceTasks.push(BARRIER);
+      queue.enqueueOrderedTasks(resourceTasks);
+    }
+
+    // ── Step 3: For each layout in play order, merge XLF + dependants ──
+    const claimed = new Set();
+    const nonScheduledIds = [...layoutMediaMap.keys()].filter((id: number) => !layoutOrder.includes(id));
+    const filenameToMediaId = new Map();
+    for (const [key, file] of mediaFiles) {
+      if (file.saveAs) filenameToMediaId.set(file.saveAs, key);
+    }
+
+    const depMap = new Map();
+    if (layoutDependants) {
+      for (const [id, filenames] of Object.entries(layoutDependants)) {
+        depMap.set(parseInt(id, 10), filenames);
+      }
+    }
+
+    for (const layoutId of layoutOrder) {
+      const xlfMediaIds = layoutMediaMap.get(layoutId);
+      if (!xlfMediaIds) continue;
+
+      const bareIds = new Set(xlfMediaIds);
+      for (const nsId of nonScheduledIds) {
+        const nsMediaIds = layoutMediaMap.get(nsId);
+        if (nsMediaIds) {
+          for (const id of nsMediaIds) bareIds.add(id);
+        }
+      }
+      const deps = depMap.get(layoutId) || [];
+      for (const filename of deps) {
+        const key = filenameToMediaId.get(filename);
+        if (key) bareIds.add(key);
+      }
+
+      const matched: any[] = [];
+      for (const bareId of bareIds) {
+        if (mediaFiles.has(bareId) && !claimed.has(bareId)) {
+          matched.push(mediaFiles.get(bareId));
+          claimed.add(bareId);
+          continue;
+        }
+        const keys = idToKeys.get(String(bareId)) || [];
+        for (const key of keys) {
+          if (claimed.has(key)) continue;
+          matched.push(mediaFiles.get(key));
+          claimed.add(key);
+        }
+      }
+      if (matched.length === 0) continue;
+
+      log.info(`Layout ${layoutId}: ${matched.length} media`);
+      matched.sort((a: any, b: any) => (a.size || 0) - (b.size || 0));
+      const builder = new LayoutTaskBuilder(queue);
+      for (const file of matched) {
+        await enqueueFile(builder, file);
+      }
+      const orderedTasks = await builder.build();
+      if (orderedTasks.length > 0) {
+        orderedTasks.push(BARRIER);
+        queue.enqueueOrderedTasks(orderedTasks);
+      }
+    }
+
+    // Enqueue unclaimed media
+    const unclaimed = [...mediaFiles.keys()].filter((id: string) => !claimed.has(id));
+    if (unclaimed.length > 0) {
+      log.info(`${unclaimed.length} media not in any XLF`);
+      const builder = new LayoutTaskBuilder(queue);
+      for (const id of unclaimed) {
+        const file = mediaFiles.get(id);
+        if (file) await enqueueFile(builder, file);
+      }
+      const orderedTasks = await builder.build();
+      if (orderedTasks.length > 0) {
+        queue.enqueueOrderedTasks(orderedTasks);
+      }
+    }
+
+    log.info('Downloads active:', queue.running, ', queued:', queue.queue.length);
   }
 
   /**
@@ -1309,7 +1487,7 @@ class PwaPlayer {
         log.info(`Preloading next layout ${nextLayoutId}...`);
 
         // Get XLF from cache
-        const xlfBlob = await store.get('layout', nextLayoutId);
+        const xlfBlob = await store.get('api/v2/player/layouts', nextLayoutId);
         if (!xlfBlob) {
           log.debug(`Layout ${nextLayoutId} XLF not cached, skipping preload`);
           return;
@@ -1366,7 +1544,7 @@ class PwaPlayer {
     this.preparingLayoutId = layoutId;
     try {
       // Get XLF from cache
-      const xlfBlob = await store.get('layout', layoutId);
+      const xlfBlob = await store.get('api/v2/player/layouts', layoutId);
       if (!xlfBlob) {
         log.info('Layout not in cache yet, marking as pending:', layoutId);
         // Mark layout as pending so when it downloads, we'll retry
@@ -1385,7 +1563,7 @@ class PwaPlayer {
       if (!allMediaCached) {
         // Reorder download queue: current layout's media first, hold others.
         // All files (including all chunks) must complete before other layouts start.
-        downloads.prioritizeLayout(requiredMedia.map(String));
+        downloadManager.prioritizeLayoutFiles(requiredMedia.map(String));
 
         log.info(`Waiting for media to finish downloading for layout ${layoutId}`);
         this.updateStatus(`Preparing layout ${layoutId}...`);
@@ -1563,7 +1741,7 @@ class PwaPlayer {
     for (const layoutId of this.scheduledLayoutIds) {
 
       try {
-        const xlfBlob = await store.get('layout', layoutId);
+        const xlfBlob = await store.get('api/v2/player/layouts', layoutId);
         if (!xlfBlob) continue;
 
         const xlfXml = await xlfBlob.text();
@@ -2204,14 +2382,10 @@ class PwaPlayer {
         navigator.serviceWorker.removeEventListener('message', this._swIcHandler);
         this._swIcHandler = null;
       }
-      if (this._swFileCachedHandler) {
-        navigator.serviceWorker.removeEventListener('message', this._swFileCachedHandler);
-        this._swFileCachedHandler = null;
-      }
     }
 
-    // Clean up DownloadClient SW listener
-    downloads?.cleanup?.();
+    // Clean up DownloadManager
+    downloadManager?.clear();
 
     if (this._probeTimer) {
       clearTimeout(this._probeTimer);

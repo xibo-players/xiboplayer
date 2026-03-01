@@ -45,18 +45,6 @@ const URGENT_CONCURRENCY = 2; // Slots when urgent chunk is active (bandwidth fo
 const FETCH_TIMEOUT_MS = 600_000; // 10 minutes — 100MB chunk at ~2 Mbps
 const HEAD_TIMEOUT_MS = 15_000; // 15 seconds for HEAD requests
 
-// CMS origin for proxy filtering — set via setCmsOrigin() at init
-let _cmsOrigin = null;
-
-/**
- * Set the CMS origin so toProxyUrl() only proxies CMS URLs.
- * External URLs (CDNs, Google Fonts, geolocation APIs) pass through unchanged.
- * @param {string} origin - e.g. 'https://cms.example.com'
- */
-export function setCmsOrigin(origin) {
-  _cmsOrigin = origin;
-}
-
 /**
  * Infer Content-Type from file path extension.
  * Used when we skip HEAD (size already known from RequiredFiles).
@@ -116,20 +104,6 @@ export function isUrlExpired(url, graceSeconds = 30) {
   return (Date.now() / 1000) >= (expiry - graceSeconds);
 }
 
-/**
- * Rewrite an absolute CMS URL through the local proxy when running behind
- * the proxy server (Chromium kiosk or Electron).
- * Detection: SW/window on localhost (any port) = proxy mode.
- */
-export function toProxyUrl(url) {
-  if (!url.startsWith('http')) return url;
-  const loc = typeof self !== 'undefined' ? self.location : undefined;
-  if (!loc || loc.hostname !== 'localhost') return url;
-  const parsed = new URL(url);
-  // Only proxy URLs belonging to the CMS server; external URLs pass through
-  if (_cmsOrigin && parsed.origin !== _cmsOrigin) return url;
-  return `/file-proxy?cms=${encodeURIComponent(parsed.origin)}&url=${encodeURIComponent(parsed.pathname + parsed.search)}`;
-}
 
 /**
  * DownloadTask - Single HTTP fetch unit
@@ -156,24 +130,7 @@ export class DownloadTask {
     if (isUrlExpired(url)) {
       throw new Error(`URL expired for ${this.fileInfo.type}/${this.fileInfo.id} — waiting for fresh URL from next collection cycle`);
     }
-    let proxyUrl = toProxyUrl(url);
-
-    // Append store key params so the proxy can save to ContentStore
-    if (proxyUrl.startsWith('/file-proxy')) {
-      const storeKey = `${this.fileInfo.type || 'media'}/${this.fileInfo.id}`;
-      proxyUrl += `&storeKey=${encodeURIComponent(storeKey)}`;
-      if (this.chunkIndex != null) {
-        proxyUrl += `&chunkIndex=${this.chunkIndex}`;
-        if (this._parentFile) {
-          proxyUrl += `&numChunks=${this._parentFile.totalChunks}`;
-          proxyUrl += `&chunkSize=${this._parentFile.options.chunkSize || 104857600}`;
-        }
-      }
-      if (this.fileInfo.md5) {
-        proxyUrl += `&md5=${encodeURIComponent(this.fileInfo.md5)}`;
-      }
-    }
-    return proxyUrl;
+    return url;
   }
 
   async start() {
@@ -181,6 +138,17 @@ export class DownloadTask {
     const headers = {};
     if (this.rangeStart != null) {
       headers['Range'] = `bytes=${this.rangeStart}-${this.rangeEnd}`;
+    }
+    // Pass chunk metadata and MD5 via custom headers for cache-through proxy
+    if (this.chunkIndex != null) {
+      headers['X-Store-Chunk-Index'] = String(this.chunkIndex);
+      if (this._parentFile) {
+        headers['X-Store-Num-Chunks'] = String(this._parentFile.totalChunks);
+        headers['X-Store-Chunk-Size'] = String(this._parentFile.options.chunkSize || 104857600);
+      }
+    }
+    if (this.fileInfo.md5) {
+      headers['X-Store-MD5'] = this.fileInfo.md5;
     }
 
     const maxRetries = this.isGetData ? GETDATA_MAX_RETRIES : MAX_RETRIES;
@@ -264,17 +232,7 @@ export class FileDownload {
     if (isUrlExpired(url)) {
       throw new Error(`URL expired for ${this.fileInfo.type}/${this.fileInfo.id} — waiting for fresh URL from next collection cycle`);
     }
-    let proxyUrl = toProxyUrl(url);
-
-    // Append store key for ContentStore (same as DownloadTask)
-    if (proxyUrl.startsWith('/file-proxy')) {
-      const storeKey = `${this.fileInfo.type || 'media'}/${this.fileInfo.id}`;
-      proxyUrl += `&storeKey=${encodeURIComponent(storeKey)}`;
-      if (this.fileInfo.md5) {
-        proxyUrl += `&md5=${encodeURIComponent(this.fileInfo.md5)}`;
-      }
-    }
-    return proxyUrl;
+    return url;
   }
 
   wait() {
