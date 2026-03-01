@@ -3,8 +3,7 @@
  *
  * Provides Express middleware that:
  * - Proxies XMDS SOAP requests (/xmds-proxy)
- * - Proxies file downloads with Range support (/file-proxy)
- * - Mirrors CMS content at PLAYER_API paths (media, dependencies, widgets)
+ * - Cache-through mirror routes: serve from store, fetch CMS on miss
  * - Serves the PWA player as static files (/player/pwa/)
  */
 
@@ -23,15 +22,15 @@ function redactUrl(url) {
   return url.replace(/(?<=[?&])(serverKey|hardwareKey|X-Amz-[^=]*)=[^&]*/gi, '$1=***');
 }
 
-// Server-side JWT token for v2 API file downloads.
-// Set once via POST /auth-token, injected into all /file-proxy CMS requests.
+// Server-side JWT token for v2 API requests.
+// Set once via POST /auth-token, injected into cache-through CMS requests.
 let _bearerToken = null;
 
 // Module-level loggers — one per subsystem, following @xiboplayer/utils conventions.
 // In Node (no window/localStorage), default level is WARNING. Pass 'INFO' explicitly
 // so proxy logs are always visible (these are server-side operational logs).
 const logProxy = createLogger('Proxy', 'INFO');
-const logFile  = createLogger('FileProxy', 'INFO');
+const logFile  = createLogger('CacheThrough', 'INFO');
 const logStore = createLogger('ContentStore', 'INFO');
 const logConfig = createLogger('Config', 'INFO');
 const logServer = createLogger('Server', 'INFO');
@@ -159,7 +158,8 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, confi
   app.use(cors({
     origin: '*',
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'SOAPAction'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'SOAPAction',
+      'X-Store-Chunk-Index', 'X-Store-Num-Chunks', 'X-Store-Chunk-Size', 'X-Store-MD5'],
     credentials: true,
   }));
 
@@ -237,7 +237,7 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, confi
   }
 
   // ─── Auth Token ──────────────────────────────────────────────────
-  // Store JWT token server-side so /file-proxy can inject it into CMS
+  // Store JWT token server-side so cache-through can inject it into CMS
   // requests without passing tokens through URLs.
   app.post('/auth-token', express.json(), (req, res) => {
     _bearerToken = req.body.token || null;
@@ -245,65 +245,69 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, confi
     res.json({ success: true });
   });
 
-  // ─── File Download Proxy ───────────────────────────────────────────
-  // Streams CMS responses to disk + client simultaneously — zero buffering.
-  // Previous version used response.arrayBuffer() which held entire chunks
-  // in memory, causing ~3 GB heap growth on large media downloads.
-  app.get('/file-proxy', async (req, res) => {
+  // ─── Cache-through helper ─────────────────────────────────────────
+  // Serve from store on hit. On miss, fetch from CMS and tee-stream to
+  // disk + client simultaneously — zero buffering.
+  //
+  // Chunk metadata is passed via custom X-Store-* headers from DownloadTask:
+  //   X-Store-Chunk-Index, X-Store-Num-Chunks, X-Store-Chunk-Size, X-Store-MD5
+  async function cacheThrough(req, res, storeKey, cmsPath) {
+    // 1. Store hit → serve from disk
+    if (store) {
+      let info;
+      try { info = store.has(storeKey); } catch (_) {}
+      if (info?.exists) return serveFromStore(req, res, storeKey);
+    }
+
+    // 2. Store miss → fetch from CMS
+    const cmsUrl = currentPwaConfig?.cmsUrl;
+    if (!cmsUrl) return res.status(502).json({ error: 'CMS URL not configured' });
+
+    const fullUrl = `${cmsUrl}${cmsPath}`;
+    logFile.info(`Cache miss: ${storeKey} → GET ${redactUrl(fullUrl)}`);
+
+    const headers = { 'User-Agent': `XiboPlayer/${appVersion}` };
+    if (_bearerToken) headers['Authorization'] = `Bearer ${_bearerToken}`;
+    if (req.headers.range) {
+      headers['Range'] = req.headers.range;
+      logFile.info(`Range: ${req.headers.range}`);
+    }
+
     try {
-      const cmsUrl = req.query.cms;
-      const fileUrl = req.query.url;
-      if (!cmsUrl || !fileUrl) return res.status(400).json({ error: 'Missing cms or url parameter' });
-
-      const fullUrl = `${cmsUrl}${fileUrl}`;
-      logFile.info(`GET ${redactUrl(fullUrl)}`);
-
-      const headers = { 'User-Agent': `XiboPlayer/${appVersion}` };
-      // Inject stored JWT token for v2 API requests
-      if (_bearerToken && fullUrl.includes(PLAYER_API)) {
-        headers['Authorization'] = `Bearer ${_bearerToken}`;
-      }
-      if (req.headers.range) {
-        headers['Range'] = req.headers.range;
-        logFile.info(`Range: ${req.headers.range}`);
-      }
-
       const response = await fetch(fullUrl, { headers });
+
+      if (!response.ok && response.status !== 206) {
+        logFile.info(`CMS ${response.status} for ${storeKey}`);
+        return res.status(response.status).end();
+      }
+
+      // Forward response headers
       res.status(response.status);
       response.headers.forEach((value, key) => {
         if (!SKIP_HEADERS.includes(key.toLowerCase())) {
           res.setHeader(key, value);
         }
       });
-      // Forward Content-Length only when the upstream didn't use compression.
-      // Node's fetch() auto-decompresses gzip/br but reports the *compressed*
-      // Content-Length — forwarding it truncates the decompressed response.
       const upstreamLength = response.headers.get('content-length');
       const wasCompressed = response.headers.get('content-encoding');
       if (upstreamLength && !wasCompressed) res.setHeader('Content-Length', upstreamLength);
       res.setHeader('Access-Control-Allow-Origin', '*');
 
-      if (!response.body) {
-        res.end();
-        return;
-      }
-
-      // CSS font URL rewriting removed — CMS now serves CSS with relative
-      // paths (/api/v2/player/dependencies/font.otf) that resolve via mirror routes.
+      if (!response.body) { res.end(); return; }
 
       const fetchStream = Readable.fromWeb(response.body);
 
-      if (store && req.query.storeKey) {
-        // Stream to disk AND client simultaneously
-        const storeKey = req.query.storeKey;
-        const chunkIndex = req.query.chunkIndex;
+      if (store) {
+        // Read chunk metadata from custom headers (set by DownloadTask)
+        const chunkIndexStr = req.headers['x-store-chunk-index'];
+        const chunkIndex = chunkIndexStr !== undefined ? parseInt(chunkIndexStr) : undefined;
         const contentType = response.headers.get('content-type') || 'application/octet-stream';
-        const meta = { contentType, md5: req.query.md5 || null };
+        const meta = { contentType, md5: req.headers['x-store-md5'] || null };
 
         if (chunkIndex !== undefined) {
           meta.chunked = true;
-          if (req.query.numChunks) meta.numChunks = parseInt(req.query.numChunks);
-          if (req.query.chunkSize) meta.chunkSize = parseInt(req.query.chunkSize);
+          if (req.headers['x-store-num-chunks']) meta.numChunks = parseInt(req.headers['x-store-num-chunks']);
+          if (req.headers['x-store-chunk-size']) meta.chunkSize = parseInt(req.headers['x-store-chunk-size']);
           const contentRange = response.headers.get('content-range');
           if (contentRange) {
             const totalMatch = contentRange.match(/\/(\d+)/);
@@ -312,20 +316,18 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, confi
         }
 
         const { writeStream, commit, abort } = store.createTempWrite(
-          storeKey, chunkIndex !== undefined ? parseInt(chunkIndex) : null
+          storeKey, chunkIndex !== undefined ? chunkIndex : null
         );
 
         let bytesWritten = 0;
         let aborted = false;
 
-        // Prevent unhandled stream errors from crashing the process
         writeStream.on('error', (err) => {
           if (!aborted) logStore.error('Write stream error:', err.message);
           aborted = true;
           abort();
         });
 
-        // Clean up on client disconnect
         req.on('close', () => {
           if (!res.writableFinished) {
             aborted = true;
@@ -366,20 +368,20 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, confi
           else res.end();
         });
       } else {
-        // No store needed — stream directly to client (zero memory)
+        // No store — stream directly to client
         fetchStream.pipe(res);
         fetchStream.on('error', (err) => {
           logFile.error('Stream error:', err.message);
           if (!res.headersSent) res.status(500).json({ error: 'Stream error' });
           else res.end();
         });
-        logFile.info(`${response.status} streaming`);
+        logFile.info(`${response.status} streaming (no store)`);
       }
     } catch (error) {
-      logFile.error('Error:', error.message);
-      if (!res.headersSent) res.status(500).json({ error: 'File proxy error', message: error.message });
+      logFile.error('Cache-through error:', error.message);
+      if (!res.headersSent) res.status(502).json({ error: 'CMS fetch failed', message: error.message });
     }
-  });
+  }
 
   // ─── serveFromStore — shared serving logic ──────────────────────────
   /**
@@ -438,63 +440,119 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, confi
     }
   }
 
-  // ─── CMS Mirror Routes ─────────────────────────────────────────────
-  // Serve content at the same URL paths the CMS uses — no translation needed.
+  // ─── Cache-through Mirror Routes ────────────────────────────────────
+  // Serve from store on hit, fetch from CMS on miss. Same URL paths as CMS.
 
   // Strip leading slash for store key: /api/v2/player → api/v2/player
   const STORE_PREFIX = PLAYER_API.slice(1);
 
+  // HEAD helper — check store existence (used for all mirror routes)
+  function headFromStore(req, res, storeKey, defaultContentType) {
+    if (!store) return res.status(501).end();
+    try {
+      const info = store.has(storeKey);
+      if (!info.exists) return res.status(404).end();
+      const meta = info.metadata || {};
+      res.setHeader('Content-Length', meta.size || 0);
+      res.setHeader('Content-Type', meta.contentType || defaultContentType);
+      res.setHeader('Accept-Ranges', 'bytes');
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.status(200).end();
+    } catch (err) {
+      logStore.error(`HEAD error for ${storeKey}:`, err.message);
+      res.status(500).end();
+    }
+  }
+
   // Media: {PLAYER_API}/media/:id
   app.get(`${PLAYER_API}/media/:id`, (req, res) => {
-    serveFromStore(req, res, `${STORE_PREFIX}/media/${req.params.id}`);
+    const key = `${STORE_PREFIX}/media/${req.params.id}`;
+    cacheThrough(req, res, key, `${PLAYER_API}/media/${req.params.id}`);
   });
   app.head(`${PLAYER_API}/media/:id`, (req, res) => {
-    if (!store) return res.status(501).end();
-    const key = `${STORE_PREFIX}/media/${req.params.id}`;
-    const info = store.has(key);
-    if (!info.exists) return res.status(404).end();
-    const meta = info.metadata || {};
-    res.setHeader('Content-Length', meta.size || 0);
-    res.setHeader('Content-Type', meta.contentType || 'application/octet-stream');
-    res.setHeader('Accept-Ranges', 'bytes');
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.status(200).end();
+    headFromStore(req, res, `${STORE_PREFIX}/media/${req.params.id}`, 'application/octet-stream');
+  });
+
+  // Layouts: {PLAYER_API}/layouts/:id
+  app.get(`${PLAYER_API}/layouts/:id`, (req, res) => {
+    const key = `${STORE_PREFIX}/layouts/${req.params.id}`;
+    cacheThrough(req, res, key, `${PLAYER_API}/layouts/${req.params.id}`);
+  });
+  app.head(`${PLAYER_API}/layouts/:id`, (req, res) => {
+    headFromStore(req, res, `${STORE_PREFIX}/layouts/${req.params.id}`, 'application/xml');
   });
 
   // Widgets: {PLAYER_API}/widgets/:layoutId/:regionId/:mediaId
   app.get(`${PLAYER_API}/widgets/:layoutId/:regionId/:mediaId`, (req, res) => {
     const { layoutId, regionId, mediaId } = req.params;
-    serveFromStore(req, res, `${STORE_PREFIX}/widgets/${layoutId}/${regionId}/${mediaId}`);
+    const key = `${STORE_PREFIX}/widgets/${layoutId}/${regionId}/${mediaId}`;
+    cacheThrough(req, res, key, `${PLAYER_API}/widgets/${layoutId}/${regionId}/${mediaId}`);
   });
   app.head(`${PLAYER_API}/widgets/:layoutId/:regionId/:mediaId`, (req, res) => {
-    if (!store) return res.status(501).end();
     const key = `${STORE_PREFIX}/widgets/${req.params.layoutId}/${req.params.regionId}/${req.params.mediaId}`;
-    const info = store.has(key);
-    if (!info.exists) return res.status(404).end();
-    const meta = info.metadata || {};
-    res.setHeader('Content-Length', meta.size || 0);
-    res.setHeader('Content-Type', meta.contentType || 'text/html');
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.status(200).end();
+    headFromStore(req, res, key, 'text/html');
   });
 
   // Dependencies: {PLAYER_API}/dependencies/*
   app.get(`${PLAYER_API}/dependencies/{*splat}`, (req, res) => {
     const filename = decodeURIComponent([req.params.splat].flat().pop());
-    serveFromStore(req, res, `${STORE_PREFIX}/dependencies/${filename}`);
+    const key = `${STORE_PREFIX}/dependencies/${filename}`;
+    cacheThrough(req, res, key, `${PLAYER_API}/dependencies/${filename}`);
   });
   app.head(`${PLAYER_API}/dependencies/{*splat}`, (req, res) => {
-    if (!store) return res.status(501).end();
     const filename = decodeURIComponent([req.params.splat].flat().pop());
-    const key = `${STORE_PREFIX}/dependencies/${filename}`;
-    const info = store.has(key);
-    if (!info.exists) return res.status(404).end();
-    const meta = info.metadata || {};
-    res.setHeader('Content-Length', meta.size || 0);
-    res.setHeader('Content-Type', meta.contentType || 'application/octet-stream');
-    res.setHeader('Accept-Ranges', 'bytes');
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.status(200).end();
+    headFromStore(req, res, `${STORE_PREFIX}/dependencies/${filename}`, 'application/octet-stream');
+  });
+
+  // ─── CMS API Forward Proxy ─────────────────────────────────────────
+  // Forward unmatched /api/* requests to the CMS.
+  // Specific mirror routes (media, widgets, dependencies) match first;
+  // this catch-all handles Player API + CMS API (OAuth2, display management).
+  const logApi = createLogger('API-Proxy');
+  app.all('/api/{*splat}', async (req, res) => {
+    const cmsUrl = currentPwaConfig?.cmsUrl;
+    if (!cmsUrl) return res.status(502).json({ error: 'CMS URL not configured' });
+
+    const targetUrl = `${cmsUrl}${req.originalUrl}`;
+    logApi.info(`${req.method} ${req.originalUrl} → ${targetUrl}`);
+
+    try {
+      const fetchOptions = {
+        method: req.method,
+        headers: { ...req.headers, host: new URL(cmsUrl).host },
+      };
+      // Forward request body for POST/PUT
+      if (['POST', 'PUT', 'PATCH'].includes(req.method) && req.body) {
+        const ct = req.headers['content-type'] || '';
+        if (ct.includes('urlencoded')) {
+          fetchOptions.body = new URLSearchParams(req.body).toString();
+        } else {
+          fetchOptions.body = JSON.stringify(req.body);
+        }
+        fetchOptions.headers['content-type'] = ct || 'application/json';
+      }
+      delete fetchOptions.headers['content-length'];
+
+      const response = await fetch(targetUrl, fetchOptions);
+
+      // Forward response headers
+      for (const [key, value] of response.headers) {
+        if (!['transfer-encoding', 'connection'].includes(key.toLowerCase())) {
+          res.setHeader(key, value);
+        }
+      }
+
+      res.status(response.status);
+      if (response.body) {
+        const { Readable } = await import('stream');
+        Readable.fromWeb(response.body).pipe(res);
+      } else {
+        res.end();
+      }
+    } catch (err) {
+      logApi.error(`Forward failed: ${err.message}`);
+      res.status(502).json({ error: err.message });
+    }
   });
 
   // ─── ContentStore — Serve files (legacy + internal) ──────────────────
