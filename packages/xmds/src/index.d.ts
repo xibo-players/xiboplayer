@@ -17,6 +17,27 @@ export class RestClient {
   submitGeoLocation?(data: any): Promise<void>;
 }
 
+export class RestClientV2 {
+  constructor(config: any);
+  config: any;
+  schemaVersion: number;
+
+  registerDisplay(): Promise<any>;
+  requiredFiles(): Promise<any>;
+  schedule(): Promise<any>;
+  getResource(layoutId: number, regionId: string, mediaId: string): Promise<string>;
+  notifyStatus(status: any): Promise<any>;
+  mediaInventory(inventoryXml: string | any[]): Promise<any>;
+  blackList(mediaId: string | number, type: string, reason: string): Promise<boolean>;
+  submitLog(logXml: string | any[], hardwareKey?: string): Promise<boolean>;
+  submitScreenShot(base64Image: string): Promise<boolean>;
+  submitStats(statsXml: string | any[], hardwareKey?: string): Promise<boolean>;
+  reportFaults(faultsJson: string): Promise<boolean>;
+  getWeather(): Promise<any>;
+
+  static isAvailable(cmsUrl: string, retryOptions?: any): Promise<boolean>;
+}
+
 export class XmdsClient {
   constructor(config: any);
   config: any;
