@@ -26,6 +26,7 @@ let cacheWidgetHtml: any;
 let scheduleManager: any;
 let config: any;
 let RestClient: any;
+let RestClientV2: any;
 let XmdsClient: any;
 let XmrWrapper: any;
 let store: StoreClient;
@@ -353,6 +354,7 @@ class PwaPlayer {
       scheduleManager = scheduleModule.scheduleManager;
       config = configModule.config;
       RestClient = xmdsModule.RestClient;
+      RestClientV2 = xmdsModule.RestClientV2;
       XmdsClient = xmdsModule.XmdsClient;
       XmrWrapper = xmrModule.XmrWrapper;
       StatsCollector = statsModule.StatsCollector;
@@ -383,30 +385,45 @@ class PwaPlayer {
       }
 
       // Transport auto-detection:
-      // - /player/pwa-xmds/ or ?transport=xmds → forced SOAP
-      // - config.json transport: "xmds" → forced SOAP (for unpatched Xibo CMS without REST API)
-      // - Otherwise → try REST, fall back to SOAP if unavailable
+      //   transport: "rest-v2" → forced v2 REST API
+      //   transport: "rest"    → forced v1 REST API (/pwa/*)
+      //   transport: "xmds"   → forced SOAP
+      //   transport: "auto"   → try v2 → v1 → SOAP (default)
+      //   /player/pwa-xmds/   → forced SOAP (URL-based override)
+      //   ?transport=xmds     → forced SOAP (query param override)
       const cfgTransport = (() => {
         try { return JSON.parse(localStorage.getItem('xibo_config') || '{}').transport; }
         catch { return undefined; }
       })();
-      const forceXmds = PLAYER_BASE.includes('pwa-xmds')
-        || new URLSearchParams(window.location.search).get('transport') === 'xmds'
-        || cfgTransport === 'xmds';
+      const urlTransport = new URLSearchParams(window.location.search).get('transport');
+      const transport = urlTransport
+        || (PLAYER_BASE.includes('pwa-xmds') ? 'xmds' : null)
+        || cfgTransport
+        || 'auto';
 
-      if (forceXmds) {
+      if (transport === 'xmds') {
         log.info('Using XMDS/SOAP transport (forced)');
         this.xmds = new XmdsClient(config);
-      } else {
-        // Try REST — registerDisplay() is always the first call anyway.
-        // If the CMS lacks /pwa/ REST endpoints, fall back to SOAP.
+      } else if (transport === 'rest') {
+        log.info('Using REST v1 transport (forced)');
         this.xmds = new RestClient(config);
-        try {
-          await this.xmds.registerDisplay();
-          log.info('Using REST transport');
-        } catch (e: any) {
-          log.warn('REST unavailable, falling back to XMDS/SOAP:', e.message);
-          this.xmds = new XmdsClient(config);
+      } else if (transport === 'rest-v2') {
+        log.info('Using REST v2 transport (forced)');
+        this.xmds = new RestClientV2(config);
+      } else {
+        // Auto-detect: try v2 → v1 → SOAP
+        if (await RestClientV2.isAvailable(config.cmsUrl, { maxRetries: 0 })) {
+          this.xmds = new RestClientV2(config);
+          log.info('Using REST v2 transport (auto-detected)');
+        } else {
+          this.xmds = new RestClient(config);
+          try {
+            await this.xmds.registerDisplay();
+            log.info('Using REST v1 transport (auto-detected)');
+          } catch (e: any) {
+            log.warn('REST unavailable, falling back to XMDS/SOAP:', e.message);
+            this.xmds = new XmdsClient(config);
+          }
         }
       }
 
