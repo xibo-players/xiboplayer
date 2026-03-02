@@ -6,3 +6,4 @@ export { StoreClient } from './store-client.js';
 export { DownloadManager, FileDownload, LayoutTaskBuilder, BARRIER, isUrlExpired } from './download-manager.js';
 export { CacheAnalyzer } from './cache-analyzer.js';
 export { cacheWidgetHtml } from './widget-html.js';
+export { FILE_TYPES, getFileTypeConfig } from './file-types.js';

@@ -26,21 +26,13 @@
  */
 
 import { createLogger } from '@xiboplayer/utils';
+import { getFileTypeConfig } from './file-types.js';
 
 const log = createLogger('Download');
 const DEFAULT_CONCURRENCY = 6; // Max concurrent HTTP connections (matches Chromium per-host limit)
 const DEFAULT_CHUNK_SIZE = 50 * 1024 * 1024; // 50MB chunks
 const DEFAULT_MAX_CHUNKS_PER_FILE = 3; // Max parallel chunk downloads per file
 const CHUNK_THRESHOLD = 100 * 1024 * 1024; // Files > 100MB get chunked
-const MAX_RETRIES = 3;
-const RETRY_DELAY_MS = 500; // Fast: 500ms, 1s, 1.5s → total ~3s
-
-// getData (widget data) retry config — CMS "cache not ready" (HTTP 500) resolves
-// when the XTR task runs (30-120s). Use longer backoff to ride it out.
-const GETDATA_MAX_RETRIES = 4;
-const GETDATA_RETRY_DELAYS = [15_000, 30_000, 60_000, 120_000]; // 15s, 30s, 60s, 120s
-const GETDATA_REENQUEUE_DELAY_MS = 60_000; // Re-add to queue after 60s if all retries fail
-const GETDATA_MAX_REENQUEUES = 5; // Max times a getData can be re-enqueued before permanent failure
 const URGENT_CONCURRENCY = 2; // Slots when urgent chunk is active (bandwidth focus)
 const FETCH_TIMEOUT_MS = 600_000; // 10 minutes — 100MB chunk at ~2 Mbps
 const HEAD_TIMEOUT_MS = 15_000; // 15 seconds for HEAD requests
@@ -121,8 +113,7 @@ export class DownloadTask {
     this.blob = null;
     this._parentFile = null;
     this._priority = PRIORITY.normal;
-    // Widget data (getData) uses longer retry backoff — CMS "cache not ready" is transient
-    this.isGetData = fileInfo.isGetData || false;
+    this._typeConfig = getFileTypeConfig(fileInfo.type);
   }
 
   getUrl() {
@@ -150,8 +141,11 @@ export class DownloadTask {
     if (this.fileInfo.md5) {
       headers['X-Store-MD5'] = this.fileInfo.md5;
     }
+    if (this.fileInfo.updateInterval) {
+      headers['X-Cache-TTL'] = String(this.fileInfo.updateInterval);
+    }
 
-    const maxRetries = this.isGetData ? GETDATA_MAX_RETRIES : MAX_RETRIES;
+    const maxRetries = this._typeConfig.maxRetries;
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       const ac = new AbortController();
@@ -173,9 +167,8 @@ export class DownloadTask {
       } catch (error) {
         const msg = ac.signal.aborted ? `Timeout after ${FETCH_TIMEOUT_MS / 1000}s` : error.message;
         if (attempt < maxRetries) {
-          const delay = this.isGetData
-            ? GETDATA_RETRY_DELAYS[attempt - 1]
-            : RETRY_DELAY_MS * attempt;
+          const delay = this._typeConfig.retryDelays?.[attempt - 1]
+            ?? this._typeConfig.retryDelayMs * attempt;
           const chunkLabel = this.chunkIndex != null ? ` chunk ${this.chunkIndex}` : '';
           log.warn(`[DownloadTask] ${this.fileInfo.type}/${this.fileInfo.id}${chunkLabel} attempt ${attempt}/${maxRetries} failed: ${msg}. Retrying in ${delay / 1000}s...`);
           await new Promise(resolve => setTimeout(resolve, delay));
@@ -254,12 +247,12 @@ export class FileDownload {
       this.totalBytes = (size && size > 0) ? parseInt(size) : 0;
       this._contentType = inferContentType(this.fileInfo);
 
-      // Skip HEAD for JSON / dynamic API endpoints (no file extension → octet-stream).
+      // Skip HEAD for types that declare skipHead (e.g. datasets — dynamic API endpoints).
       // These generate responses server-side; HEAD triggers the full handler for nothing
       // and may fail if the CMS cache isn't warm yet. They're always small, never chunked.
-      const isJsonEndpoint = this._contentType === 'application/octet-stream';
+      const skipHead = getFileTypeConfig(this.fileInfo.type).skipHead;
 
-      if (this.totalBytes === 0 && !isJsonEndpoint) {
+      if (this.totalBytes === 0 && !skipHead) {
         // No size declared — HEAD fallback (rare: only for files without CMS size)
         const url = this.getUrl();
         const ac = new AbortController();
@@ -879,25 +872,26 @@ export class DownloadQueue {
         task._parentFile._runningCount--;
         this._activeTasks = this._activeTasks.filter(t => t !== task);
 
-        // getData (widget data): defer re-enqueue instead of permanent failure.
+        // Re-enqueueable types (e.g. datasets): defer re-enqueue instead of permanent failure.
         // CMS "cache not ready" resolves when the XTR task runs (30-120s).
-        if (task.isGetData) {
+        const { maxReenqueues, reenqueueDelayMs } = task._typeConfig;
+        if (maxReenqueues > 0) {
           task._reenqueueCount = (task._reenqueueCount || 0) + 1;
-          if (task._reenqueueCount > GETDATA_MAX_REENQUEUES) {
-            log.error(`[DownloadQueue] getData ${key} exceeded ${GETDATA_MAX_REENQUEUES} re-enqueues, failing permanently`);
+          if (task._reenqueueCount > maxReenqueues) {
+            log.error(`[DownloadQueue] ${key} exceeded ${maxReenqueues} re-enqueues, failing permanently`);
             this.processQueue();
             task._parentFile.onTaskFailed(task, err);
             return;
           }
-          log.warn(`[DownloadQueue] getData ${key} failed all retries (attempt ${task._reenqueueCount}/${GETDATA_MAX_REENQUEUES}), scheduling re-enqueue in ${GETDATA_REENQUEUE_DELAY_MS / 1000}s`);
+          log.warn(`[DownloadQueue] ${key} failed all retries (attempt ${task._reenqueueCount}/${maxReenqueues}), scheduling re-enqueue in ${reenqueueDelayMs / 1000}s`);
           const timerId = setTimeout(() => {
             this._reenqueueTimers.delete(timerId);
             task.state = 'pending';
             task._parentFile.state = 'downloading';
             this.queue.push(task);
-            log.info(`[DownloadQueue] getData ${key} re-enqueued for retry`);
+            log.info(`[DownloadQueue] ${key} re-enqueued for retry`);
             this.processQueue();
-          }, GETDATA_REENQUEUE_DELAY_MS);
+          }, reenqueueDelayMs);
           this._reenqueueTimers.add(timerId);
           this.processQueue();
           return;

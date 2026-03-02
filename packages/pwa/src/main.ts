@@ -1118,9 +1118,6 @@ class PwaPlayer {
       } else if (f.type === 'static') {
         resources.push(f);
       } else {
-        if (f.path && (f.path.includes('getData') || f.path.includes('/datasets/'))) {
-          f.isGetData = true;
-        }
         const key = `${f.type}:${f.id}`;
         mediaFiles.set(key, f);
         const bareId = String(f.id);
@@ -1138,7 +1135,6 @@ class PwaPlayer {
       const xlfFile = xlfFiles.get(layoutId);
       if (!xlfFile?.path) return;
 
-      const storeKey = storeKeyFrom(xlfFile);
       let xlfText: string | undefined;
 
       // Try store first, then cache-through fetches from CMS on miss
