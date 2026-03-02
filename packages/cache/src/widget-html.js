@@ -66,7 +66,7 @@ export async function cacheWidgetHtml(layoutId, regionId, mediaId, html) {
   // like https://cms.example.com/api/v2/player/dependencies/bundle.min.js
   // which fail due to CORS/auth. Replace with local /api/v2/player/dependencies/...
   modifiedHtml = modifiedHtml.replace(
-    /https?:\/\/[^"'\s]+?(\/api\/v2\/player\/dependencies\/[^"'\s?]+)(\?[^"'\s]*)?/g,
+    /https?:\/\/[^"'\s)]+?(\/api\/v2\/player\/dependencies\/[^"'\s?)]+)(\?[^"'\s)]*)?/g,
     (_, path) => path
   );
 
