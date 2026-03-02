@@ -9,7 +9,7 @@ export class StoreClient {
 }
 
 export class DownloadManager {
-  constructor(options?: { concurrency?: number; chunkSize?: number; maxChunksPerFile?: number });
+  constructor(options?: { concurrency?: number; chunkSize?: number; chunksPerFile?: number });
   enqueue(fileInfo: any): any;
   getTask(key: string): any;
   getProgress(): Record<string, any>;
@@ -18,8 +18,15 @@ export class DownloadManager {
   queue: any;
 }
 
-export class FileDownload {}
-export class LayoutTaskBuilder {}
+export class FileDownload {
+  state: string;
+  wait(): Promise<Blob>;
+}
+export class LayoutTaskBuilder {
+  constructor(queue: any);
+  addFile(fileInfo: any): FileDownload;
+  build(): Promise<any[]>;
+}
 export const BARRIER: symbol;
 export class CacheManager {}
 export class CacheAnalyzer {
