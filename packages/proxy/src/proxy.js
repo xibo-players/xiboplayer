@@ -260,7 +260,11 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, confi
       let info;
       try { info = store.has(storeKey); } catch (_) {}
       if (info?.exists) {
-        if (ttl !== Infinity && info.metadata?.createdAt) {
+        // Incomplete chunked files: fall through to CMS for the missing bytes
+        const incomplete = info.chunked && store.missingChunks(storeKey).length > 0;
+        if (incomplete) {
+          logFile.info(`Incomplete chunked file: ${storeKey} — fetching from CMS`);
+        } else if (ttl !== Infinity && info.metadata?.createdAt) {
           const ageMs = Date.now() - info.metadata.createdAt;
           if (ageMs > ttl * 1000) {
             logFile.info(`TTL expired: ${storeKey} (${Math.round(ageMs / 1000)}s > ${ttl}s)`);
@@ -467,6 +471,10 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, confi
     try {
       const info = store.has(storeKey);
       if (!info.exists) return res.status(404).end();
+      // Incomplete chunked files → 404 so download pipeline re-fetches them
+      if (info.chunked && store.missingChunks(storeKey).length > 0) {
+        return res.status(404).end();
+      }
       const meta = info.metadata || {};
       res.setHeader('Content-Length', meta.size || 0);
       res.setHeader('Content-Type', meta.contentType || defaultContentType);
@@ -580,13 +588,19 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, confi
     }
   });
 
-  // ─── ContentStore — Serve files (legacy + internal) ──────────────────
-  // GET /store/:type/* — serve stored file with Range support
-  app.get('/store/:type/{*splat}', (req, res) => {
+  // ─── ContentStore — Missing chunks check ────────────────────────────
+  // GET /store/missing-chunks/:type/* — return missing chunk indices for a file
+  app.get('/store/missing-chunks/:type/{*splat}', (req, res) => {
+    if (!store) return res.status(501).json({ error: 'ContentStore not configured' });
     const key = `${req.params.type}/${[req.params.splat].flat().join('/')}`;
-    serveFromStore(req, res, key);
+    const info = store.has(key);
+    if (!info.exists || !info.chunked) return res.json({ missing: [], numChunks: 0 });
+    const meta = info.metadata || {};
+    res.json({ missing: store.missingChunks(key), numChunks: meta.numChunks || 0 });
   });
 
+  // ─── ContentStore — Serve files (legacy + internal) ──────────────────
+  // HEAD must be registered before GET (Express GET also matches HEAD requests)
   // HEAD /store/:type/* — existence + size check
   app.head('/store/:type/{*splat}', (req, res) => {
     if (!store) return res.status(501).end();
@@ -595,6 +609,10 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, confi
       const key = `${req.params.type}/${[req.params.splat].flat().join('/')}`;
       const info = store.has(key);
       if (!info.exists) return res.status(404).end();
+      // Incomplete chunked files → 404 so download pipeline re-fetches them
+      if (info.chunked && store.missingChunks(key).length > 0) {
+        return res.status(404).end();
+      }
 
       const meta = info.metadata || {};
       res.setHeader('Content-Length', meta.size || 0);
@@ -606,6 +624,12 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, confi
       logStore.error(`HEAD error for ${req.params.type}/${[req.params.splat].flat().join('/')}:`, err.message);
       res.status(500).end();
     }
+  });
+
+  // GET /store/:type/* — serve stored file with Range support
+  app.get('/store/:type/{*splat}', (req, res) => {
+    const key = `${req.params.type}/${[req.params.splat].flat().join('/')}`;
+    serveFromStore(req, res, key);
   });
 
   // PUT /store/:type/* — store arbitrary content
@@ -650,6 +674,20 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, confi
     store.markComplete(storeKey);
     logStore.info(`Marked complete: ${storeKey}`);
     res.json({ success: true });
+  });
+
+  // POST /store/unmark-complete — unmark chunked file (keeps chunks, allows partial re-download)
+  app.post('/store/unmark-complete', express.json(), (req, res) => {
+    if (!store) return res.status(501).json({ error: 'ContentStore not configured' });
+
+    const { storeKey } = req.body;
+    if (!storeKey) return res.status(400).json({ error: 'storeKey required' });
+
+    const unmarked = store.unmarkComplete(storeKey);
+    if (unmarked) {
+      logStore.info(`Unmarked complete: ${storeKey}`);
+    }
+    res.json({ success: true, unmarked });
   });
 
   // GET /store/list — list all stored files

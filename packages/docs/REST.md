@@ -124,6 +124,30 @@ The download pipeline:
 | `@xiboplayer/proxy` | `proxy.js` | JWT token storage, Bearer header injection |
 | `@xiboplayer/pwa` | `main.ts` | Token push to proxy before downloads |
 
+## Chunked Download Resume
+
+Large media files (configurable threshold, default ~100MB) are downloaded in chunks. If a download is interrupted, the player resumes by downloading only the missing chunks on the next collection cycle.
+
+### Proxy Endpoints
+
+| Method | Route | Purpose |
+|--------|-------|---------|
+| `GET` | `/store/missing-chunks/:type/*` | Returns `{ missing: [1,2,3], numChunks: 21 }` |
+| `POST` | `/store/unmark-complete` | Removes `complete` flag, keeps all chunks on disk |
+
+### Flow
+
+1. `enqueueFile()` calls `/store/missing-chunks/{storeKey}` before enqueueing a download
+2. If some chunks already exist, populates `file.skipChunks` — the download pipeline skips them
+3. On video playback error, the renderer emits `videoError` with `{ fileId }`
+4. The PWA checks for missing chunks; if found, unmarks the file and triggers `collectNow()`
+5. The next enqueue populates `skipChunks` and only downloads what's missing
+
+### Incomplete File Detection
+
+- `HEAD /store/:type/*` returns **404** for chunked files with missing chunks
+- `cacheThrough()` falls through to CMS for incomplete chunked files (avoids serving truncated video)
+
 ## Configuration
 
 No configuration required. REST is auto-detected when the CMS supports it.

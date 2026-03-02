@@ -2009,7 +2009,8 @@ export class RendererLite {
       const error = video.error;
       const errorCode = error?.code;
       const errorMessage = error?.message || 'Unknown error';
-      this.log.warn(`Video error (non-fatal, logged only): ${fileId}, code: ${errorCode}, time: ${video.currentTime.toFixed(1)}s, message: ${errorMessage}`);
+      this.log.warn(`Video error: ${fileId}, code: ${errorCode}, time: ${video.currentTime.toFixed(1)}s, message: ${errorMessage}`);
+      this.emit('videoError', { fileId, errorCode, errorMessage, currentTime: video.currentTime });
     };
     video.addEventListener('error', onError);
 

@@ -1169,6 +1169,22 @@ class PwaPlayer {
       // Check if already downloading
       if (downloadManager.getTask(storeKey)) return false;
 
+      // Check for existing chunks — skip already-downloaded ones
+      try {
+        const mcResp = await fetch(`/store/missing-chunks/${storeKey}`);
+        if (mcResp.ok) {
+          const { missing, numChunks } = await mcResp.json();
+          if (numChunks > 0 && missing.length < numChunks) {
+            const existing = new Set<number>();
+            for (let i = 0; i < numChunks; i++) {
+              if (!missing.includes(i)) existing.add(i);
+            }
+            file.skipChunks = existing;
+            log.info(`Resuming ${storeKey}: ${existing.size}/${numChunks} chunks cached, ${missing.length} to download`);
+          }
+        }
+      } catch (_) {}
+
       const fileDownload = builder.addFile(file);
       if (fileDownload.state !== 'pending') return false;
 
@@ -1513,6 +1529,34 @@ class PwaPlayer {
       } catch (error) {
         log.warn('Layout preload failed (non-blocking):', error);
         // Non-blocking: preload failure is graceful, normal render path will be used
+      }
+    });
+
+    // Handle video playback errors — re-download only missing chunks
+    this.renderer.on('videoError', async ({ fileId }: any) => {
+      const storeKey = `${PLAYER_API.slice(1)}/media/${fileId}`;
+      try {
+        const resp = await fetch(`/store/missing-chunks/${storeKey}`);
+        const { missing } = await resp.json();
+        if (missing.length === 0) {
+          log.warn(`Video error for media ${fileId} but no missing chunks — possible decode error`);
+          return;
+        }
+        log.warn(`Video ${fileId}: ${missing.length} missing chunks (${missing.join(', ')}), re-downloading`);
+
+        // Unmark completion (keeps existing chunks on disk) so HEAD returns 404
+        await fetch('/store/unmark-complete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ storeKey }),
+        });
+
+        // Trigger collection — enqueueFile will populate skipChunks for existing chunks
+        this.core.collectNow().catch((err: any) => {
+          log.error(`Failed to trigger re-download for media ${fileId}:`, err.message);
+        });
+      } catch (err: any) {
+        log.error(`Failed to check/re-download media ${fileId}:`, err.message);
       }
     });
   }

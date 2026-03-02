@@ -97,6 +97,23 @@ export class ContentStore {
     return fs.existsSync(this._chunkPath(key, chunkIndex));
   }
 
+  /**
+   * Return indices of missing chunks for a chunked file.
+   * @param {string} key
+   * @returns {number[]} — empty if not chunked or all chunks present
+   */
+  missingChunks(key) {
+    const metaPath = this._chunkMetaPath(key);
+    if (!fs.existsSync(metaPath)) return [];
+    const meta = JSON.parse(fs.readFileSync(metaPath, 'utf8'));
+    if (!meta.numChunks) return [];
+    const missing = [];
+    for (let i = 0; i < meta.numChunks; i++) {
+      if (!fs.existsSync(this._chunkPath(key, i))) missing.push(i);
+    }
+    return missing;
+  }
+
   // ── Read operations ───────────────────────────────────────────────
 
   /**
@@ -229,6 +246,22 @@ export class ContentStore {
     meta.complete = true;
     meta.completedAt = Date.now();
     fs.writeFileSync(metaPath, JSON.stringify(meta));
+  }
+
+  /**
+   * Unmark a chunked file as complete (keeps all chunks on disk).
+   * Used when missing chunks are detected — allows re-download of only missing chunks.
+   * @param {string} key
+   * @returns {boolean} true if the file was unmarked
+   */
+  unmarkComplete(key) {
+    const metaPath = this._chunkMetaPath(key);
+    if (!fs.existsSync(metaPath)) return false;
+    const meta = JSON.parse(fs.readFileSync(metaPath, 'utf8'));
+    delete meta.complete;
+    delete meta.completedAt;
+    fs.writeFileSync(metaPath, JSON.stringify(meta));
+    return true;
   }
 
   /**
