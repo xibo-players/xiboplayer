@@ -347,10 +347,10 @@ export class RestClient {
       });
     }
 
-    // Widget data files
+    // Widget data files (datasets — dynamic API, not static media)
     for (const w of json.widgets || []) {
       files.push({
-        type: 'media',
+        type: 'dataset',
         id: w.id != null ? String(w.id) : null,
         size: 0,
         md5: w.md5 || null,

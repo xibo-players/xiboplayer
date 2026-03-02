@@ -251,12 +251,24 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, confi
   //
   // Chunk metadata is passed via custom X-Store-* headers from DownloadTask:
   //   X-Store-Chunk-Index, X-Store-Num-Chunks, X-Store-Chunk-Size, X-Store-MD5
-  async function cacheThrough(req, res, storeKey, cmsPath) {
-    // 1. Store hit → serve from disk
+  async function cacheThrough(req, res, storeKey, cmsPath, { ttl = Infinity } = {}) {
+    // 1. Store hit → serve from disk (with optional TTL check)
     if (store) {
       let info;
       try { info = store.has(storeKey); } catch (_) {}
-      if (info?.exists) return serveFromStore(req, res, storeKey);
+      if (info?.exists) {
+        if (ttl !== Infinity && info.metadata?.createdAt) {
+          const ageMs = Date.now() - info.metadata.createdAt;
+          if (ageMs > ttl * 1000) {
+            logFile.info(`TTL expired: ${storeKey} (${Math.round(ageMs / 1000)}s > ${ttl}s)`);
+            // Fall through to CMS fetch (will overwrite stored file)
+          } else {
+            return serveFromStore(req, res, storeKey);
+          }
+        } else {
+          return serveFromStore(req, res, storeKey);
+        }
+      }
     }
 
     // 2. Store miss → fetch from CMS
@@ -502,6 +514,16 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, confi
   app.head(`${PLAYER_API}/dependencies/{*splat}`, (req, res) => {
     const filename = decodeURIComponent([req.params.splat].flat().pop());
     headFromStore(req, res, `${STORE_PREFIX}/dependencies/${filename}`, 'application/octet-stream');
+  });
+
+  // Datasets (widget data): {PLAYER_API}/datasets/:widgetId/data
+  // Cached with TTL — data changes on XTR runs, but short-lived caching avoids
+  // repeated CMS hits during the same layout cycle. Auth injected by cacheThrough.
+  app.get(`${PLAYER_API}/datasets/:widgetId/data`, (req, res) => {
+    const widgetId = req.params.widgetId;
+    const key = `${STORE_PREFIX}/datasets/${widgetId}/data`;
+    const ttl = parseInt(req.headers['x-cache-ttl']) || 300;
+    cacheThrough(req, res, key, `${PLAYER_API}/datasets/${widgetId}/data`, { ttl });
   });
 
   // ─── CMS API Forward Proxy ─────────────────────────────────────────
