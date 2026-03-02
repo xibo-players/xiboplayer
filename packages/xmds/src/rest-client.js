@@ -38,9 +38,14 @@ export class RestClient {
 
   /**
    * Get the REST API base URL.
-   * Falls back to /api/v2/player path relative to the CMS address.
+   * In proxy mode (Electron/Chromium), returns the local relative path so
+   * requests go through the Express proxy's mirror routes.
+   * In direct mode (standalone PWA), returns the full CMS URL.
    */
   getRestBaseUrl() {
+    if (this._isProxyMode()) {
+      return `${window.location.origin}${PLAYER_API}`;
+    }
     const base = this.config.restApiUrl || `${this.config.cmsUrl}${PLAYER_API}`;
     return base.replace(/\/+$/, '');
   }
@@ -54,21 +59,6 @@ export class RestClient {
        window.location.hostname === 'localhost');
   }
 
-  /**
-   * Rewrite an absolute REST URL to go through /rest-proxy.
-   */
-  _rewriteForProxy(urlString) {
-    if (!this._isProxyMode() || !urlString.startsWith('http')) return urlString;
-    const parsed = new URL(urlString);
-    const proxyUrl = new URL('/rest-proxy', window.location.origin);
-    proxyUrl.searchParams.set('cms', parsed.origin);
-    proxyUrl.searchParams.set('path', parsed.pathname);
-    for (const [key, value] of parsed.searchParams) {
-      proxyUrl.searchParams.set(key, value);
-    }
-    return proxyUrl.toString();
-  }
-
   // ─── JWT auth ─────────────────────────────────────────────────
 
   /**
@@ -80,7 +70,7 @@ export class RestClient {
 
     log.debug('Authenticating...');
 
-    const response = await fetchWithRetry(this._rewriteForProxy(url), {
+    const response = await fetchWithRetry(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -132,7 +122,7 @@ export class RestClient {
 
     log.debug(`GET ${path}`, queryParams);
 
-    const response = await fetchWithRetry(this._rewriteForProxy(url.toString()), {
+    const response = await fetchWithRetry(url.toString(), {
       method: 'GET',
       headers,
     }, this.retryOptions);
@@ -182,7 +172,7 @@ export class RestClient {
 
     log.debug(`${method} ${path}`);
 
-    const response = await fetchWithRetry(this._rewriteForProxy(url.toString()), {
+    const response = await fetchWithRetry(url.toString(), {
       method,
       headers: {
         'Content-Type': 'application/json',
@@ -531,7 +521,11 @@ export class RestClient {
    */
   static async isAvailable(cmsUrl, retryOptions) {
     try {
-      const url = `${cmsUrl.replace(/\/+$/, '')}${PLAYER_API}/health`;
+      // In proxy mode, probe the local proxy's forward route instead of the CMS directly (avoids CORS)
+      const isProxy = typeof window !== 'undefined' &&
+        (window.electronAPI?.isElectron || window.location.hostname === 'localhost');
+      const base = isProxy ? '' : cmsUrl.replace(/\/+$/, '');
+      const url = `${base}${PLAYER_API}/health`;
       const response = await fetchWithRetry(url, { method: 'GET' }, retryOptions || { maxRetries: 0 });
       if (!response.ok) return false;
       const data = await response.json();
