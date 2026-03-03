@@ -860,6 +860,23 @@ export class PlayerCore extends EventEmitter {
     }
 
     const { layoutId, layoutFile } = next;
+    const dur = this._layoutDurations.get(layoutFile) || '?';
+
+    // Debug: log incoming layout vs timeline overlay top entries
+    if (this._lastTimeline && this._lastTimeline.length > 0) {
+      const top2 = this._lastTimeline.slice(0, 2).map(e => {
+        const t = e.startTime.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        return `${e.layoutFile}(${e.duration}s@${t})`;
+      });
+      log.debug(`[Timeline] Layout transition: entering ${layoutFile} (${dur}s), overlay top: [${top2.join(', ')}]`);
+
+      // Warn if the entering layout doesn't match the first timeline entry
+      if (this._lastTimeline[0].layoutFile !== layoutFile) {
+        log.warn(`[Timeline] Mismatch: entering ${layoutFile} but overlay expects ${this._lastTimeline[0].layoutFile}`);
+      }
+    } else {
+      log.debug(`[Timeline] Layout transition: entering ${layoutFile} (${dur}s), no timeline data`);
+    }
 
     // Multi-display sync: if this is a sync event and we have a SyncManager,
     // delegate layout transitions to the sync protocol
@@ -1740,9 +1757,9 @@ export class PlayerCore extends EventEmitter {
     const prev = this._layoutDurations.get(file);
     if (prev === duration) return; // No change
 
-    // Never downgrade a known duration — a larger measured value (e.g. from video
-    // metadata) is always more accurate than a smaller XLF/default guess.
-    if (prev && prev > 60 && duration < prev) return;
+    // Only block the 60s default placeholder from overwriting a known real duration.
+    // Legitimate downgrades (e.g. DURATION comment correcting an overestimate) are allowed.
+    if (prev && duration <= 60 && prev > 60) return;
 
     this._layoutDurations.set(file, duration);
     log.debug(`[Timeline] Duration corrected: layout ${file} ${prev || '?'}s → ${duration}s`);

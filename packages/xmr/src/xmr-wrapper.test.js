@@ -9,6 +9,10 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { XmrWrapper } from './xmr-wrapper.js';
 import { createSpy, createMockPlayer, createMockConfig, wait } from './test-utils.js';
 
+// Matches "HH:MM:SS.mmm [Name]" timestamp prefix
+const ts = (name, suffix = '') =>
+  expect.stringMatching(new RegExp(`^\\d{2}:\\d{2}:\\d{2}\\.\\d{3} \\[${name}\\]${suffix}$`));
+
 // Mock the official Xmr class
 vi.mock('@xibosignage/xibo-communication-framework', () => {
   class MockXmr {
@@ -240,7 +244,7 @@ describe('XmrWrapper', () => {
 
         // Logger outputs as separate args: '[XMR]', 'collectNow failed:', Error
         expect(consoleErrorSpy).toHaveBeenCalledWith(
-          '[XMR]',
+          ts('XMR'),
           'collectNow failed:',
           expect.any(Error)
         );
@@ -269,7 +273,7 @@ describe('XmrWrapper', () => {
         await vi.runAllTimersAsync();
 
         expect(consoleErrorSpy).toHaveBeenCalledWith(
-          '[XMR]',
+          ts('XMR'),
           'screenShot failed:',
           expect.any(Error)
         );
@@ -298,7 +302,7 @@ describe('XmrWrapper', () => {
         await vi.runAllTimersAsync();
 
         expect(consoleErrorSpy).toHaveBeenCalledWith(
-          '[XMR]',
+          ts('XMR'),
           'changeLayout failed:',
           expect.any(Error)
         );
@@ -330,7 +334,7 @@ describe('XmrWrapper', () => {
         await vi.runAllTimersAsync();
 
         expect(consoleErrorSpy).toHaveBeenCalledWith(
-          '[XMR]',
+          ts('XMR'),
           'Key rotation failed:',
           expect.any(Error)
         );
@@ -355,7 +359,7 @@ describe('XmrWrapper', () => {
         await vi.runAllTimersAsync();
 
         expect(consoleErrorSpy).toHaveBeenCalledWith(
-          '[XMR]',
+          ts('XMR'),
           'criteriaUpdate failed:',
           expect.any(Error)
         );
@@ -396,7 +400,7 @@ describe('XmrWrapper', () => {
         await vi.runAllTimersAsync();
 
         expect(consoleWarnSpy).toHaveBeenCalledWith(
-          '[XMR]',
+          ts('XMR'),
           'Geo location reporting not implemented in player'
         );
         consoleWarnSpy.mockRestore();
@@ -410,7 +414,7 @@ describe('XmrWrapper', () => {
         await vi.runAllTimersAsync();
 
         expect(consoleWarnSpy).toHaveBeenCalledWith(
-          '[XMR]',
+          ts('XMR'),
           'Geo location request not implemented in player'
         );
         consoleWarnSpy.mockRestore();
@@ -424,7 +428,7 @@ describe('XmrWrapper', () => {
         await vi.runAllTimersAsync();
 
         expect(consoleErrorSpy).toHaveBeenCalledWith(
-          '[XMR]',
+          ts('XMR'),
           'currentGeoLocation failed:',
           expect.any(Error)
         );
@@ -446,7 +450,7 @@ describe('XmrWrapper', () => {
         await vi.runAllTimersAsync();
 
         expect(consoleErrorSpy).toHaveBeenCalledWith(
-          '[XMR]',
+          ts('XMR'),
           'overlayLayout failed:',
           expect.any(Error)
         );
@@ -468,7 +472,7 @@ describe('XmrWrapper', () => {
         await vi.runAllTimersAsync();
 
         expect(consoleErrorSpy).toHaveBeenCalledWith(
-          '[XMR]',
+          ts('XMR'),
           'revertToSchedule failed:',
           expect.any(Error)
         );
@@ -490,7 +494,7 @@ describe('XmrWrapper', () => {
         await vi.runAllTimersAsync();
 
         expect(consoleErrorSpy).toHaveBeenCalledWith(
-          '[XMR]',
+          ts('XMR'),
           'purgeAll failed:',
           expect.any(Error)
         );
@@ -521,7 +525,7 @@ describe('XmrWrapper', () => {
         await vi.runAllTimersAsync();
 
         expect(consoleErrorSpy).toHaveBeenCalledWith(
-          '[XMR]',
+          ts('XMR'),
           'commandAction failed:',
           expect.any(Error)
         );
@@ -554,7 +558,7 @@ describe('XmrWrapper', () => {
         await vi.runAllTimersAsync();
 
         expect(consoleErrorSpy).toHaveBeenCalledWith(
-          '[XMR]',
+          ts('XMR'),
           'triggerWebhook failed:',
           expect.any(Error)
         );
@@ -578,7 +582,7 @@ describe('XmrWrapper', () => {
         await vi.runAllTimersAsync();
 
         expect(consoleErrorSpy).toHaveBeenCalledWith(
-          '[XMR]',
+          ts('XMR'),
           'dataUpdate failed:',
           expect.any(Error)
         );
@@ -664,7 +668,7 @@ describe('XmrWrapper', () => {
       await wrapper.stop();
 
       expect(consoleErrorSpy).toHaveBeenCalledWith(
-        '[XMR]',
+        ts('XMR'),
         'Error stopping:',
         expect.any(Error)
       );
