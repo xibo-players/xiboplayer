@@ -6,7 +6,7 @@ export interface RendererConfig {
 }
 
 export interface RendererOptions {
-  getMediaUrl?: (fileId: number) => Promise<string>;
+  fileIdToSaveAs?: Map<string, string>;
   getWidgetHtml?: (widget: any) => Promise<string | { url: string; fallback?: string }>;
   logLevel?: string;
 }
