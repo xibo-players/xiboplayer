@@ -47,14 +47,14 @@ export class PlayerCore {
   clearCurrentLayout(): void;
   getCurrentLayoutId(): number | null;
   getPendingLayouts(): number[];
-  setPendingLayout(layoutId: number, requiredMediaIds: number[]): void;
+  setPendingLayout(layoutId: number, requiredMediaIds: string[]): void;
   isLayoutOverridden(): boolean;
   changeLayout(layoutId: number | string, options?: { duration?: number; changeMode?: string }): Promise<void>;
   overlayLayout(layoutId: number | string, options?: { duration?: number }): Promise<void>;
   revertToSchedule(): Promise<void>;
   requestLayoutChange(layoutId: number): Promise<void>;
 
-  notifyMediaReady(fileId: number, fileType?: string): void;
+  notifyMediaReady(fileId: number | string, fileType?: string): void;
   notifyLayoutStatus(layoutId: number): Promise<void>;
   checkSchedule(): void;
   isCollecting(): boolean;

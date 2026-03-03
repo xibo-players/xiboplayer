@@ -1647,7 +1647,7 @@ class PwaPlayer {
         log.info('Layout not in cache yet, marking as pending:', layoutId);
         // Mark layout as pending so when it downloads, we'll retry
         // Use layoutId as required file (will trigger on layout file cached)
-        this.core.setPendingLayout(layoutId, [layoutId]);
+        this.core.setPendingLayout(layoutId, [String(layoutId)]);
         this.updateStatus(`Downloading layout ${layoutId}...`);
         return;
       }
