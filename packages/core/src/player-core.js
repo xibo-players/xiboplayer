@@ -1688,15 +1688,18 @@ export class PlayerCore extends EventEmitter {
       .map(([k, v]) => `${k}:${v.ready}:${v.missingKey}`)
       .join('|');
     const pendingEntries = [...this.pendingLayouts.keys()].sort().join(',');
-    const fingerprint = `${this._lastCheckSchedule}|${durationEntries}|${this.currentLayoutId}|${mediaStatusEntries}|${pendingEntries}`;
+    const queuePos = this.schedule._queuePosition || 0;
+    const fingerprint = `${this._lastCheckSchedule}|${durationEntries}|${this.currentLayoutId}|${queuePos}|${mediaStatusEntries}|${pendingEntries}`;
 
     if (fingerprint === this._lastTimelineFingerprint && this._lastTimeline) {
       this.emit('timeline-updated', this._lastTimeline);
       return;
     }
 
-    const timeline = calculateTimeline(this.schedule, this._layoutDurations, {
+    const { queue } = this.schedule.getScheduleQueue(this._layoutDurations, this._queueOptions);
+    const timeline = calculateTimeline(queue, this.schedule._queuePosition, {
       currentLayoutStartedAt: this._lastLayoutChangeTime ? new Date(this._lastLayoutChangeTime) : null,
+      defaultLayout: this.schedule.schedule?.default || null,
     });
     if (timeline.length === 0) return;
 
