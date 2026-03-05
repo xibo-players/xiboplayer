@@ -1,6 +1,6 @@
 # Xibo Player Comparison: xiboplayer SDK vs Upstream
 
-> Generated 2026-03-05. Based on analysis of: xiboplayer SDK (16 packages), PlayerApiV2
+> Generated 2026-03-05. Based on analysis of: xiboplayer SDK (16 packages), PlayerRestApi
 > (CMS custom module), upstream xibo-linux (C++), xibo-dotnetclient (C#/.NET),
 > xibo-layout-renderer (XLR), xibo-interactive-control (XIC), xibo-communication-framework
 > (XMR client), and CMS source (XMDS Soap3→Soap7, Widget/Render, Entity layer).
@@ -22,7 +22,7 @@ Schedule   Cache          Renderer       XMDS
 Manager    Manager        Lite           Client
   ↓         ↓              ↓              ↓
 Criteria   DownloadMgr    LayoutPool     REST + SOAP
-Interrupts Chunks/Barrier Transitions    PlayerApiV2
+Interrupts Chunks/Barrier Transitions    PlayerRestApi
 Overlays   ServiceWorker  Drawers        JWT auth
 ```
 
@@ -75,7 +75,7 @@ Renderer process: XLR library (shared npm module)
 
 | Feature | xiboplayer | .NET (Win) | Linux (C++) | Upstream Electron |
 |---------|:----------:|:----------:|:-----------:|:-----------------:|
-| **CMS Protocol** | REST (PlayerApiV2) + SOAP (auto-detected) | SOAP only | SOAP only | SOAP only |
+| **CMS Protocol** | REST (PlayerRestApi) + SOAP (auto-detected) | SOAP only | SOAP only | SOAP only |
 | **Auth** | JWT Bearer | hardwareKey per call | hardwareKey per call | hardwareKey per call |
 | **Schedule parse** | Server-side JSON | Client-side XML | Client-side XML | Client-side XML |
 | **Layout format** | XLF (XML) | XLF | XLF | XLF |
@@ -110,13 +110,13 @@ Renderer process: XLR library (shared npm module)
 | **Screenshot** | ✅ (Electron native) | ✅ (BitBlt capture) | ✅ (XMDS) | ✅ |
 | **Bandwidth limit** | ✅ (server-side) | ✅ (XMDS) | ✅ (XMDS) | ✅ |
 | **Range downloads** | ✅ (chunked + barrier) | ✅ (XMDS chunks) | ✅ (XMDS chunks) | ❌ |
-| **ETag caching** | ✅ (PlayerApiV2) | ❌ | ❌ | ❌ |
+| **ETag caching** | ✅ (PlayerRestApi) | ❌ | ❌ | ❌ |
 
 ---
 
 ## 3. What We Have That Upstream Doesn't
 
-### 3a. PlayerApiV2 — REST JSON API (1608 lines PHP)
+### 3a. PlayerRestApi — REST JSON API (1608 lines PHP)
 
 Upstream players all use SOAP/XML. Our REST API provides:
 - **JWT auth** — stateless, no per-request CMS lookup
@@ -206,13 +206,13 @@ Legacy .NET-only features. Not worth implementing.
 ### 5a. SOAP Client (xmds-client.js) — MUST KEEP
 
 **Constraint**: xiboplayer must work with any vanilla Xibo CMS, not just our custom
-image with PlayerApiV2. SOAP/XMDS is the universal protocol every CMS speaks.
+image with PlayerRestApi. SOAP/XMDS is the universal protocol every CMS speaks.
 
 **Current state**: We have both:
 - `xmds-client.js` — Full SOAP envelope builder, XML parser (400+ lines)
-- `rest-client.js` — Clean REST/JSON client for PlayerApiV2
+- `rest-client.js` — Clean REST/JSON client for PlayerRestApi
 
-**Recommendation**: Keep both. SOAP is the baseline; REST/PlayerApiV2 is the
+**Recommendation**: Keep both. SOAP is the baseline; REST/PlayerRestApi is the
 optimization layer. ✅ **Done (v0.6.2)**: `ProtocolDetector` auto-probes
 `GET /api/v2/player/health` at startup — uses REST if available, falls back to
 SOAP. Re-probes on connection errors for runtime hot-swap.
@@ -224,7 +224,7 @@ as XML. The client-side parser is required for that path.
 
 **Current state**: Client-side XML schedule parser + server-side ScheduleJsonService.
 
-**Recommendation**: Keep both. When using REST (PlayerApiV2), skip the parser
+**Recommendation**: Keep both. When using REST (PlayerRestApi), skip the parser
 (server returns JSON). When using SOAP, run the parser. The ScheduleManager
 should accept either format transparently.
 
@@ -254,7 +254,7 @@ The `@xiboplayer/proxy` package serves multiple roles:
 3. ContentStore (IndexedDB REST interface)
 4. XIC endpoint routing
 
-With PlayerApiV2 now handling media serving directly (with proper CORS headers), the CORS proxy role may be reducible. Evaluate whether the proxy can be slimmed down.
+With PlayerRestApi now handling media serving directly (with proper CORS headers), the CORS proxy role may be reducible. Evaluate whether the proxy can be slimmed down.
 
 ### 5e. Dual REST + SOAP Support in PlayerCore — DONE (v0.6.3)
 
@@ -297,7 +297,7 @@ CmsClient interface:
 
 ### Should Have (next)
 
-10. **Evaluate proxy slimdown** — audit which proxy roles are redundant with PlayerApiV2 CORS (#201)
+10. **Evaluate proxy slimdown** — audit which proxy roles are redundant with PlayerRestApi CORS (#201)
 
 ### Nice to Have
 
@@ -319,7 +319,7 @@ CmsClient interface:
 | **Cache** | ~1,200 | ~1,400 | ~500 |
 | **Stats** | ~400 | ~1,020 | ~300 |
 | **Actions** | ~200 (in renderer) | ~500 (dedicated) | ~0 |
-| **PlayerApiV2 (PHP)** | 1,608 | N/A | N/A |
+| **PlayerRestApi (PHP)** | 1,608 | N/A | N/A |
 
 Our codebase is **leaner per feature** because:
 - Server-side schedule parsing eliminates client-side complexity
@@ -347,12 +347,12 @@ Our codebase is **leaner per feature** because:
 | proxy | `packages/proxy/src/proxy.js` | ~400 |
 | pwa | `packages/pwa/src/main.ts` | ~500 |
 
-### PlayerApiV2 (CMS)
+### PlayerRestApi (CMS)
 | File | Lines |
 |------|-------|
-| `custom/PlayerApiV2/Controller/PlayerApiV2.php` | 1115 |
-| `custom/PlayerApiV2/Service/ScheduleJsonService.php` | 291 |
-| `custom/PlayerApiV2/Middleware/PlayerAuthMiddleware.php` | 202 |
+| `custom/PlayerRestApi/Controller/PlayerRestApi.php` | 1115 |
+| `custom/PlayerRestApi/Service/ScheduleJsonService.php` | 291 |
+| `custom/PlayerRestApi/Middleware/PlayerAuthMiddleware.php` | 202 |
 | `web/api/v2/player/index.php` | 156 |
 
 ### Upstream (for reference)
