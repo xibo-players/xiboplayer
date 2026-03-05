@@ -2,7 +2,7 @@
  * CMS Protocol Auto-Detector
  *
  * Probes the CMS to determine which communication protocol to use:
- *   - REST/PlayerApiV2 — optimized JSON protocol (custom CMS image)
+ *   - REST/PlayerRestApi — optimized JSON protocol (custom CMS image)
  *   - SOAP/XMDS — universal XML protocol (any vanilla Xibo CMS)
  *
  * Detection logic:
@@ -55,7 +55,7 @@ export class ProtocolDetector {
 
   /**
    * Probe the CMS health endpoint to determine protocol availability.
-   * @returns {Promise<boolean>} true if REST/PlayerApiV2 is available
+   * @returns {Promise<boolean>} true if REST/PlayerRestApi is available
    */
   async probe() {
     const available = await this.RestClient.isAvailable(this.cmsUrl, {
@@ -103,7 +103,7 @@ export class ProtocolDetector {
 
     if (isRest) {
       this.protocol = 'rest';
-      log.info('REST transport detected — using PlayerApiV2');
+      log.info('REST transport detected — using PlayerRestApi');
       const client = new this.RestClient(config);
       assertCmsClient(client, 'RestClient');
       return { client, protocol: 'rest' };
