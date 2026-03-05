@@ -181,11 +181,17 @@ export class PlayerCore extends EventEmitter {
       const tx = db.transaction(OFFLINE_STORE, 'readonly');
       const store = tx.objectStore(OFFLINE_STORE);
 
-      const [schedule, settings, requiredFiles] = await Promise.all([
+      const [schedule, settings, requiredFiles, durations] = await Promise.all([
         new Promise(r => { const req = store.get('schedule'); req.onsuccess = () => r(req.result ?? null); req.onerror = () => r(null); }),
         new Promise(r => { const req = store.get('settings'); req.onsuccess = () => r(req.result ?? null); req.onerror = () => r(null); }),
         new Promise(r => { const req = store.get('requiredFiles'); req.onsuccess = () => r(req.result ?? null); req.onerror = () => r(null); }),
+        new Promise(r => { const req = store.get('durations'); req.onsuccess = () => r(req.result ?? null); req.onerror = () => r(null); }),
       ]);
+
+      if (Array.isArray(durations) && durations.length > 0) {
+        for (const [k, v] of durations) this._layoutDurations.set(k, v);
+        log.info(`[Timeline] Restored ${durations.length} cached durations from IDB`);
+      }
 
       this._offlineCache = { schedule, settings, requiredFiles };
       db.close();
@@ -1665,6 +1671,7 @@ export class PlayerCore extends EventEmitter {
     }
     if (parsed > 0) {
       log.info(`[Timeline] Parsed durations for ${parsed} layouts`);
+      this._offlineSave('durations', [...this._layoutDurations.entries()]);
     }
   }
 
@@ -1781,6 +1788,7 @@ export class PlayerCore extends EventEmitter {
     this._timelineRecalcTimer = setTimeout(() => {
       this._timelineRecalcTimer = null;
       this.logUpcomingTimeline();
+      this._offlineSave('durations', [...this._layoutDurations.entries()]);
     }, 500);
   }
 
