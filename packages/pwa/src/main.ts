@@ -763,16 +763,26 @@ class PwaPlayer {
     });
 
     // Native command execution (#202) — shell commands delegated by PlayerCore
+    // Electron: use IPC (in-process, faster). Chromium/other: HTTP to proxy server.
     this.core.on('execute-native-command', async (data: any) => {
+      let result;
       if ((window as any).electronAPI?.executeShellCommand) {
-        const result = await (window as any).electronAPI.executeShellCommand({
+        result = await (window as any).electronAPI.executeShellCommand({
           commandString: data.commandString,
         });
-        this.core.emit('command-result', { code: data.code, ...result });
       } else {
-        log.warn('Native command not supported on this platform:', data.code);
-        this.core.emit('command-result', { code: data.code, success: false, reason: 'Platform does not support native commands' });
+        try {
+          const resp = await fetch('/shell-command', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ commandString: data.commandString }),
+          });
+          result = await resp.json();
+        } catch (err: any) {
+          result = { success: false, reason: err.message };
+        }
       }
+      this.core.emit('command-result', { code: data.code, ...result });
     });
 
     // Display settings events

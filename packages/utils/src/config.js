@@ -589,7 +589,7 @@ export const config = new Config();
 const PLATFORM_KEYS = {
   kioskMode:          ['electron', 'chromium'],
   autoLaunch:         ['electron'],
-  allowShellCommands: ['electron'],
+  allowShellCommands: ['electron', 'chromium'],
   browser:            ['chromium'],
   extraBrowserFlags:  ['chromium'],
 };
