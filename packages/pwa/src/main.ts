@@ -60,7 +60,8 @@ class PwaPlayer {
   private preparingLayoutId: number | null = null; // Guard against concurrent prepareAndRenderLayout calls
   private _pendingRetryLayoutId: number | null = null; // Queued retry when check-pending-layout arrives during preparation
   private _screenshotInterval: any = null;
-  private _screenshotMethod: 'electron' | 'native' | 'html2canvas' | null = null;
+  private _screenshotMethod: 'electron' | 'displayMedia' | 'html2canvas' | null = null;
+  private _html2canvasMod: any = null;
   private _screenshotInFlight = false; // Concurrency guard — one capture at a time
   private _wakeLock: any = null; // Screen Wake Lock sentinel
   private syncManager: any = null; // Multi-display sync coordinator
@@ -2247,12 +2248,11 @@ class PwaPlayer {
    *  0. Electron IPC — webContents.capturePage() via preload bridge.
    *     Pixel-perfect, captures video/WebGL/composited layers, zero DOM cost.
    *     Only available when running inside the Electron shell.
-   *  1. getDisplayMedia() — native pixel capture, works on Chrome with
-   *     --auto-select-desktop-capture-source flag (kiosk). Pixel-perfect,
-   *     includes video, composited layers, everything the GPU renders.
-   *  2. html2canvas — fallback for Firefox or Chrome without the flag.
-   *     Re-renders the DOM to canvas; needs a video overlay workaround
-   *     because html2canvas can't read <video> pixels.
+   *  1. getDisplayMedia() — native pixel capture via screen sharing API.
+   *     Pixel-perfect, zero DOM manipulation. Chromium kiosk auto-approves
+   *     via --auto-select-desktop-capture-source flag.
+   *  2. Direct canvas drawing — fallback that draws img/video/canvas elements
+   *     directly. Text-only widgets (clocks, tickers) won't appear.
    *
    * The first successful method is cached for subsequent calls.
    */
@@ -2282,9 +2282,24 @@ class PwaPlayer {
           log.debug('Electron screenshot not ready yet, will retry next interval');
           return;
         }
+      } else if (this._screenshotMethod === 'displayMedia' ||
+                 (this._screenshotMethod === null && typeof navigator.mediaDevices?.getDisplayMedia === 'function')) {
+        // Try getDisplayMedia — pixel-perfect screen capture, zero DOM cost.
+        // Chromium kiosk auto-approves via --auto-accept-this-tab-capture.
+        try {
+          base64 = await this.captureDisplayMedia();
+          this._screenshotMethod = 'displayMedia';
+        } catch (e: any) {
+          log.warn('getDisplayMedia failed, falling back to html2canvas:', e.message || e);
+          this._screenshotMethod = null;
+          base64 = await this.captureHtml2CanvasIsolated();
+          this._screenshotMethod = 'html2canvas';
+        }
       } else {
+        // Tier 3: html2canvas hybrid (Firefox, other browsers)
+        // Direct draw for img/video/canvas + per-iframe html2canvas for HTML widgets
         this._screenshotMethod = 'html2canvas';
-        base64 = await this.captureHtml2Canvas();
+        base64 = await this.captureHtml2CanvasIsolated();
       }
 
       const success = await this.xmds.submitScreenShot(base64);
@@ -2301,18 +2316,49 @@ class PwaPlayer {
   }
 
   /**
-   * Capture screenshot by composing a canvas from visible elements.
-   * Draws images, video, canvas elements directly. For iframes, draws
-   * their internal canvas/img elements (PDF pages, charts, images).
-   * Text-only widgets (clocks, tickers) won't appear in screenshots.
+   * Capture screenshot via getDisplayMedia (screen sharing API).
+   * Pixel-perfect, captures everything the GPU renders including video,
+   * WebGL, composited layers, and all widget content.
+   * Chromium kiosk auto-approves via --auto-select-desktop-capture-source.
    */
-  private async captureHtml2Canvas(): Promise<string> {
+  private async captureDisplayMedia(): Promise<string> {
+    const stream = await navigator.mediaDevices.getDisplayMedia({
+      video: true,
+      audio: false,
+      preferCurrentTab: true,
+    } as any);
+
+    try {
+      const track = stream.getVideoTracks()[0];
+      // @ts-ignore — ImageCapture is available in Chromium
+      const imageCapture = new (window as any).ImageCapture(track);
+      const bitmap = await imageCapture.grabFrame();
+
+      const canvas = document.createElement('canvas');
+      canvas.width = bitmap.width;
+      canvas.height = bitmap.height;
+      const ctx = canvas.getContext('2d')!;
+      ctx.drawImage(bitmap, 0, 0);
+      bitmap.close();
+
+      return canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
+    } finally {
+      stream.getTracks().forEach(t => t.stop());
+    }
+  }
+
+  /**
+   * Capture screenshot via html2canvas hybrid approach.
+   * Draws images/video/canvas directly, uses per-iframe html2canvas for
+   * HTML widgets (clocks, tickers). CSS contain: strict on capture divs
+   * prevents ResizeObserver glitches.
+   */
+  private async captureHtml2CanvasIsolated(): Promise<string> {
     const canvas = document.createElement('canvas');
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
     const ctx = canvas.getContext('2d')!;
 
-    // Background: black (matches player default)
     ctx.fillStyle = '#000';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
@@ -2321,118 +2367,227 @@ class PwaPlayer {
       return canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
     }
 
-    // Draw container background (layout bgcolor + background image)
-    const containerRect = container.getBoundingClientRect();
-    const containerStyle = getComputedStyle(container);
-    const bgColor = containerStyle.backgroundColor;
-    if (bgColor && bgColor !== 'transparent' && bgColor !== 'rgba(0, 0, 0, 0)') {
-      ctx.fillStyle = bgColor;
-      ctx.fillRect(containerRect.left, containerRect.top, containerRect.width, containerRect.height);
+    // Lazy-load html2canvas
+    if (!this._html2canvasMod) {
+      this._html2canvasMod = (await import('html2canvas')).default;
     }
-    // Background image (blob URL from layout XLF)
-    const bgImage = containerStyle.backgroundImage;
-    if (bgImage && bgImage !== 'none') {
-      const urlMatch = bgImage.match(/url\(["']?(.*?)["']?\)/);
-      if (urlMatch) {
-        try {
-          const bgImg = new Image();
-          bgImg.crossOrigin = 'anonymous';
-          await new Promise<void>((resolve) => {
-            bgImg.onload = () => resolve();
-            bgImg.onerror = () => resolve();
-            setTimeout(() => resolve(), 2000);
-            bgImg.src = urlMatch[1];
-          });
-          if (bgImg.naturalWidth) {
-            ctx.drawImage(bgImg, containerRect.left, containerRect.top, containerRect.width, containerRect.height);
-          }
-        } catch (_) { /* skip failed background */ }
+
+    // Suppress resize during capture
+    if (this.renderer) {
+      this.renderer._resizeSuppressed = true;
+    }
+
+    // Protect the player container from external DOM changes.
+    // html2canvas appends/removes elements to document.body which can trigger
+    // Chromium reflow affecting the player. contain:strict on the player itself
+    // makes it immune to any layout changes outside it.
+    const prevContain = container.style.contain || '';
+    container.style.contain = 'strict';
+
+    try {
+      // Draw container background
+      const containerRect = container.getBoundingClientRect();
+      const containerStyle = getComputedStyle(container);
+      const bgColor = containerStyle.backgroundColor;
+      if (bgColor && bgColor !== 'transparent' && bgColor !== 'rgba(0, 0, 0, 0)') {
+        ctx.fillStyle = bgColor;
+        ctx.fillRect(containerRect.left, containerRect.top, containerRect.width, containerRect.height);
       }
-    }
-
-    // Draw each visible widget element onto the canvas
-    const elements = container.querySelectorAll('img, video, iframe, canvas');
-    let drawn = 0;
-
-    for (const el of elements) {
-      const htmlEl = el as HTMLElement;
-      if (htmlEl.style.visibility === 'hidden') continue;
-      if (htmlEl.style.display === 'none') continue;
-      const rect = el.getBoundingClientRect();
-      if (rect.width === 0 || rect.height === 0) continue;
-
-      try {
-        if (el instanceof HTMLImageElement) {
-          if (!el.complete || !el.naturalWidth) continue;
-          // Emulate object-fit: contain — draw at correct aspect ratio within bounding rect
-          const fit = getComputedStyle(el).objectFit;
-          if (fit === 'contain' && el.naturalWidth && el.naturalHeight) {
-            const d = this.containedRect(el.naturalWidth, el.naturalHeight, rect);
-            ctx.drawImage(el, d.x, d.y, d.w, d.h);
-          } else {
-            ctx.drawImage(el, rect.left, rect.top, rect.width, rect.height);
-          }
-          drawn++;
-        } else if (el instanceof HTMLVideoElement) {
-          if (el.readyState < 2) continue;
-          // Emulate object-fit: contain — draw at correct aspect ratio within bounding rect
-          const fit = getComputedStyle(el).objectFit;
-          if (fit === 'contain' && el.videoWidth && el.videoHeight) {
-            const d = this.containedRect(el.videoWidth, el.videoHeight, rect);
-            ctx.drawImage(el, d.x, d.y, d.w, d.h);
-          } else {
-            ctx.drawImage(el, rect.left, rect.top, rect.width, rect.height);
-          }
-          drawn++;
-        } else if (el instanceof HTMLCanvasElement) {
-          ctx.drawImage(el, rect.left, rect.top, rect.width, rect.height);
-          drawn++;
-        } else if (el instanceof HTMLIFrameElement) {
-          // Capture iframe content without html2canvas DOM cloning.
-          // html2canvas cloning causes side effects (blob URL re-fetches,
-          // resize glitches, visual rectangles). Instead, draw any
-          // drawable elements (canvas, img, video) directly from the iframe.
-          const iDoc = el.contentDocument;
-          if (!iDoc?.body) continue;
-
-          // Draw canvas elements (PDF pages, charts, etc.)
-          for (const c of iDoc.querySelectorAll('canvas')) {
-            const cr = c.getBoundingClientRect();
-            if (cr.width === 0 || cr.height === 0) continue;
-            try {
-              // Map iframe-relative coords to screen coords
-              const iframeRect = el.getBoundingClientRect();
-              ctx.drawImage(c, iframeRect.left + cr.left, iframeRect.top + cr.top, cr.width, cr.height);
-              drawn++;
-            } catch (_) { /* tainted canvas */ }
-          }
-
-          // Draw images inside the iframe
-          for (const img of iDoc.querySelectorAll('img') as NodeListOf<HTMLImageElement>) {
-            if (!img.complete || !img.naturalWidth) continue;
-            const ir = img.getBoundingClientRect();
-            if (ir.width === 0 || ir.height === 0) continue;
-            try {
-              const iframeRect = el.getBoundingClientRect();
-              const fit = iDoc.defaultView?.getComputedStyle(img)?.objectFit;
-              if (fit === 'contain') {
-                const d = this.containedRect(img.naturalWidth, img.naturalHeight,
-                  new DOMRect(iframeRect.left + ir.left, iframeRect.top + ir.top, ir.width, ir.height));
-                ctx.drawImage(img, d.x, d.y, d.w, d.h);
-              } else {
-                ctx.drawImage(img, iframeRect.left + ir.left, iframeRect.top + ir.top, ir.width, ir.height);
-              }
-              drawn++;
-            } catch (_) { /* tainted */ }
-          }
+      const bgImage = containerStyle.backgroundImage;
+      if (bgImage && bgImage !== 'none') {
+        const urlMatch = bgImage.match(/url\(["']?(.*?)["']?\)/);
+        if (urlMatch) {
+          try {
+            const bgImg = new Image();
+            bgImg.crossOrigin = 'anonymous';
+            await new Promise<void>((resolve) => {
+              bgImg.onload = () => resolve();
+              bgImg.onerror = () => resolve();
+              setTimeout(() => resolve(), 2000);
+              bgImg.src = urlMatch[1];
+            });
+            if (bgImg.naturalWidth) {
+              ctx.drawImage(bgImg, containerRect.left, containerRect.top, containerRect.width, containerRect.height);
+            }
+          } catch (_) { /* skip failed background */ }
         }
-      } catch (e: any) {
-        log.warn('Screenshot: failed to draw element', el.tagName, e);
+      }
+
+      // Draw each visible widget element
+      const elements = container.querySelectorAll('img, video, iframe, canvas');
+      let drawn = 0;
+
+      for (const el of elements) {
+        const htmlEl = el as HTMLElement;
+        if (htmlEl.style.visibility === 'hidden') continue;
+        if (htmlEl.style.display === 'none') continue;
+        const rect = el.getBoundingClientRect();
+        if (rect.width === 0 || rect.height === 0) continue;
+
+        try {
+          if (el instanceof HTMLImageElement) {
+            if (!el.complete || !el.naturalWidth) continue;
+            const fit = getComputedStyle(el).objectFit;
+            if (fit === 'contain' && el.naturalWidth && el.naturalHeight) {
+              const d = this.containedRect(el.naturalWidth, el.naturalHeight, rect);
+              ctx.drawImage(el, d.x, d.y, d.w, d.h);
+            } else {
+              ctx.drawImage(el, rect.left, rect.top, rect.width, rect.height);
+            }
+            drawn++;
+          } else if (el instanceof HTMLVideoElement) {
+            if (el.readyState < 2) continue;
+            const fit = getComputedStyle(el).objectFit;
+            if (fit === 'contain' && el.videoWidth && el.videoHeight) {
+              const d = this.containedRect(el.videoWidth, el.videoHeight, rect);
+              ctx.drawImage(el, d.x, d.y, d.w, d.h);
+            } else {
+              ctx.drawImage(el, rect.left, rect.top, rect.width, rect.height);
+            }
+            drawn++;
+          } else if (el instanceof HTMLCanvasElement) {
+            ctx.drawImage(el, rect.left, rect.top, rect.width, rect.height);
+            drawn++;
+          } else if (el instanceof HTMLIFrameElement) {
+            const iDoc = el.contentDocument;
+            if (!iDoc?.body) continue;
+
+            // Clone iframe DOM into main document for html2canvas rendering.
+            // contain: strict prevents layout effects on the live player.
+            const captureDiv = document.createElement('div');
+            captureDiv.style.cssText = `position:fixed;left:-9999px;top:0;width:${rect.width}px;height:${rect.height}px;overflow:hidden;`;
+
+            // Clone stylesheets with absolute URLs
+            const linkPromises: Promise<void>[] = [];
+            for (const styleEl of iDoc.querySelectorAll('style')) {
+              captureDiv.appendChild(styleEl.cloneNode(true));
+            }
+            for (const linkEl of iDoc.querySelectorAll('link[rel="stylesheet"]')) {
+              const newLink = document.createElement('link');
+              newLink.rel = 'stylesheet';
+              newLink.href = new URL(linkEl.getAttribute('href') || '', iDoc.baseURI).href;
+              captureDiv.appendChild(newLink);
+              linkPromises.push(new Promise<void>(resolve => {
+                newLink.onload = () => resolve();
+                newLink.onerror = () => resolve();
+              }));
+            }
+
+            // Clone body content with absolute img URLs
+            const clonedBody = iDoc.body.cloneNode(true) as HTMLElement;
+            for (const img of clonedBody.querySelectorAll('img[src]')) {
+              const src = img.getAttribute('src') || '';
+              if (src && !src.startsWith('http') && !src.startsWith('data:') && !src.startsWith('blob:')) {
+                img.setAttribute('src', new URL(src, iDoc.baseURI).href);
+              }
+            }
+            captureDiv.appendChild(clonedBody);
+            document.body.appendChild(captureDiv);
+
+            // Collect natural dimensions from original iframe images
+            const origImgs = iDoc.querySelectorAll('img');
+            const imgNaturals = new Map<string, { nw: number; nh: number }>();
+            origImgs.forEach((img, i) => {
+              if (img.naturalWidth && img.naturalHeight) {
+                imgNaturals.set(String(i), { nw: img.naturalWidth, nh: img.naturalHeight });
+              }
+            });
+
+            if (linkPromises.length > 0) {
+              await Promise.race([
+                Promise.all(linkPromises),
+                new Promise(r => setTimeout(r, 500)),
+              ]);
+            }
+
+            const iframeCanvas = await this._html2canvasMod(captureDiv, {
+              useCORS: true, allowTaint: true, logging: false,
+              backgroundColor: null,
+              width: rect.width, height: rect.height,
+              onclone: (clonedDoc: Document) => {
+                // Force visible — CSS animations reset to opacity:0 in cloned DOM
+                const s = clonedDoc.createElement('style');
+                s.textContent = '*, *::before, *::after { animation: none !important; transition: none !important; opacity: 1 !important; }';
+                clonedDoc.head.appendChild(s);
+
+                // Fix object-fit: contain sizing for html2canvas
+                const clonedImgs = clonedDoc.querySelectorAll('img');
+                clonedImgs.forEach((cImg, i) => {
+                  const style = clonedDoc.defaultView?.getComputedStyle(cImg);
+                  if (!style || style.objectFit !== 'contain') return;
+                  const dims = imgNaturals.get(String(i));
+                  if (!dims) return;
+
+                  const cW = cImg.clientWidth || parseFloat(style.width) || 0;
+                  const cH = cImg.clientHeight || parseFloat(style.height) || 0;
+                  if (!cW || !cH) return;
+
+                  const srcAspect = dims.nw / dims.nh;
+                  const dstAspect = cW / cH;
+                  let drawW: number, drawH: number;
+                  if (srcAspect > dstAspect) {
+                    drawW = cW; drawH = cW / srcAspect;
+                  } else {
+                    drawH = cH; drawW = cH * srcAspect;
+                  }
+
+                  const wrapper = clonedDoc.createElement('div');
+                  wrapper.style.cssText = `width:${cW}px;height:${cH}px;display:flex;align-items:center;justify-content:center;overflow:hidden;`;
+                  cImg.style.objectFit = 'fill';
+                  cImg.style.width = `${drawW}px`;
+                  cImg.style.height = `${drawH}px`;
+                  cImg.parentNode?.insertBefore(wrapper, cImg);
+                  wrapper.appendChild(cImg);
+                });
+              },
+            });
+
+            document.body.removeChild(captureDiv);
+            ctx.drawImage(iframeCanvas, rect.left, rect.top, rect.width, rect.height);
+
+            // Draw videos directly — html2canvas can't render <video> elements.
+            // Draw on top of the html2canvas result so video overlays black placeholder.
+            const iframeRect = el.getBoundingClientRect();
+            for (const vid of iDoc.querySelectorAll('video') as NodeListOf<HTMLVideoElement>) {
+              if (vid.readyState < 2) continue;
+              const vr = vid.getBoundingClientRect();
+              if (vr.width === 0 || vr.height === 0) continue;
+              try {
+                const fit = iDoc.defaultView?.getComputedStyle(vid)?.objectFit;
+                if (fit === 'contain' && vid.videoWidth && vid.videoHeight) {
+                  const d = this.containedRect(vid.videoWidth, vid.videoHeight,
+                    new DOMRect(iframeRect.left + vr.left, iframeRect.top + vr.top, vr.width, vr.height));
+                  ctx.drawImage(vid, d.x, d.y, d.w, d.h);
+                } else {
+                  ctx.drawImage(vid, iframeRect.left + vr.left, iframeRect.top + vr.top, vr.width, vr.height);
+                }
+              } catch (_) { /* tainted video */ }
+            }
+
+            // Draw canvas elements directly (PDF pages, charts rendered in iframe)
+            for (const c of iDoc.querySelectorAll('canvas') as NodeListOf<HTMLCanvasElement>) {
+              const cr = c.getBoundingClientRect();
+              if (cr.width === 0 || cr.height === 0) continue;
+              try {
+                ctx.drawImage(c, iframeRect.left + cr.left, iframeRect.top + cr.top, cr.width, cr.height);
+              } catch (_) { /* tainted canvas */ }
+            }
+
+            drawn++;
+          }
+        } catch (e: any) {
+          log.warn('Screenshot: failed to draw element', el.tagName, e);
+        }
+      }
+
+      log.debug(`Screenshot: composed ${drawn}/${elements.length} elements`);
+      return canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
+    } finally {
+      container.style.contain = prevContain;
+      if (this.renderer) {
+        this.renderer._resizeSuppressed = false;
       }
     }
-
-    log.debug(`Screenshot: composed ${drawn}/${elements.length} elements`);
-    return canvas.toDataURL('image/jpeg', 0.8).split(',')[1];
   }
 
   /**
@@ -2468,6 +2623,11 @@ class PwaPlayer {
   private startScreenshotInterval() {
     const intervalSecs = this.displaySettings?.getSetting('screenshotInterval') || 0;
     if (!intervalSecs || intervalSecs <= 0) return;
+
+    // Pre-load html2canvas for non-Electron/non-Chromium browsers
+    if (!this._html2canvasMod && !(window as any).electronAPI) {
+      import('html2canvas').then(m => { this._html2canvasMod = m.default; });
+    }
 
     const intervalMs = intervalSecs * 1000;
     log.info(`Starting periodic screenshots every ${intervalSecs}s`);
