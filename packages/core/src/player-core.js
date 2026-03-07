@@ -1798,6 +1798,12 @@ export class PlayerCore extends EventEmitter {
    * @param {number} duration - Actual duration in seconds
    */
   recordLayoutDuration(file, duration) {
+    // Normalize: store under both "492" and "492.xlf" forms so that
+    // calculateTimeline (which looks up "492.xlf") and other callers
+    // (which use "492") always find the corrected value.
+    const id = String(file).replace('.xlf', '');
+    const xlfKey = id + '.xlf';
+
     const prev = this._layoutDurations.get(file);
     if (prev === duration) return; // No change
 
@@ -1805,7 +1811,8 @@ export class PlayerCore extends EventEmitter {
     // Legitimate downgrades (e.g. DURATION comment correcting an overestimate) are allowed.
     if (prev && duration <= 60 && prev > 60) return;
 
-    this._layoutDurations.set(file, duration);
+    this._layoutDurations.set(id, duration);
+    this._layoutDurations.set(xlfKey, duration);
     log.debug(`[Timeline] Duration corrected: layout ${file} ${prev || '?'}s → ${duration}s`);
 
     // Debounce timeline recalculation — multiple video loadedmetadata events
