@@ -256,7 +256,9 @@ export class DisplaySettings extends EventEmitter {
    */
   isInDownloadWindow() {
     // If no download window configured, always allow
-    if (!this.settings.downloadStartWindow || !this.settings.downloadEndWindow) {
+    // CMS sends ":" when unconfigured, treat as empty
+    if (!this.settings.downloadStartWindow || !this.settings.downloadEndWindow ||
+        this.settings.downloadStartWindow === ':' || this.settings.downloadEndWindow === ':') {
       return true;
     }
 
@@ -311,7 +313,8 @@ export class DisplaySettings extends EventEmitter {
    * @returns {Date|null} Next window start, or null if always allowed
    */
   getNextDownloadWindow() {
-    if (!this.settings.downloadStartWindow || !this.settings.downloadEndWindow) {
+    if (!this.settings.downloadStartWindow || !this.settings.downloadEndWindow ||
+        this.settings.downloadStartWindow === ':' || this.settings.downloadEndWindow === ':') {
       return null;
     }
 
