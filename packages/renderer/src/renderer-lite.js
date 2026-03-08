@@ -2622,18 +2622,27 @@ export class RendererLite {
       await cyclePage();
 
       // Pause: stop page cycling (called by _hideWidget during region cycling / replay)
+      // Returns a promise that resolves when the active render is fully cancelled.
+      let cancelPromise = null;
       container._pdfCleanup = () => {
         stopped = true;
         if (cycleTimer) clearTimeout(cycleTimer);
         cycleTimer = null;
         if (activeRenderTask) {
-          activeRenderTask.cancel();
+          const task = activeRenderTask;
           activeRenderTask = null;
+          task.cancel();
+          cancelPromise = task.promise.catch(() => {}); // wait for cancellation to propagate
         }
       };
 
       // Resume: restart page cycling from page 1 (called by _showWidget on reuse)
-      container._pdfResume = () => {
+      // Always cleanup first — the PDF may still be rendering from preload
+      // (pre-create starts cyclePage immediately, but the widget isn't "shown"
+      // until the layout swap, so _pdfCleanup was never called).
+      container._pdfResume = async () => {
+        container._pdfCleanup(); // stop any in-flight render
+        if (cancelPromise) { await cancelPromise; cancelPromise = null; }
         stopped = false;
         currentPage = 1;
         cyclePage();
