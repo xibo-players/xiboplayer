@@ -469,7 +469,7 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, confi
         logFile.warn(`CMS ${response.status} for ${storeKey}`);
         // Serve stale cached data if CMS is unavailable
         if (store) {
-          const staleInfo = await store.stat(storeKey);
+          const staleInfo = store.getMetadata(storeKey);
           if (staleInfo) {
             const ageMin = Math.round((Date.now() - (staleInfo.metadata?.createdAt || 0)) / 60000);
             logFile.warn(`Serving stale cache for ${storeKey} (${ageMin}min old, CMS returned ${response.status})`);
@@ -580,7 +580,7 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, confi
       logFile.warn(`CMS fetch failed: ${storeKey} — ${error.message}`);
       // Serve stale cached data if CMS is unreachable
       if (store && !res.headersSent) {
-        const staleInfo = await store.stat(storeKey);
+        const staleInfo = store.getMetadata(storeKey);
         if (staleInfo) {
           const ageMin = Math.round((Date.now() - (staleInfo.metadata?.createdAt || 0)) / 60000);
           logFile.warn(`Serving stale cache for ${storeKey} (${ageMin}min old, CMS unreachable)`);
