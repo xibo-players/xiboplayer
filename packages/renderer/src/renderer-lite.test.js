@@ -2698,4 +2698,223 @@ describe('RendererLite', () => {
       vi.useRealTimers();
     });
   });
+
+  describe('Widget Lifecycle Symmetry', () => {
+    it('should emit symmetric widgetStart/widgetEnd for single-widget layout', async () => {
+      vi.useFakeTimers();
+      const starts = [];
+      const ends = [];
+      renderer.on('widgetStart', (e) => starts.push(e));
+      renderer.on('widgetEnd', (e) => ends.push(e));
+
+      const xlf = `
+        <layout width="1920" height="1080" duration="10">
+          <region id="r1" width="1920" height="1080" top="0" left="0">
+            <media id="m1" type="image" duration="10" fileId="1">
+              <options><uri>test.png</uri></options>
+            </media>
+          </region>
+        </layout>
+      `;
+
+      const renderPromise = renderer.renderLayout(xlf, 1);
+      await vi.advanceTimersByTimeAsync(2000);
+
+      expect(starts).toHaveLength(1);
+      expect(ends).toHaveLength(0);
+
+      renderer.stopCurrentLayout();
+
+      expect(ends).toHaveLength(1);
+      expect(ends[0].widgetId).toBe(starts[0].widgetId);
+      expect(renderer._startedWidgets.size).toBe(0);
+
+      await vi.advanceTimersByTimeAsync(60000);
+      await renderPromise;
+      vi.useRealTimers();
+    });
+
+    it('should stop ALL widgets in canvas region on teardown', async () => {
+      vi.useFakeTimers();
+      const starts = [];
+      const ends = [];
+      renderer.on('widgetStart', (e) => starts.push(e));
+      renderer.on('widgetEnd', (e) => ends.push(e));
+
+      const xlf = `
+        <layout width="1920" height="1080" duration="30">
+          <region id="r1" type="canvas" width="1920" height="1080" top="0" left="0">
+            <media id="m1" type="image" duration="10" fileId="1">
+              <options><uri>img1.png</uri></options>
+            </media>
+            <media id="m2" type="image" duration="10" fileId="2">
+              <options><uri>img2.png</uri></options>
+            </media>
+            <media id="m3" type="image" duration="10" fileId="3">
+              <options><uri>img3.png</uri></options>
+            </media>
+          </region>
+        </layout>
+      `;
+
+      const renderPromise = renderer.renderLayout(xlf, 1);
+      await vi.advanceTimersByTimeAsync(2000);
+
+      expect(starts).toHaveLength(3);
+      expect(ends).toHaveLength(0);
+
+      renderer.stopCurrentLayout();
+
+      expect(ends).toHaveLength(3);
+      expect(renderer._startedWidgets.size).toBe(0);
+
+      await vi.advanceTimersByTimeAsync(60000);
+      await renderPromise;
+      vi.useRealTimers();
+    });
+
+    it('should stop widgets before restarting on same-layout replay', async () => {
+      vi.useFakeTimers();
+      const events = [];
+      renderer.on('widgetStart', (e) => events.push({ type: 'start', id: e.widgetId }));
+      renderer.on('widgetEnd', (e) => events.push({ type: 'end', id: e.widgetId }));
+
+      const xlf = `
+        <layout width="1920" height="1080" duration="10">
+          <region id="r1" width="1920" height="1080" top="0" left="0">
+            <media id="m1" type="image" duration="10" fileId="1">
+              <options><uri>test.png</uri></options>
+            </media>
+          </region>
+        </layout>
+      `;
+
+      // First render
+      const p1 = renderer.renderLayout(xlf, 1);
+      await vi.advanceTimersByTimeAsync(2000);
+      expect(events).toHaveLength(1); // 1 start
+
+      // Same-layout replay
+      events.length = 0;
+      const p2 = renderer.renderLayout(xlf, 1);
+      await vi.advanceTimersByTimeAsync(2000);
+
+      // widgetEnd should fire before widgetStart for the replay
+      expect(events.length).toBeGreaterThanOrEqual(2);
+      const endIdx = events.findIndex(e => e.type === 'end');
+      const startIdx = events.findIndex(e => e.type === 'start');
+      expect(endIdx).toBeLessThan(startIdx);
+      expect(renderer._startedWidgets.size).toBe(1);
+
+      await vi.advanceTimersByTimeAsync(60000);
+      await p1;
+      await p2;
+      vi.useRealTimers();
+    });
+
+    it('should be idempotent on double stopWidget calls', async () => {
+      vi.useFakeTimers();
+      const ends = [];
+      renderer.on('widgetEnd', (e) => ends.push(e));
+
+      const xlf = `
+        <layout width="1920" height="1080" duration="10">
+          <region id="r1" width="1920" height="1080" top="0" left="0">
+            <media id="m1" type="image" duration="10" fileId="1">
+              <options><uri>test.png</uri></options>
+            </media>
+          </region>
+        </layout>
+      `;
+
+      const renderPromise = renderer.renderLayout(xlf, 1);
+      await vi.advanceTimersByTimeAsync(2000);
+
+      // Stop twice
+      await renderer.stopWidget('r1', 0);
+      await renderer.stopWidget('r1', 0);
+
+      expect(ends).toHaveLength(1); // only 1 widgetEnd, not 2
+
+      await vi.advanceTimersByTimeAsync(60000);
+      await renderPromise;
+      vi.useRealTimers();
+    });
+
+    it('should not double-emit widgetEnd on layout timer + stopCurrentLayout', async () => {
+      vi.useFakeTimers();
+      const ends = [];
+      renderer.on('widgetEnd', (e) => ends.push(e));
+
+      const xlf = `
+        <layout width="1920" height="1080" duration="5">
+          <region id="r1" width="1920" height="1080" top="0" left="0">
+            <media id="m1" type="image" duration="5" fileId="1">
+              <options><uri>test.png</uri></options>
+            </media>
+          </region>
+        </layout>
+      `;
+
+      const renderPromise = renderer.renderLayout(xlf, 1);
+      await vi.advanceTimersByTimeAsync(2000);
+
+      // Advance past layout duration (layout timer fires, which triggers stopCurrentLayout internally via layoutEnd)
+      await vi.advanceTimersByTimeAsync(5000);
+
+      // Now explicitly stop (as renderLayout(next) would do)
+      renderer.stopCurrentLayout();
+
+      // Should only have 1 widgetEnd total, not 2
+      expect(ends).toHaveLength(1);
+
+      await vi.advanceTimersByTimeAsync(60000);
+      await renderPromise;
+      vi.useRealTimers();
+    });
+
+    it('should balance starts and ends during multi-widget cycling', async () => {
+      vi.useFakeTimers();
+      let startCount = 0;
+      let endCount = 0;
+      renderer.on('widgetStart', () => startCount++);
+      renderer.on('widgetEnd', () => endCount++);
+
+      const xlf = `
+        <layout width="1920" height="1080" duration="30">
+          <region id="r1" width="1920" height="1080" top="0" left="0">
+            <media id="m1" type="image" duration="2" fileId="1">
+              <options><uri>img1.png</uri></options>
+            </media>
+            <media id="m2" type="image" duration="2" fileId="2">
+              <options><uri>img2.png</uri></options>
+            </media>
+            <media id="m3" type="image" duration="2" fileId="3">
+              <options><uri>img3.png</uri></options>
+            </media>
+          </region>
+        </layout>
+      `;
+
+      const renderPromise = renderer.renderLayout(xlf, 1);
+      await vi.advanceTimersByTimeAsync(1000);
+
+      // Cycle through several widgets (3 widgets × 2s each = 6s per cycle)
+      for (let i = 0; i < 12; i++) {
+        await vi.advanceTimersByTimeAsync(2000);
+      }
+
+      // At any point, starts should be >= ends
+      expect(startCount).toBeGreaterThanOrEqual(endCount);
+
+      // After full teardown, they should balance
+      renderer.stopCurrentLayout();
+      expect(startCount).toBe(endCount);
+      expect(renderer._startedWidgets.size).toBe(0);
+
+      await vi.advanceTimersByTimeAsync(60000);
+      await renderPromise;
+      vi.useRealTimers();
+    });
+  });
 });
