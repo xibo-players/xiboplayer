@@ -8,7 +8,7 @@
  *
  * Protocol: https://github.com/linuxnow/xibo_players_docs
  */
-import { createLogger, fetchWithRetry } from '@xiboplayer/utils';
+import { createLogger, fetchWithRetry, PLAYER_API } from '@xiboplayer/utils';
 import { parseScheduleResponse } from './schedule-parser.js';
 
 const log = createLogger('XMDS');
@@ -256,7 +256,7 @@ export class XmdsClient {
 
     const files = [];
     for (const fileEl of doc.querySelectorAll('file')) {
-      files.push({
+      const file = {
         type: fileEl.getAttribute('type'),
         id: fileEl.getAttribute('id'),
         size: parseInt(fileEl.getAttribute('size') || '0'),
@@ -269,7 +269,23 @@ export class XmdsClient {
         layoutid: fileEl.getAttribute('layoutid'),
         regionid: fileEl.getAttribute('regionid'),
         mediaid: fileEl.getAttribute('mediaid')
-      });
+      };
+
+      // Rewrite XMDS download URLs to local proxy cache-through paths.
+      // Store the original CMS URL so the proxy can fetch on cache miss.
+      if (file.path && file.path.includes('xmds.php')) {
+        file.cmsDownloadUrl = file.path;
+        const xmdsType = file.fileType; // L=layout, M=media, P=resource
+        if (xmdsType === 'L' || file.type === 'layout') {
+          file.path = `${PLAYER_API}/layouts/${file.id}`;
+        } else if (xmdsType === 'P') {
+          file.path = `${PLAYER_API}/dependencies/${file.saveAs || file.id}`;
+        } else {
+          file.path = `${PLAYER_API}/media/file/${file.saveAs || file.id}`;
+        }
+      }
+
+      files.push(file);
     }
 
     // Parse purge block — files CMS wants the player to delete
