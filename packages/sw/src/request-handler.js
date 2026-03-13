@@ -41,7 +41,7 @@ export class RequestHandler {
       return fetch(event.request);
     }
 
-    // Not a cache request — let browser handle
-    return null;
+    // Not a cache request — pass through to network
+    return fetch(event.request);
   }
 }

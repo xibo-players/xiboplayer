@@ -723,20 +723,6 @@ class PwaPlayer {
         `Collection cycle failed: ${error?.message || error}`
       );
       this.submitFault('COLLECTION_FAILED', `Collection cycle failed: ${error?.message || error}`);
-
-      // Re-probe CMS protocol on connection errors (CMS may have been upgraded)
-      if (this.protocolDetector && this.protocolDetector.getProtocol() !== null) {
-        try {
-          const { client, protocol, changed } = await this.protocolDetector.reprobe(config);
-          if (changed && client) {
-            log.info(`Protocol switched to ${protocol} after connection error`);
-            this.xmds = client;
-            this.core.xmds = client;
-          }
-        } catch (reprobeError) {
-          log.warn('Protocol re-probe failed:', reprobeError);
-        }
-      }
     });
 
     this.core.on('xmr-connected', (url: string) => {
