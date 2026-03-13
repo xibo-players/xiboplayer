@@ -14,6 +14,3 @@ jobs:
     uses: xibo-players/.github/.github/workflows/publish-npm.yml@main
     with:
       publish-command: 'pnpm --filter @xiboplayer/pwa build && pnpm -r publish --no-git-checks --access public --provenance'
-    permissions:
-      contents: read
-      id-token: write
