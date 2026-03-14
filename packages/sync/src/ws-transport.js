@@ -104,10 +104,16 @@ export class WebSocketTransport {
       }
     };
 
-    this.ws.onmessage = (event) => {
+    this.ws.onmessage = async (event) => {
       if (!this._callback) return;
       try {
-        const msg = JSON.parse(event.data);
+        // Browser WebSocket delivers string; Node ws delivers Buffer;
+        // Node 22+ native WebSocket delivers Blob. Handle all three.
+        let raw = event.data;
+        if (typeof raw !== 'string') {
+          raw = (raw instanceof Blob) ? await raw.text() : String(raw);
+        }
+        const msg = JSON.parse(raw);
         this._callback(msg);
       } catch (e) {
         this._log.warn('Failed to parse message:', e.message);
