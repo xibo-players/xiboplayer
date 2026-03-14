@@ -9,7 +9,23 @@ export interface SyncTransport {
   readonly connected: boolean;
 }
 
-export type Choreography = 'simultaneous' | 'wave-right' | 'wave-left' | 'center-out' | 'outside-in' | 'random';
+export type Choreography =
+  | 'simultaneous'
+  | 'wave-right' | 'wave-left'
+  | 'wave-down' | 'wave-up'
+  | 'diagonal-tl' | 'diagonal-tr' | 'diagonal-bl' | 'diagonal-br'
+  | 'center-out' | 'outside-in'
+  | 'random';
+
+/** Display topology — position and orientation in the physical grid */
+export interface DisplayTopology {
+  /** X coordinate in the grid (0-indexed, left to right) */
+  x: number;
+  /** Y coordinate in the grid (0-indexed, top to bottom) */
+  y: number;
+  /** Screen orientation in degrees clockwise (0=landscape, 90=portrait-right, 270=portrait-left) */
+  orientation?: number;
+}
 
 export interface SyncConfig {
   syncGroup: string;
@@ -20,10 +36,22 @@ export interface SyncConfig {
   relayUrl?: string;
   /** Wall mode: map lead layoutId → this display's position-specific layoutId */
   layoutMap?: Record<string, string | number>;
-  /** This display's 0-indexed position in the wall (for choreography) */
+
+  // ── Choreography (1D mode) ─────────────────────────────────────
+  /** This display's 0-indexed position in a row (1D choreography) */
   position?: number;
-  /** Total number of displays in the group (for choreography) */
+  /** Total displays in the group (auto-detected from relay if omitted) */
   totalDisplays?: number;
+
+  // ── Choreography (2D mode) ─────────────────────────────────────
+  /** This display's topology { x, y, orientation } (enables 2D choreography) */
+  topology?: DisplayTopology;
+  /** Grid width in columns (required for 2D choreography) */
+  gridCols?: number;
+  /** Grid height in rows (required for 2D choreography) */
+  gridRows?: number;
+
+  // ── Choreography (common) ──────────────────────────────────────
   /** Transition choreography pattern */
   choreography?: Choreography;
   /** Base delay between consecutive displays in ms (default: 150) */
@@ -39,7 +67,11 @@ export class BroadcastChannelTransport implements SyncTransport {
 }
 
 export class WebSocketTransport implements SyncTransport {
-  constructor(url: string, options?: { syncGroup?: string });
+  constructor(url: string, options?: {
+    syncGroup?: string;
+    displayId?: string;
+    topology?: DisplayTopology;
+  });
   send(msg: any): void;
   onMessage(callback: (msg: any) => void): void;
   close(): void;
@@ -48,9 +80,14 @@ export class WebSocketTransport implements SyncTransport {
 
 export function computeStagger(options: {
   choreography: string;
-  position: number;
-  totalDisplays: number;
   staggerMs: number;
+  // 1D mode
+  position?: number;
+  totalDisplays?: number;
+  // 2D mode
+  topology?: DisplayTopology;
+  gridCols?: number;
+  gridRows?: number;
 }): number;
 
 export class SyncManager {
@@ -65,6 +102,7 @@ export class SyncManager {
     onLogsReport?: (followerId: string, logsXml: string, ack: () => void) => void;
     onStatsAck?: (targetDisplayId: string) => void;
     onLogsAck?: (targetDisplayId: string) => void;
+    onGroupUpdate?: (totalDisplays: number, topology: Record<string, DisplayTopology>) => void;
   });
 
   displayId: string;

@@ -75,6 +75,7 @@ export class SyncManager {
     this.onLogsReport = options.onLogsReport || null;
     this.onStatsAck = options.onStatsAck || null;
     this.onLogsAck = options.onLogsAck || null;
+    this.onGroupUpdate = options.onGroupUpdate || null;
 
     // State
     this.transport = options.transport || null;
@@ -104,7 +105,11 @@ export class SyncManager {
     // Select transport if none injected
     if (!this.transport) {
       if (this.syncConfig.relayUrl) {
-        this.transport = new WebSocketTransport(this.syncConfig.relayUrl, { syncGroup: this.syncConfig.syncGroup });
+        this.transport = new WebSocketTransport(this.syncConfig.relayUrl, {
+          syncGroup: this.syncConfig.syncGroup,
+          displayId: this.displayId,
+          topology: this.syncConfig.topology,
+        });
       } else if (typeof BroadcastChannel !== 'undefined') {
         this.transport = new BroadcastChannelTransport();
       } else {
@@ -294,6 +299,15 @@ export class SyncManager {
 
   /** @private */
   _handleMessage(msg) {
+    // Relay-originated messages (no displayId)
+    if (msg.type === 'group-update') {
+      this._log.info(`Group update: ${msg.totalDisplays} displays`);
+      if (this.onGroupUpdate) {
+        this.onGroupUpdate(msg.totalDisplays, msg.topology || {});
+      }
+      return;
+    }
+
     // Ignore our own messages
     if (msg.displayId === this.displayId) return;
 

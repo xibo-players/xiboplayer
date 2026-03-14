@@ -559,15 +559,23 @@ class PwaPlayer {
         },
         onLayoutShow: (layoutId: string) => {
           // Compute choreography stagger delay (0 if no choreography configured)
-          const stagger = computeStagger({
-            choreography: syncConfig.choreography || 'simultaneous',
-            position: syncConfig.position ?? 0,
-            totalDisplays: syncConfig.totalDisplays ?? 1,
-            staggerMs: syncConfig.staggerMs ?? 150,
-          });
+          const choreo = syncConfig.choreography || 'simultaneous';
+          const staggerMs = syncConfig.staggerMs ?? 150;
+
+          // Build stagger options: prefer 2D topology, fall back to 1D position
+          const staggerOpts: any = { choreography: choreo, staggerMs };
+          if (syncConfig.topology) {
+            staggerOpts.topology = syncConfig.topology;
+            staggerOpts.gridCols = syncConfig.gridCols ?? 1;
+            staggerOpts.gridRows = syncConfig.gridRows ?? 1;
+          } else {
+            staggerOpts.position = syncConfig.position ?? 0;
+            staggerOpts.totalDisplays = syncConfig.totalDisplays ?? 1;
+          }
+          const stagger = computeStagger(staggerOpts);
 
           if (stagger > 0) {
-            log.info(`[Sync] Show layout ${layoutId} with ${stagger}ms choreography delay (${syncConfig.choreography})`);
+            log.info(`[Sync] Show layout ${layoutId} with ${stagger}ms choreography delay (${choreo})`);
             setTimeout(() => {
               this.renderer.showLayout?.();
             }, stagger);
@@ -616,6 +624,11 @@ class PwaPlayer {
             await this.logReporter.clearSubmittedLogs(this._pendingFollowerLogs);
             this._pendingFollowerLogs = null;
           }
+        },
+        // Relay: group membership changed (auto-detect totalDisplays)
+        onGroupUpdate: (totalDisplays: number, topology: Record<string, any>) => {
+          log.info(`[Sync] Group update: ${totalDisplays} displays, topology: ${JSON.stringify(topology)}`);
+          syncConfig.totalDisplays = totalDisplays;
         },
       });
       this.core.setSyncManager(this.syncManager);

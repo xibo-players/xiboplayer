@@ -66,13 +66,16 @@ export function attachSyncRelay(server) {
         return; // Ignore non-JSON
       }
 
-      // Handle join: client declares its sync group
+      // Handle join: client declares its sync group and optional topology
       if (parsed.type === 'join') {
         const group = parsed.syncGroup || 'default';
         ws.syncGroup = group;
+        ws.displayId = parsed.displayId || null;
+        ws.topology = parsed.topology || null; // { x, y, orientation? }
         if (!groups.has(group)) groups.set(group, new Set());
         groups.get(group).add(ws);
         log.info(`Client ${addr} joined group "${group}" (${groups.get(group).size} in group)`);
+        _broadcastGroupUpdate(groups.get(group));
         return; // Don't broadcast join messages
       }
 
@@ -91,11 +94,35 @@ export function attachSyncRelay(server) {
       if (ws.syncGroup && groups.has(ws.syncGroup)) {
         const group = groups.get(ws.syncGroup);
         group.delete(ws);
-        if (group.size === 0) groups.delete(ws.syncGroup);
+        if (group.size === 0) {
+          groups.delete(ws.syncGroup);
+        } else {
+          _broadcastGroupUpdate(group);
+        }
       }
       log.info(`Client disconnected: ${addr} (${wss.clients.size} remaining)`);
     });
   });
+
+  // Broadcast group membership update (totalDisplays + topology map)
+  function _broadcastGroupUpdate(group) {
+    const topology = {};
+    for (const client of group) {
+      if (client.displayId && client.topology) {
+        topology[client.displayId] = client.topology;
+      }
+    }
+    const msg = JSON.stringify({
+      type: 'group-update',
+      totalDisplays: group.size,
+      topology,
+    });
+    for (const client of group) {
+      if (client.readyState === 1 /* OPEN */) {
+        client.send(msg);
+      }
+    }
+  }
 
   // Heartbeat: detect stale connections
   const pingTimer = setInterval(() => {
