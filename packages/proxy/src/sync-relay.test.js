@@ -235,4 +235,59 @@ describe('SyncRelay', () => {
 
     expect(ws.readyState).toBeGreaterThanOrEqual(2); // CLOSING or CLOSED
   });
+
+  it('should broadcast group-update with totalDisplays on join', async () => {
+    const url = await setup();
+    const a = await connect(url);
+    clients.push(a);
+
+    // First client joins — should get group-update with totalDisplays=1
+    const aUpdate = collectMessages(a, 1);
+    send(a, { type: 'join', syncGroup: 'wall', displayId: 'a', topology: { x: 0, y: 0 } });
+    const [msg1] = await aUpdate;
+
+    expect(msg1.type).toBe('group-update');
+    expect(msg1.totalDisplays).toBe(1);
+    expect(msg1.topology).toEqual({ a: { x: 0, y: 0 } });
+
+    // Second client joins — both should get update with totalDisplays=2
+    const b = await connect(url);
+    clients.push(b);
+
+    const aUpdate2 = collectMessages(a, 1);
+    const bUpdate = collectMessages(b, 1);
+    send(b, { type: 'join', syncGroup: 'wall', displayId: 'b', topology: { x: 1, y: 0, orientation: 90 } });
+
+    const [msgA] = await aUpdate2;
+    const [msgB] = await bUpdate;
+
+    expect(msgA.totalDisplays).toBe(2);
+    expect(msgA.topology).toEqual({
+      a: { x: 0, y: 0 },
+      b: { x: 1, y: 0, orientation: 90 },
+    });
+    expect(msgB.totalDisplays).toBe(2);
+  });
+
+  it('should broadcast group-update on disconnect', async () => {
+    const url = await setup();
+    const a = await connect(url);
+    const b = await connect(url);
+    clients.push(a, b);
+
+    // Both join
+    send(a, { type: 'join', syncGroup: 'wall', displayId: 'a' });
+    send(b, { type: 'join', syncGroup: 'wall', displayId: 'b' });
+    // Drain join updates
+    await collectMessages(a, 2); // a gets its own join + b's join
+    await tick();
+
+    // Disconnect b — a should get update with totalDisplays=1
+    const aUpdate = collectMessages(a, 1);
+    b.close();
+    const [msg] = await aUpdate;
+
+    expect(msg.type).toBe('group-update');
+    expect(msg.totalDisplays).toBe(1);
+  });
 });
