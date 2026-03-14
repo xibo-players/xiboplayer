@@ -25,10 +25,14 @@ export class WebSocketTransport {
    * @param {string} url — WebSocket URL, e.g. ws://192.168.1.100:8765/sync
    * @param {Object} [options]
    * @param {string} [options.syncGroup] — group name for relay isolation
+   * @param {string} [options.displayId] — this display's unique ID
+   * @param {Object} [options.topology] — this display's topology { x, y, orientation? }
    */
-  constructor(url, { syncGroup } = {}) {
+  constructor(url, { syncGroup, displayId, topology } = {}) {
     this._url = url;
     this._syncGroup = syncGroup || null;
+    this._displayId = displayId || null;
+    this._topology = topology || null;
     this._callback = null;
     this._closed = false;
     this._retryMs = INITIAL_RETRY_MS;
@@ -91,9 +95,12 @@ export class WebSocketTransport {
       this._log.info(`Connected to ${this._url}`);
       this._retryMs = INITIAL_RETRY_MS; // Reset backoff on success
 
-      // Join sync group for relay isolation
+      // Join sync group for relay isolation (+ topology for auto-detection)
       if (this._syncGroup) {
-        this.ws.send(JSON.stringify({ type: 'join', syncGroup: this._syncGroup }));
+        const join = { type: 'join', syncGroup: this._syncGroup };
+        if (this._displayId) join.displayId = this._displayId;
+        if (this._topology) join.topology = this._topology;
+        this.ws.send(JSON.stringify(join));
       }
     };
 
