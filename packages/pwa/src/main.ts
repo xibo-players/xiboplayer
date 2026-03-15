@@ -794,6 +794,17 @@ class PwaPlayer {
     this.core.on('collection-error', async (error: any) => {
       this.updateStatus(`Collection error: ${error}`, 'error');
 
+      // Display not found / not authorized — show setup screen so user can re-register
+      const msg = error?.message || String(error);
+      if (msg.includes('403') && (msg.includes('Display not found') || msg.includes('not authorized'))) {
+        log.warn('Display not registered or not authorized — showing setup screen');
+        if (!this.setupOverlay) {
+          this.setupOverlay = new SetupOverlay();
+        }
+        this.setupOverlay.show();
+        return;
+      }
+
       // Report fault to CMS (triggers dashboard alert)
       this.logReporter?.reportFault(
         'COLLECTION_FAILED',

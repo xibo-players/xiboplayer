@@ -2510,24 +2510,6 @@ export class RendererLite {
         // Use cache URL — SW serves HTML and intercepts sub-resources
         iframe.src = result.url;
 
-        // On hard reload (Ctrl+Shift+R), iframe navigation bypasses SW → server 404
-        // Detect and fall back to blob URL with original CMS signed URLs
-        if (result.fallback) {
-          const self = this;
-          iframe.addEventListener('load', function() {
-            try {
-              // Our cached widget HTML has a <base> tag; server 404 page doesn't
-              if (!iframe.contentDocument?.querySelector('base')) {
-                self.log.warn('Cache URL failed (hard reload?), using original CMS URLs');
-                const blob = new Blob([result.fallback], { type: 'text/html' });
-                const blobUrl = URL.createObjectURL(blob);
-                self.trackBlobUrl(blobUrl);
-                iframe.src = blobUrl;
-              }
-            } catch (e) { /* cross-origin — should not happen */ }
-          }, { once: true });
-        }
-
         // Parse NUMITEMS/DURATION from fallback HTML (cache path)
         if (result.fallback) {
           this._parseDurationComments(result.fallback, widget);
@@ -2748,24 +2730,6 @@ export class RendererLite {
       if (result && typeof result === 'object' && result.url) {
         // Use cache URL — SW serves HTML and intercepts sub-resources
         iframe.src = result.url;
-
-        // On hard reload (Ctrl+Shift+R), iframe navigation bypasses SW → server 404
-        // Detect and fall back to blob URL with original CMS signed URLs
-        if (result.fallback) {
-          const self = this;
-          iframe.addEventListener('load', function() {
-            try {
-              // Our cached widget HTML has a <base> tag; server 404 page doesn't
-              if (!iframe.contentDocument?.querySelector('base')) {
-                self.log.warn('Cache URL failed (hard reload?), using original CMS URLs');
-                const blob = new Blob([result.fallback], { type: 'text/html' });
-                const blobUrl = URL.createObjectURL(blob);
-                self.trackBlobUrl(blobUrl);
-                iframe.src = blobUrl;
-              }
-            } catch (e) { /* cross-origin — should not happen */ }
-          }, { once: true });
-        }
 
         // Parse NUMITEMS/DURATION from fallback HTML (cache path)
         if (result.fallback) {
