@@ -554,10 +554,14 @@ class PwaPlayer {
 
       // Cross-device sync: build WebSocket relay URL if not explicitly set.
       // Lead connects to its own relay (localhost), followers connect to lead's IP.
-      // When syncGroup is 'lead', this is same-machine only (BroadcastChannel).
-      if (!syncConfig.relayUrl && syncConfig.syncPublisherPort && syncConfig.syncGroup !== 'lead') {
+      // Use syncGroupId as relay group name — CMS gives different syncGroup values
+      // to lead ("lead") vs followers (lead's IP), but syncGroupId is the same for all.
+      if (!syncConfig.relayUrl && syncConfig.syncPublisherPort) {
         const host = syncConfig.isLead ? 'localhost' : syncConfig.syncGroup;
         syncConfig.relayUrl = `ws://${host}:${syncConfig.syncPublisherPort}/sync`;
+        if (syncConfig.syncGroupId) {
+          syncConfig.syncGroup = String(syncConfig.syncGroupId);
+        }
       }
 
       // Persist resolved sync config to config.json so offline restarts
