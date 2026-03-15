@@ -1766,7 +1766,19 @@ class PwaPlayer {
         const resp = await fetch(`/store/missing-chunks/${storeKey}`);
         const { missing } = await resp.json();
         if (missing.length === 0) {
-          log.warn(`Video error for ${storedAs} but no missing chunks — possible decode error`);
+          log.warn(`Video ${storedAs}: corrupt file (all chunks present), deleting for re-download`);
+          await fetch('/store/delete', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ files: [{ key: storeKey }] }),
+          });
+          const layoutId = this.core.getCurrentLayoutId();
+          if (layoutId) {
+            this.core.setPendingLayout(layoutId, [storedAs]);
+          }
+          this.core.collectNow().catch((err: any) => {
+            log.error(`Failed to trigger re-download for ${storedAs}:`, err.message);
+          });
           return;
         }
         log.warn(`Video ${storedAs}: ${missing.length} missing chunks (${missing.join(', ')}), re-downloading`);
