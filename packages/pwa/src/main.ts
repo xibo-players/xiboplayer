@@ -60,7 +60,7 @@ class PwaPlayer {
   private displaySettings: any = null;
   private currentScheduleId: number = -1; // Track scheduleId for stats
   private scheduledLayoutIds: Set<number> = new Set(); // Layout IDs from current schedule
-  private preparingLayoutId: number | null = null; // Guard against concurrent prepareAndRenderLayout calls
+  private preparingLayoutId: number | null = null; // Guard against concurrent prepareLayout calls
   private _pendingRetryLayoutId: number | null = null; // Queued retry when check-pending-layout arrives during preparation
   private _screenshotInterval: any = null;
   private _screenshotMethod: 'electron' | 'displayMedia' | 'html2canvas' | null = null;
@@ -604,9 +604,9 @@ class PwaPlayer {
           if (mappedId !== layoutId) {
             log.info(`[Sync] Wall mode: lead layout ${layoutId} → local layout ${mappedId}`);
           }
-          // Follower: preload layout hidden, don't show until onLayoutShow
-          log.info(`[Sync] Preloading layout ${mappedId} (waiting for show signal)`);
-          await this.prepareAndRenderLayout(parseInt(String(mappedId), 10), { preloadOnly: true });
+          // Follower: preload layout hidden, show comes from onLayoutShow
+          log.info(`[Sync] Preparing layout ${mappedId} (waiting for show signal)`);
+          await this.prepareLayout(parseInt(String(mappedId), 10));
           // Report ready to lead (use lead's layoutId so lead can track readiness)
           this.syncManager?.reportReady(layoutId);
         },
@@ -780,11 +780,12 @@ class PwaPlayer {
     });
 
     this.core.on('layout-prepare-request', async (layoutId: number) => {
-      // Sync displays with a layout already playing: preload only,
-      // showLayout() handles showing after stagger via onLayoutShow.
-      // Initial start (no layout yet) or non-sync: render immediately.
-      const preloadOnly = !!this.syncManager && this.renderer.currentLayoutId !== null;
-      await this.prepareAndRenderLayout(layoutId, { preloadOnly });
+      await this.prepareLayout(layoutId);
+      // Non-sync or no layout playing yet: show immediately.
+      // Sync transitions: onLayoutShow handles showing with stagger.
+      if (!this.syncManager || this.renderer.currentLayoutId === null) {
+        this.renderer.showLayout(layoutId);
+      }
     });
 
     this.core.on('layout-expire-current', () => {
@@ -850,7 +851,8 @@ class PwaPlayer {
       log.info('Overlay layout requested:', layoutId);
       // Re-use existing overlay rendering (schedule-driven overlays already work)
       // Just need to prepare and render the overlay layout
-      await this.prepareAndRenderLayout(layoutId);
+      await this.prepareLayout(layoutId);
+      this.renderer.showLayout(layoutId);
     });
 
     // Revert to schedule (undo XMR layout override)
@@ -954,11 +956,10 @@ class PwaPlayer {
       await this.captureAndSubmitScreenshot();
     });
 
-    // Handle check-pending-layout events
-    // Re-run prepareAndRenderLayout which checks XLF + actual media IDs correctly
-    // (avoids the bug where setPendingLayout(id,[id]) treated layoutId as mediaId)
+    // Handle check-pending-layout events — layout was pending download, now ready
     this.core.on('check-pending-layout', async (layoutId: number) => {
-      await this.prepareAndRenderLayout(layoutId);
+      await this.prepareLayout(layoutId);
+      this.renderer.showLayout(layoutId);
     });
 
     // Navigate to widget (navWidget action via triggerCode from schedule-level actions)
@@ -1798,7 +1799,7 @@ class PwaPlayer {
           return;
         }
 
-        // Fetch widget HTML before preloading (same as prepareAndRenderLayout)
+        // Fetch widget HTML before preloading (same as prepareLayout)
         await this.fetchWidgetHtml(xlfXml, nextLayoutId);
 
         // Preload the layout into the renderer's pool
@@ -1859,7 +1860,7 @@ class PwaPlayer {
   /**
    * Prepare and render layout (Platform-specific logic)
    */
-  private async prepareAndRenderLayout(layoutId: number, { preloadOnly = false } = {}) {
+  private async prepareLayout(layoutId: number) {
     // Guard: skip if already playing this layout (another event already rendered it)
     if (this.core.getCurrentLayoutId() === layoutId) {
       log.debug(`Layout ${layoutId} already playing, skipping duplicate prepare`);
@@ -1912,14 +1913,9 @@ class PwaPlayer {
         await this.fetchWidgetHtml(xlfXml, layoutId);
       }
 
-      // Render or preload layout
-      if (preloadOnly) {
-        await this.renderer.preloadLayout(xlfXml, layoutId);
-        log.info(`Layout ${layoutId} preloaded (waiting for showLayout)`);
-      } else {
-        await this.renderer.renderLayout(xlfXml, layoutId);
-        this.updateStatus(`Playing layout ${layoutId}`);
-      }
+      // Preload layout into pool (hidden). Caller decides when to show.
+      await this.renderer.preloadLayout(xlfXml, layoutId);
+      log.info(`Layout ${layoutId} ready`);
 
     } catch (error: any) {
       log.error('Failed to prepare layout:', layoutId, error);
@@ -1945,7 +1941,7 @@ class PwaPlayer {
       this._pendingRetryLayoutId = null;
       if (retryId !== null && retryId !== undefined && this.core.getCurrentLayoutId() !== retryId) {
         log.debug(`Retrying preparation for layout ${retryId} after 500ms`);
-        setTimeout(() => this.prepareAndRenderLayout(retryId), 500);
+        setTimeout(() => this.prepareLayout(retryId), 500);
       }
     }
   }
