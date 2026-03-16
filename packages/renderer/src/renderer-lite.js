@@ -3113,6 +3113,27 @@ export class RendererLite {
   }
 
   /**
+   * Show a preloaded layout (swap from pool to visible).
+   * If no layoutId, shows the most recently preloaded layout.
+   * No-ops if the layout is not in the pool.
+   * @param {number} [layoutId]
+   */
+  showLayout(layoutId) {
+    if (layoutId === undefined) {
+      layoutId = this.layoutPool.getLatest();
+      if (layoutId === undefined) {
+        this.log.warn('showLayout: no preloaded layout to show');
+        return;
+      }
+    }
+    if (!this.layoutPool.has(layoutId)) {
+      this.log.warn(`showLayout: layout ${layoutId} not in preload pool`);
+      return;
+    }
+    this._swapToPreloadedLayout(layoutId);
+  }
+
+  /**
    * Check if all regions have completed one full cycle
    * This is informational only - layout timer is authoritative
    */
