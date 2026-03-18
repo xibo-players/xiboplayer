@@ -8,6 +8,8 @@
  * Positioned bottom-left (download overlay is top-left).
  */
 
+import { parseLayoutFile } from '@xiboplayer/schedule';
+
 interface HiddenLayout {
   file: string;
   priority: number;
@@ -141,7 +143,7 @@ export class TimelineOverlay {
     let skippedCurrent = false;
     const upcoming: TimelineEntry[] = [];
     for (const entry of this.timeline) {
-      const layoutId = parseInt(entry.layoutFile.replace('.xlf', ''), 10);
+      const layoutId = parseLayoutFile(entry.layoutFile);
       if (!skippedCurrent && layoutId === this.currentLayoutId) {
         skippedCurrent = true;
         continue;
@@ -203,7 +205,7 @@ export class TimelineOverlay {
       : now;
     for (const entry of upcoming) {
       if (rendered >= maxVisible) break;
-      const layoutId = parseInt(entry.layoutFile.replace('.xlf', ''), 10);
+      const layoutId = parseLayoutFile(entry.layoutFile);
       const hasMissing = entry.missingMedia && entry.missingMedia.length > 0;
       const durStr = this.formatDuration(entry.duration);
       const entryEndMs = nextStartMs + entry.duration * 1000;

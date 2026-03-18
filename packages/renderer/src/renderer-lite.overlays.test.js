@@ -9,15 +9,24 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { RendererLite } from './renderer-lite.js';
 
-// Mock logger
-vi.mock('@xiboplayer/utils', () => ({
-  createLogger: () => ({
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-    debug: vi.fn()
-  })
-}));
+// Mock logger (keep real EventEmitter for RendererLite construction)
+vi.mock('@xiboplayer/utils', () => {
+  // Inline minimal EventEmitter — avoids async importActual which breaks vitest mock hoisting
+  class EventEmitter {
+    constructor() { this._listeners = new Map(); }
+    on(event, cb) { if (!this._listeners.has(event)) this._listeners.set(event, []); this._listeners.get(event).push(cb); }
+    emit(event, ...args) { for (const cb of this._listeners.get(event) || []) cb(...args); }
+  }
+  return {
+    EventEmitter,
+    createLogger: () => ({
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+      debug: vi.fn()
+    })
+  };
+});
 
 describe('RendererLite - Overlay Rendering', () => {
   let renderer;

@@ -10,7 +10,7 @@
 import { RendererLite } from '@xiboplayer/renderer';
 import { StoreClient, DownloadManager, LayoutTaskBuilder, BARRIER } from '@xiboplayer/cache';
 import { PlayerCore } from '@xiboplayer/core';
-import { parseLayoutDuration } from '@xiboplayer/schedule';
+import { parseLayoutDuration, parseLayoutFile } from '@xiboplayer/schedule';
 import { createLogger, registerLogSink, PLAYER_API } from '@xiboplayer/utils';
 import { DownloadOverlay, getDefaultOverlayConfig } from './download-overlay.js';
 import { TimelineOverlay, isTimelineVisible } from './timeline-overlay.js';
@@ -747,7 +747,7 @@ class PwaPlayer {
         const scheduledIds = new Set<number>();
         if (schedule.layouts) {
           for (const l of schedule.layouts) {
-            const id = parseInt(String(l.file || l.id || l).replace('.xlf', ''), 10);
+            const id = parseLayoutFile(l.file || l.id || l);
             if (id) scheduledIds.add(id);
           }
         }
@@ -755,7 +755,7 @@ class PwaPlayer {
           for (const c of schedule.campaigns) {
             if (c.layouts) {
               for (const l of c.layouts) {
-                const id = parseInt(String(l.file || l.id || l).replace('.xlf', ''), 10);
+                const id = parseLayoutFile(l.file || l.id || l);
                 if (id) scheduledIds.add(id);
               }
             }
@@ -775,7 +775,7 @@ class PwaPlayer {
       await this.prepareLayout(layoutId);
       // Non-sync or no layout playing yet: show immediately.
       // Sync transitions: onLayoutShow handles showing with stagger.
-      if (!this.syncManager || this.renderer.currentLayoutId === null) {
+      if (!this.syncManager || this.renderer.getCurrentLayoutId() === null) {
         this.renderer.showLayout(layoutId);
       }
     });
@@ -1598,8 +1598,8 @@ class PwaPlayer {
       // If a new layout is already rendering or being prepared (async fetch),
       // skip advance — the transition was already handled by the caller.
       // Stats/play recording above still run for proper tracking.
-      if (this.renderer.currentLayoutId && this.renderer.currentLayoutId !== layoutId) {
-        log.debug(`Layout ${layoutId} ended but ${this.renderer.currentLayoutId} already playing, skipping advance`);
+      if (this.renderer.getCurrentLayoutId() && this.renderer.getCurrentLayoutId() !== layoutId) {
+        log.debug(`Layout ${layoutId} ended but ${this.renderer.getCurrentLayoutId()} already playing, skipping advance`);
         return;
       }
       if (this.preparingLayoutId && this.preparingLayoutId !== layoutId) {
@@ -1855,13 +1855,11 @@ class PwaPlayer {
   private async prepareLayout(layoutId: number) {
     // Same layout replay — use renderer's built-in replay path which
     // re-emits layoutStart, restarts timer and widget cycling.
-    if (this.renderer.currentLayoutId === layoutId) {
+    if (this.renderer.getCurrentLayoutId() === layoutId) {
       log.debug(`Layout ${layoutId} replay`);
       this.core._preparingLayoutId = null;
-      const xlfBlob = await store.get(`${STORE_PREFIX}/layouts`, layoutId);
-      if (xlfBlob) {
-        await this.renderer.renderLayout(await xlfBlob.text(), layoutId);
-      }
+      // Renderer's same-layout replay path reuses existing DOM — XLF not re-parsed
+      await this.renderer.renderLayout('', layoutId);
       return;
     }
 

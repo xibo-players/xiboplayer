@@ -1,3 +1,7 @@
+import { createLogger } from '@xiboplayer/utils';
+
+const log = createLogger('XmrClient');
+
 /**
  * Native XMR (Xibo Message Relay) WebSocket Client
  *
@@ -51,7 +55,7 @@ export class XmrClient {
       try {
         cb(...args);
       } catch (e) {
-        console.error(`XmrClient: listener error for '${event}':`, e);
+        log.error(`Listener error for '${event}':`, e);
       }
     }
   }
@@ -136,7 +140,7 @@ export class XmrClient {
         // Generic dispatch — every CMS action works automatically
         this.emit(message.action, message);
       } catch (e) {
-        console.error('XmrClient: failed to parse message:', e);
+        log.error('Failed to parse message:', e);
       }
     });
   }
