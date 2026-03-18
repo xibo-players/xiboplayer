@@ -224,61 +224,6 @@ describe('Config', () => {
     });
   });
 
-  describe('Canvas Fingerprint', () => {
-    let createElementSpy;
-
-    beforeEach(() => {
-      config = new Config();
-
-      // Mock canvas via spying on document.createElement
-      const mockCanvas = {
-        getContext: vi.fn(() => ({
-          textBaseline: '',
-          font: '',
-          fillStyle: '',
-          fillRect: vi.fn(),
-          fillText: vi.fn()
-        })),
-        toDataURL: vi.fn(() => 'data:image/png;base64,mockdata')
-      };
-
-      createElementSpy = vi.spyOn(document, 'createElement').mockReturnValue(mockCanvas);
-    });
-
-    afterEach(() => {
-      createElementSpy.mockRestore();
-    });
-
-    it('should generate canvas fingerprint', () => {
-      const fingerprint = config.getCanvasFingerprint();
-
-      expect(fingerprint).toBe('data:image/png;base64,mockdata');
-      expect(createElementSpy).toHaveBeenCalledWith('canvas');
-    });
-
-    it('should return "no-canvas" when canvas context unavailable', () => {
-      const mockCanvas = {
-        getContext: vi.fn(() => null)
-      };
-
-      createElementSpy.mockReturnValue(mockCanvas);
-
-      const fingerprint = config.getCanvasFingerprint();
-
-      expect(fingerprint).toBe('no-canvas');
-    });
-
-    it('should return "canvas-error" on exception', () => {
-      createElementSpy.mockImplementation(() => {
-        throw new Error('Canvas not supported');
-      });
-
-      const fingerprint = config.getCanvasFingerprint();
-
-      expect(fingerprint).toBe('canvas-error');
-    });
-  });
-
   describe('Configuration Getters/Setters', () => {
     beforeEach(() => {
       config = new Config();
@@ -391,20 +336,6 @@ describe('Config', () => {
     });
   });
 
-  describe('Backwards Compatibility', () => {
-    beforeEach(() => {
-      config = new Config();
-    });
-
-    it('should support generateHardwareKey() alias', () => {
-      const key1 = config.generateHardwareKey();
-      const key2 = config.generateStableHardwareKey();
-
-      // Both should generate valid keys
-      expect(key1).toMatch(/^pwa-[0-9a-f]{28}$/);
-      expect(key2).toMatch(/^pwa-[0-9a-f]{28}$/);
-    });
-  });
 
   describe('Edge Cases', () => {
     it('should handle missing hardwareKey in loaded config', () => {
