@@ -27,6 +27,15 @@
  * @param {Map<string, number>|null} [videoDurations=null] - Optional map of fileId → probed duration in seconds
  * @returns {{ duration: number, isDynamic: boolean }} Duration in seconds and whether any widget has useDuration=0
  */
+/**
+ * Extract numeric layout ID from a schedule filename like "123.xlf" or "123"
+ * @param {string|number} f - Layout file reference
+ * @returns {number}
+ */
+export function parseLayoutFile(f) {
+  return parseInt(String(f).replace('.xlf', ''), 10);
+}
+
 export function parseLayoutDuration(xlfXml, videoDurations = null) {
   const doc = new DOMParser().parseFromString(xlfXml, 'text/xml');
   const layoutEl = doc.querySelector('layout');

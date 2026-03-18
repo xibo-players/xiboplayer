@@ -64,6 +64,7 @@ export class RendererLite {
   isPaused(): boolean;
   resumeRegionMedia?(regionId: string): void;
   showLayout(layoutId?: number): void;
+  getCurrentLayoutId(): number | null;
 
   parseXlf(xlfXml: string): any;
   parseWidget(mediaEl: Element): any;

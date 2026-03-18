@@ -73,9 +73,6 @@ importers:
       '@xiboplayer/xmds':
         specifier: workspace:*
         version: link:../xmds
-      nanoevents:
-        specifier: ^9.1.0
-        version: 9.1.0
     devDependencies:
       '@vitest/coverage-v8':
         specifier: ^2.0.0
@@ -217,9 +214,6 @@ importers:
       '@xiboplayer/utils':
         specifier: workspace:*
         version: link:../utils
-      nanoevents:
-        specifier: ^9.1.0
-        version: 9.1.0
       pdfjs-dist:
         specifier: ^4.10.38
         version: 4.10.38
