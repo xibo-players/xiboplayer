@@ -585,18 +585,6 @@ class PwaPlayer {
         syncConfig.syncToken = config.cmsKey;
       }
 
-      // Persist resolved sync config to config.json so offline restarts
-      // can sync over LAN without CMS. Strips runtime-only fields.
-      if ((window as any).electronAPI?.setConfig) {
-        const { syncToken, ...persistable } = syncConfig;
-        (window as any).electronAPI.setConfig({ sync: persistable });
-      }
-
-      // Pass CMS server key as sync token for relay auth (shared by all displays on this CMS)
-      if (!syncConfig.syncToken) {
-        syncConfig.syncToken = config.cmsKey;
-      }
-
       this.syncManager = new SyncManager({
         displayId: config.hardwareKey,
         syncConfig,
