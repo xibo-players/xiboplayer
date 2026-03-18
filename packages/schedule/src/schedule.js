@@ -6,7 +6,7 @@
 
 import { createLogger } from '@xiboplayer/utils';
 import { evaluateCriteria } from './criteria.js';
-import { buildScheduleQueue } from './timeline.js';
+import { buildScheduleQueue, parseLayoutFile } from './timeline.js';
 
 const log = createLogger('Schedule');
 
@@ -63,7 +63,7 @@ export class ScheduleManager {
     const globalDeps = this.schedule.dependants || [];
 
     const addLayout = (layout) => {
-      const id = parseInt(String(layout.file || layout.id).replace('.xlf', ''), 10);
+      const id = parseLayoutFile(layout.file || layout.id);
       const deps = [...globalDeps, ...(layout.dependants || [])];
       if (deps.length > 0) map.set(id, deps);
     };

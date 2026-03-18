@@ -45,7 +45,7 @@
  */
 
 import { EventEmitter, createLogger, applyCmsLogLevel } from '@xiboplayer/utils';
-import { calculateTimeline } from '@xiboplayer/schedule';
+import { calculateTimeline, parseLayoutFile } from '@xiboplayer/schedule';
 import { CacheAnalyzer } from '@xiboplayer/cache';
 import { DataConnectorManager } from './data-connectors.js';
 
@@ -68,10 +68,6 @@ const OFFLINE_DB_BASE = 'xibo-offline-cache';
 const OFFLINE_DB_VERSION = 1;
 const OFFLINE_STORE = 'cache';
 
-/** Extract layout ID from a schedule filename like "123.xlf" */
-function parseLayoutFile(f) {
-  return parseInt(String(f).replace('.xlf', ''), 10);
-}
 
 /** Open the offline cache IndexedDB (creates store on first use) */
 function openOfflineDb(cmsId) {

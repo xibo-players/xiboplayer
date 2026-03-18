@@ -450,32 +450,6 @@ export class Config {
     return hardwareKey;
   }
 
-  getCanvasFingerprint() {
-    // Generate stable canvas fingerprint (same for same GPU/driver)
-    try {
-      const canvas = document.createElement('canvas');
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return 'no-canvas';
-
-      // Draw test pattern (same rendering = same device)
-      ctx.textBaseline = 'top';
-      ctx.font = '14px Arial';
-      ctx.fillStyle = '#f60';
-      ctx.fillRect(125, 1, 62, 20);
-      ctx.fillStyle = '#069';
-      ctx.fillText('Xibo Player', 2, 15);
-
-      return canvas.toDataURL();
-    } catch (e) {
-      return 'canvas-error';
-    }
-  }
-
-  generateHardwareKey() {
-    // For backwards compatibility
-    return this.generateStableHardwareKey();
-  }
-
   generateXmrChannel() {
     // Generate UUID for XMR channel
     return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {

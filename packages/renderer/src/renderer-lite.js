@@ -41,7 +41,7 @@
  * ```
  */
 
-import { createNanoEvents } from 'nanoevents';
+import { EventEmitter } from '@xiboplayer/utils';
 import { createLogger, isDebug, PLAYER_API } from '@xiboplayer/utils';
 import { parseLayoutDuration } from '@xiboplayer/schedule';
 import { LayoutPool } from './layout-pool.js';
@@ -205,7 +205,7 @@ export class RendererLite {
     this.log = createLogger('RendererLite', options.logLevel);
 
     // Event emitter for lifecycle hooks
-    this.emitter = createNanoEvents();
+    this.emitter = new EventEmitter();
 
     // State
     this.currentLayout = null;
@@ -222,6 +222,10 @@ export class RendererLite {
     this.widgetTimers = new Map(); // widgetId => timer
     this.layoutBlobUrls = new Map(); // layoutId => Set<blobUrl> (for lifecycle tracking)
     this.audioOverlays = new Map(); // widgetId => [HTMLAudioElement] (audio overlays for widgets)
+
+    // Bound methods (avoid lambda allocation per call in startRegion/_advanceRegion)
+    this._stopWidgetBound = (rid, idx) => this.stopWidget(rid, idx);
+    this._renderWidgetBound = (rid, idx) => this.renderWidget(rid, idx);
 
     // Scale state (for fitting layout to screen)
     this.scaleFactor = 1;
@@ -356,7 +360,7 @@ export class RendererLite {
    * Event emitter interface (like XMR wrapper)
    */
   on(event, callback) {
-    return this.emitter.on(event, callback);
+    this.emitter.on(event, callback);
   }
 
   emit(event, ...args) {
@@ -953,8 +957,8 @@ export class RendererLite {
     const isMain = regionMap === this.regions;
     this._startRegionCycle(
       region, regionId,
-      isMain ? (rid, idx) => this.renderWidget(rid, idx) : (rid, idx) => this.renderWidget(rid, idx),
-      isMain ? (rid, idx) => this.stopWidget(rid, idx) : (rid, idx) => this.stopWidget(rid, idx),
+      isMain ? this._renderWidgetBound : this._renderWidgetBound,
+      isMain ? this._stopWidgetBound : this._stopWidgetBound,
       isMain ? () => this.checkLayoutComplete() : undefined
     );
   }
@@ -1200,7 +1204,7 @@ export class RendererLite {
 
         // Stop all region timers and widgets, then reset to first widget
         this._clearRegionTimers(this.regions);
-        this._stopAllRegionWidgets(this.regions, (rid, idx) => this.stopWidget(rid, idx));
+        this._stopAllRegionWidgets(this.regions, this._stopWidgetBound);
         for (const [, region] of this.regions) {
           region.currentIndex = 0;
           region.complete = false;
@@ -1389,8 +1393,8 @@ export class RendererLite {
     const region = this.regions.get(regionId);
     this._startRegionCycle(
       region, regionId,
-      (rid, idx) => this.renderWidget(rid, idx),
-      (rid, idx) => this.stopWidget(rid, idx),
+      this._renderWidgetBound,
+      this._stopWidgetBound,
       () => {
         this.log.info(`Region ${regionId} completed one full cycle`);
         this.checkLayoutComplete();
@@ -3011,7 +3015,7 @@ export class RendererLite {
     if (oldLayoutId && this.layoutPool.has(oldLayoutId)) {
       // Stop all widgets before evicting (symmetric widgetEnd events)
       this._clearRegionTimers(this.regions);
-      this._stopAllRegionWidgets(this.regions, (rid, idx) => this.stopWidget(rid, idx));
+      this._stopAllRegionWidgets(this.regions, this._stopWidgetBound);
       // Old layout was preloaded — evict from pool (safe: removes its wrapper div)
       this.layoutPool.evict(oldLayoutId);
     } else {
@@ -3019,7 +3023,7 @@ export class RendererLite {
       // Region elements live directly in this.container (not a wrapper),
       // so we must remove them individually.
       this._clearRegionTimers(this.regions);
-      this._stopAllRegionWidgets(this.regions, (rid, idx) => this.stopWidget(rid, idx));
+      this._stopAllRegionWidgets(this.regions, this._stopWidgetBound);
       for (const [, region] of this.regions) {
         // Release video/audio resources before removing from DOM
         LayoutPool.releaseMediaElements(region.element);
@@ -3110,6 +3114,14 @@ export class RendererLite {
     }
 
     this.log.info(`Swapped to preloaded layout ${layoutId} (instant transition)`);
+  }
+
+  /**
+   * Get the currently showing layout ID.
+   * @returns {number|null}
+   */
+  getCurrentLayoutId() {
+    return this.currentLayoutId;
   }
 
   /**
@@ -3212,7 +3224,7 @@ export class RendererLite {
 
       // Stop all regions — use helper to stop ALL started widgets (canvas fix)
       this._clearRegionTimers(this.regions);
-      this._stopAllRegionWidgets(this.regions, (rid, idx) => this.stopWidget(rid, idx));
+      this._stopAllRegionWidgets(this.regions, this._stopWidgetBound);
       for (const [, region] of this.regions) {
         // Release video/audio resources before removing from DOM
         LayoutPool.releaseMediaElements(region.element);
