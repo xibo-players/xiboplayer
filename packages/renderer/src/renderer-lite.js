@@ -1639,12 +1639,14 @@ export class RendererLite {
   }
 
   /**
-   * Check if any video widget in current layout still has duration=0 (metadata not loaded).
+   * Check if any video widget has useDuration=0 ("play to end") and hasn't
+   * been corrected by video metadata yet. The XLF always provides a non-zero
+   * duration attribute (typically 60s), so we check the _probed flag instead.
    */
   _hasUnprobedVideos() {
     for (const [, region] of this.regions) {
       for (const widget of region.widgets) {
-        if (widget.useDuration === 0 && widget.duration === 0) return true;
+        if (widget.useDuration === 0 && !widget._probed) return true;
       }
     }
     return false;
@@ -2284,6 +2286,7 @@ export class RendererLite {
 
       if (widget.duration === 0 || widget.useDuration === 0) {
         widget.duration = videoDuration;
+        widget._probed = true;
         this.log.info(`Updated widget ${widget.id} duration to ${videoDuration}s (useDuration=0)`);
 
         if (this.currentLayoutId === createdForLayoutId) {
