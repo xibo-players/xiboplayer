@@ -39,6 +39,7 @@ export const CORE_EVENTS = Object.freeze({
 
   // XMR
   XMR_CONNECTED: 'xmr-connected',
+  XMR_RECONNECTED: 'xmr-reconnected',
   XMR_MISCONFIGURED: 'xmr-misconfigured',
 
   // Navigation
@@ -62,6 +63,7 @@ export const CORE_EVENTS = Object.freeze({
 
   // Collection
   COLLECTION_INTERVAL_SET: 'collection-interval-set',
+  COLLECTION_INTERVAL_UPDATED: 'collection-interval-updated',
 
   // Settings
   LOG_LEVEL_CHANGED: 'log-level-changed',
