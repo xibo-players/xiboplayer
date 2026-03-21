@@ -4,6 +4,16 @@
 
 ### Bug Fixes
 
+- **Chunked download write race** — per-chunk write locks in ContentStore prevent concurrent writes to the same chunk file. Two requests (download pipeline + browser playback) could previously race on the same `.tmp` file, causing data corruption that triggered FFmpeg demuxer errors and the corruption handler deleting entire multi-GB files. (#285)
+- **CMS fetch timeout scaling** — proxy timeout is now `30s + 1s/MB` based on `X-Store-Chunk-Size` header. The fixed 30s timeout was too short for 100MB chunks over typical connections, causing `ERR_CONTENT_LENGTH_MISMATCH` and retries.
+- **Incomplete chunked file routing** — `X-Store-Chunk-Index` header distinguishes download pipeline requests (fall through to CMS) from browser playback requests (serve from store). Previously all requests for incomplete files were served from store, returning 404 for missing chunks. (#283)
+- **API client credentials persistence** — `apiClientId`/`apiClientSecret` now saved to `config.data` (was set on instance, never persisted to localStorage/config.json). Auto-authorization worked once but credentials were lost on restart.
+- **Setup config flow** — setup.html always POSTs to proxy `/config` first (was exclusively using `electronAPI.setConfig` in Electron, which only writes config.json without updating proxy's in-memory config). REST auth now works immediately after configuration on all players.
+- **Electron IPC allowlist** — added `apiClientId`/`apiClientSecret` to the `set-config` IPC handler allowlist (xiboplayer-electron#28).
+- **RendererLite type declaration** — added missing `resumeRegionMedia()` to `index.d.ts`.
+
+### Tests (38 new, 1625 total)
+
 - **Preload blob URL routing** — `_preloadingLayoutId` now reset after widget creation loop, preventing blob URLs from being tracked against the wrong layout
 - **Overlay XIC completion** — removed identical ternary branches in `_advanceRegion` that caused overlay interactive control events to spuriously trigger main-layout completion checks
 - **Advertise-sync port** — removed undefined `serverPort` reference in `POST /system/advertise-sync` endpoint (was silently defaulting to 8765)
@@ -24,7 +34,7 @@
 
 - 99 audit findings addressed (5 bugs, 18 dead code, 24 duplications, 18 complexity)
 - Net code reduction: ~900 lines removed
-- 1588 unit tests passing, 0 skipped
+- 1625 unit tests passing, 0 skipped
 
 ## 0.7.2 (2026-03-20)
 
