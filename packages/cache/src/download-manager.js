@@ -74,14 +74,23 @@ export const PRIORITY = { normal: 0, layout: 1, high: 2, urgent: 3 };
 export const BARRIER = Symbol('BARRIER');
 
 /**
- * Parse the X-Amz-Expires absolute timestamp from a signed URL.
+ * Compute the expiry of an AWS signed URL from X-Amz-Date + X-Amz-Expires.
+ * X-Amz-Expires is a duration in seconds (not an absolute timestamp).
  * Returns the expiry as a Unix timestamp (seconds), or Infinity if not found.
  */
 function getUrlExpiry(url) {
   try {
-    const match = url.match(/X-Amz-Expires=(\d+)/);
-    return match ? parseInt(match[1], 10) : Infinity;
-  } catch {
+    const u = new URL(url, 'http://localhost');
+    const amzDate = u.searchParams.get('X-Amz-Date');
+    const amzExpires = u.searchParams.get('X-Amz-Expires');
+    if (amzDate && amzExpires) {
+      // X-Amz-Date is ISO-like: 20240101T000000Z
+      const dateStr = amzDate.replace(/(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z/, '$1-$2-$3T$4:$5:$6Z');
+      const signedAt = new Date(dateStr).getTime() / 1000;
+      return signedAt + parseInt(amzExpires, 10);
+    }
+    return Infinity;
+  } catch (_) {
     return Infinity;
   }
 }

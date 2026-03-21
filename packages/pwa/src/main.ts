@@ -1807,9 +1807,10 @@ class PwaPlayer {
         }
 
         const xlfXml = await xlfBlob.text();
+        const doc = new DOMParser().parseFromString(xlfXml, 'text/xml');
 
         // Check if all required media is cached
-        const { allMedia: requiredMedia } = this.getMediaIds(xlfXml);
+        const { allMedia: requiredMedia } = this.getMediaIds(doc);
         const allMediaCached = await this.checkAllMediaCached(requiredMedia);
 
         if (!allMediaCached) {
@@ -1818,7 +1819,7 @@ class PwaPlayer {
         }
 
         // Fetch widget HTML before preloading (same as prepareLayout)
-        await this.fetchWidgetHtml(xlfXml, nextLayoutId);
+        await this.fetchWidgetHtml(doc, nextLayoutId);
 
         // Preload the layout into the renderer's pool
         const success = await this.renderer.preloadLayout(xlfXml, nextLayoutId);
@@ -1966,10 +1967,6 @@ class PwaPlayer {
     }
   }
 
-  /**
-   * Get all required media file IDs and video-specific IDs from layout XLF.
-   * Single parse to avoid double DOMParser overhead on the same XML.
-   */
   /**
    * Get all required media saveAs filenames and video-specific ones from layout XLF.
    * Returns saveAs strings (via _fileIdToSaveAs map) for store key matching.
