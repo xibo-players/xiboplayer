@@ -434,72 +434,7 @@ export class PlayerCore extends EventEmitter {
       log.info(`Display registered: ${regResult.code}${regResult.tags?.length ? `, tags: ${regResult.tags.join(', ')}` : ''}`);
       log.debug('Register result:', JSON.stringify(regResult));
 
-      // Cache settings for offline use
-      this._offlineSave('settings', regResult);
-
-      // Exit offline mode if we were in it
-      if (this.offlineMode) {
-        this.offlineMode = false;
-        log.info('Back online — resuming normal collection');
-        this.emit(E.OFFLINE_MODE, false);
-
-        // Restore normal collection interval (was shortened for offline retry)
-        if (this._normalCollectInterval) {
-          this._setCollectionTimer(this._normalCollectInterval);
-          this._normalCollectInterval = null;
-          this._offlineRetrySeconds = 0;
-        }
-      }
-
-      // Apply display settings if DisplaySettings manager is available
-      if (this.displaySettings && regResult.settings) {
-        const result = this.displaySettings.applySettings(regResult.settings);
-        if (result.changed.includes('collectInterval')) {
-          // Collection interval changed - update interval
-          this.updateCollectionInterval(result.settings.collectInterval);
-        }
-
-        // Apply CMS logLevel (respects local overrides)
-        if (regResult.settings.logLevel) {
-          const applied = applyCmsLogLevel(regResult.settings.logLevel);
-          if (applied) {
-            log.info('Log level updated from CMS:', regResult.settings.logLevel);
-            this.emit(E.LOG_LEVEL_CHANGED, regResult.settings.logLevel);
-          }
-        }
-      }
-
-      // Pass display properties to schedule for criteria evaluation
-      if (this.schedule?.setDisplayProperties && regResult.settings) {
-        this.schedule.setDisplayProperties(regResult.settings);
-      }
-
-      // Store sync config if display is in a sync group — only emit if CMS config changed
-      // (compare raw CMS response, not the mutated config with relayUrl/syncGroupId added by PWA)
-      if (regResult.syncConfig) {
-        const rawKey = JSON.stringify(regResult.syncConfig);
-        if (rawKey !== this._lastRawSyncConfig) {
-          this._lastRawSyncConfig = rawKey;
-          this.syncConfig = regResult.syncConfig;
-          log.info('Sync group:', regResult.syncConfig.isLead ? 'LEAD' : `follower → ${regResult.syncConfig.syncGroup}`,
-            `(switchDelay: ${regResult.syncConfig.syncSwitchDelay}ms, videoPauseDelay: ${regResult.syncConfig.syncVideoPauseDelay}ms)`);
-          this.emit(E.SYNC_CONFIG, regResult.syncConfig);
-        }
-      }
-
-      // Extract config from display tags (key|value convention)
-      this._applyTagConfig(regResult.tags);
-
-      // Store display commands for XMR commandAction resolution
-      if (regResult.commands && regResult.commands.length > 0) {
-        this.displayCommands = {};
-        for (const cmd of regResult.commands) {
-          this.displayCommands[cmd.commandCode] = cmd;
-        }
-        log.debug('Display commands:', Object.keys(this.displayCommands).join(', '));
-      }
-
-      this.emit(E.REGISTER_COMPLETE, regResult);
+      this._processRegistration(regResult);
 
       // Initialize XMR if available
       log.debug('Collection step: initializeXmr');
@@ -537,11 +472,7 @@ export class PlayerCore extends EventEmitter {
           log.info('Schedule received');
           this._lastCheckSchedule = checkSchedule;
           log.debug('Collection step: processing schedule');
-          this.emit(E.SCHEDULE_RECEIVED, schedule);
-          this.schedule.setSchedule(schedule);
-          this._executedCommands.clear();
-          this.updateDataConnectors();
-          this._offlineSave('schedule', schedule);
+          this._applyNewSchedule(schedule);
           this.logUpcomingTimeline();
         }
 
@@ -568,7 +499,7 @@ export class PlayerCore extends EventEmitter {
         // Non-blocking cache analysis (stale media detection)
         if (this.cacheAnalyzer) {
           this.cacheAnalyzer.analyze(files).then(report => {
-            this.emit('cache-analysis', report);
+            this.emit(E.CACHE_ANALYSIS, report);
           }).catch(err => log.warn('Cache analysis failed:', err));
         }
 
@@ -582,11 +513,7 @@ export class PlayerCore extends EventEmitter {
           const schedule = await this.xmds.schedule();
           log.info('Schedule received (RF unchanged but schedule changed)');
           this._lastCheckSchedule = checkSchedule;
-          this.emit(E.SCHEDULE_RECEIVED, schedule);
-          this.schedule.setSchedule(schedule);
-          this._executedCommands.clear();
-          this.updateDataConnectors();
-          this._offlineSave('schedule', schedule);
+          this._applyNewSchedule(schedule);
         } else if (checkSchedule) {
           log.info('Schedule CRC unchanged, skipping');
         }
@@ -620,7 +547,7 @@ export class PlayerCore extends EventEmitter {
       this.emit(E.SUBMIT_LOGS_REQUEST);
 
       // Submit faults immediately (higher priority than logs)
-      this.emit('submit-faults-request');
+      this.emit(E.SUBMIT_FAULTS_REQUEST);
 
       // Setup collection interval on first run
       if (!this.collectionInterval && regResult.settings) {
@@ -652,6 +579,89 @@ export class PlayerCore extends EventEmitter {
     } finally {
       this.collecting = false;
     }
+  }
+
+  /**
+   * Process registration result — offline exit, settings, sync config, tags, commands.
+   */
+  _processRegistration(regResult) {
+    // Cache settings for offline use
+    this._offlineSave('settings', regResult);
+
+    // Exit offline mode if we were in it
+    if (this.offlineMode) {
+      this.offlineMode = false;
+      log.info('Back online — resuming normal collection');
+      this.emit(E.OFFLINE_MODE, false);
+
+      // Restore normal collection interval (was shortened for offline retry)
+      if (this._normalCollectInterval) {
+        this._setCollectionTimer(this._normalCollectInterval);
+        this._normalCollectInterval = null;
+        this._offlineRetrySeconds = 0;
+      }
+    }
+
+    // Apply display settings if DisplaySettings manager is available
+    if (this.displaySettings && regResult.settings) {
+      const result = this.displaySettings.applySettings(regResult.settings);
+      if (result.changed.includes('collectInterval')) {
+        this.updateCollectionInterval(result.settings.collectInterval);
+      }
+
+      // Apply CMS logLevel (respects local overrides)
+      if (regResult.settings.logLevel) {
+        const applied = applyCmsLogLevel(regResult.settings.logLevel);
+        if (applied) {
+          log.info('Log level updated from CMS:', regResult.settings.logLevel);
+          this.emit(E.LOG_LEVEL_CHANGED, regResult.settings.logLevel);
+        }
+      }
+    }
+
+    // Pass display properties to schedule for criteria evaluation
+    if (this.schedule?.setDisplayProperties && regResult.settings) {
+      this.schedule.setDisplayProperties(regResult.settings);
+    }
+
+    // Store sync config if display is in a sync group — only emit if CMS config changed
+    // (compare raw CMS response, not the mutated config with relayUrl/syncGroupId added by PWA)
+    if (regResult.syncConfig) {
+      const rawKey = JSON.stringify(regResult.syncConfig);
+      if (rawKey !== this._lastRawSyncConfig) {
+        this._lastRawSyncConfig = rawKey;
+        this.syncConfig = regResult.syncConfig;
+        log.info('Sync group:', regResult.syncConfig.isLead ? 'LEAD' : `follower → ${regResult.syncConfig.syncGroup}`,
+          `(switchDelay: ${regResult.syncConfig.syncSwitchDelay}ms, videoPauseDelay: ${regResult.syncConfig.syncVideoPauseDelay}ms)`);
+        this.emit(E.SYNC_CONFIG, regResult.syncConfig);
+      }
+    }
+
+    // Extract config from display tags (key|value convention)
+    this._applyTagConfig(regResult.tags);
+
+    // Store display commands for XMR commandAction resolution
+    if (regResult.commands && regResult.commands.length > 0) {
+      this.displayCommands = {};
+      for (const cmd of regResult.commands) {
+        this.displayCommands[cmd.commandCode] = cmd;
+      }
+      log.debug('Display commands:', Object.keys(this.displayCommands).join(', '));
+    }
+
+    this.emit(E.REGISTER_COMPLETE, regResult);
+  }
+
+  /**
+   * Apply a new schedule from CMS — emit event, update schedule manager,
+   * reset executed commands, refresh data connectors, and cache offline.
+   */
+  _applyNewSchedule(schedule) {
+    this.emit(E.SCHEDULE_RECEIVED, schedule);
+    this.schedule.setSchedule(schedule);
+    this._executedCommands.clear();
+    this.updateDataConnectors();
+    this._offlineSave('schedule', schedule);
   }
 
   /**
@@ -719,7 +729,7 @@ export class PlayerCore extends EventEmitter {
       : parseInt(settings.collectInterval || '300', 10);
 
     this._setCollectionTimer(collectIntervalSeconds);
-    this.emit('collection-interval-set', collectIntervalSeconds);
+    this.emit(E.COLLECTION_INTERVAL_SET, collectIntervalSeconds);
   }
 
   /**
@@ -744,7 +754,7 @@ export class PlayerCore extends EventEmitter {
 
     log.info(`Fault reporting agent started (interval: ${this._faultReportingSeconds}s)`);
     this._faultReportingInterval = setInterval(() => {
-      this.emit('submit-faults-request');
+      this.emit(E.SUBMIT_FAULTS_REQUEST);
     }, this._faultReportingSeconds * 1000);
   }
 
@@ -1854,7 +1864,7 @@ export class PlayerCore extends EventEmitter {
 
     // Invalidate the cached schedule queue so the next getScheduleQueue() call
     // rebuilds with corrected durations (affects queue log and period calculation).
-    this.schedule._scheduleQueue = null;
+    this.schedule.invalidateQueue();
 
     // Debounce timeline recalculation — multiple video loadedmetadata events
     // can fire within milliseconds; collapse them into one recalculation.
