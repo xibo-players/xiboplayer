@@ -418,6 +418,7 @@ export class PlayerCore extends EventEmitter {
       // Check if browser reports offline
       if (this.isOffline()) {
         if (this.hasCachedData()) {
+          this.collecting = false;
           return this.collectOffline();
         }
         throw new Error('Offline with no cached data — cannot start playback');
@@ -570,6 +571,7 @@ export class PlayerCore extends EventEmitter {
       if (this.hasCachedData()) {
         log.warn('Collection failed, falling back to cached data:', error?.message || error);
         this.emit(E.COLLECTION_ERROR, error);
+        this.collecting = false;
         return this.collectOffline();
       }
 
@@ -713,7 +715,7 @@ export class PlayerCore extends EventEmitter {
     } else if (!this.xmr.isConnected()) {
       log.info('XMR disconnected, attempting to reconnect...');
       await this.xmr.start(xmrUrl, xmrCmsKey);
-      this.emit('xmr-reconnected', xmrUrl);
+      this.emit(E.XMR_RECONNECTED, xmrUrl);
     } else {
       log.debug('XMR already connected');
     }
@@ -739,7 +741,7 @@ export class PlayerCore extends EventEmitter {
   updateCollectionInterval(newIntervalSeconds) {
     if (this.collectionInterval) {
       this._setCollectionTimer(newIntervalSeconds);
-      this.emit('collection-interval-updated', newIntervalSeconds);
+      this.emit(E.COLLECTION_INTERVAL_UPDATED, newIntervalSeconds);
     }
   }
 
@@ -1158,14 +1160,6 @@ export class PlayerCore extends EventEmitter {
     return location;
   }
 
-  /**
-   * Apply a resolved location: update schedule, emit event, trigger re-evaluation.
-   * @param {number} lat
-   * @param {number} lng
-   * @param {string} source - 'browser' | 'google-api' | 'ip-geolocation'
-   * @returns {{latitude: number, longitude: number}}
-   * @private
-   */
   /**
    * Extract config values from CMS display tags using key|value convention.
    * Tags like "geoApiKey|AIzaSy..." are parsed and applied to player config.

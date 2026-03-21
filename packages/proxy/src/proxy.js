@@ -260,7 +260,7 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, confi
       currentAdvert = null;
     }
 
-    const advertPort = port || serverPort || 8765;
+    const advertPort = port || 8765;
     currentAdvert = advertiseSyncService({ port: advertPort, syncGroupId: String(syncGroupId), displayId: displayId || 'unknown' });
     logServer.info(`mDNS: advertising sync group ${syncGroupId} on port ${advertPort} (runtime)`);
     res.json({ ok: true, syncGroupId, port: advertPort });

@@ -1275,8 +1275,8 @@ describe('LayoutTaskBuilder', () => {
       const queue = createTestQueue();
       const builder = new LayoutTaskBuilder(queue);
 
-      builder.addFile({ id: '1', type: 'media', path: 'http://test.com/1.mp4?X-Amz-Expires=1000' });
-      const file2 = builder.addFile({ id: '1', type: 'media', path: 'http://test.com/1.mp4?X-Amz-Expires=2000' });
+      builder.addFile({ id: '1', type: 'media', path: 'http://test.com/1.mp4?X-Amz-Date=20240101T000000Z&X-Amz-Expires=1000' });
+      const file2 = builder.addFile({ id: '1', type: 'media', path: 'http://test.com/1.mp4?X-Amz-Date=20240101T000000Z&X-Amz-Expires=2000' });
 
       expect(file2.fileInfo.path).toContain('X-Amz-Expires=2000');
     });
