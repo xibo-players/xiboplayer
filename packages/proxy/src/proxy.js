@@ -483,10 +483,15 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, confi
       let info;
       try { info = store.has(storeKey); } catch (_) {}
       if (info?.exists) {
-        // Incomplete chunked files: fall through to CMS for the missing bytes
+        // Incomplete chunked files: serve available chunks from store.
+        // The download manager is already fetching missing chunks — opening
+        // a new CMS stream creates duplicate downloads competing for bandwidth (#283).
+        // serveFromStore handles Range requests over available chunks, so the
+        // browser can start playback once chunk 0 + last chunk arrive (MP4 moov).
         const incomplete = info.chunked && store.missingChunks(storeKey).length > 0;
         if (incomplete) {
-          logFile.info(`Incomplete chunked file: ${storeKey} — fetching from CMS`);
+          logFile.info(`Incomplete chunked file: ${storeKey} — serving available chunks (${store.missingChunks(storeKey).length} missing)`);
+          return serveFromStore(req, res, storeKey);
         } else if (ttl !== Infinity && info.metadata?.createdAt) {
           const ageMs = Date.now() - info.metadata.createdAt;
           if (ageMs > ttl * 1000) {
