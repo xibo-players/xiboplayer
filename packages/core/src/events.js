@@ -52,9 +52,16 @@ export const CORE_EVENTS = Object.freeze({
   // Screenshots
   SCREENSHOT_REQUEST: 'screenshot-request',
 
-  // Stats/Logs
+  // Stats/Logs/Faults
   SUBMIT_STATS_REQUEST: 'submit-stats-request',
   SUBMIT_LOGS_REQUEST: 'submit-logs-request',
+  SUBMIT_FAULTS_REQUEST: 'submit-faults-request',
+
+  // Cache
+  CACHE_ANALYSIS: 'cache-analysis',
+
+  // Collection
+  COLLECTION_INTERVAL_SET: 'collection-interval-set',
 
   // Settings
   LOG_LEVEL_CHANGED: 'log-level-changed',

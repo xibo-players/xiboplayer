@@ -728,6 +728,14 @@ export class ScheduleManager {
   }
 
   /**
+   * Public API to invalidate the cached schedule queue.
+   * Called by PlayerCore when layout durations are corrected at runtime.
+   */
+  invalidateQueue() {
+    this._invalidateQueue();
+  }
+
+  /**
    * Invalidate the cached queue (called on schedule change, time boundaries, etc.)
    */
   _invalidateQueue() {
