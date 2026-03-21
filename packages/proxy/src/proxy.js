@@ -490,8 +490,16 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, confi
         // browser can start playback once chunk 0 + last chunk arrive (MP4 moov).
         const incomplete = info.chunked && store.missingChunks(storeKey).length > 0;
         if (incomplete) {
-          logFile.info(`Incomplete chunked file: ${storeKey} — serving available chunks (${store.missingChunks(storeKey).length} missing)`);
-          return serveFromStore(req, res, storeKey);
+          // Download pipeline requests (X-Store-Chunk-Index header) must fall
+          // through to CMS to fetch the actual missing chunk bytes.
+          // Browser playback requests (no chunk header) serve from available
+          // chunks to avoid duplicate CMS streams (#283).
+          const isChunkDownload = req.headers['x-store-chunk-index'] !== undefined;
+          if (!isChunkDownload) {
+            logFile.info(`Incomplete chunked file: ${storeKey} — serving available chunks (${store.missingChunks(storeKey).length} missing)`);
+            return serveFromStore(req, res, storeKey);
+          }
+          // else: fall through to CMS fetch for chunk download
         } else if (ttl !== Infinity && info.metadata?.createdAt) {
           const ageMs = Date.now() - info.metadata.createdAt;
           if (ageMs > ttl * 1000) {
@@ -522,8 +530,13 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, confi
       logFile.info(`Range: ${req.headers.range}`);
     }
 
+    // Scale timeout for large chunk downloads: 30s base + 1s per MB of chunk.
+    // Default 30s is fine for small files, but 100 MB chunks need ~130s at 8 Mbps.
+    const chunkSize = parseInt(req.headers['x-store-chunk-size'], 10) || 0;
+    const timeoutMs = 30000 + Math.ceil(chunkSize / (1024 * 1024)) * 1000;
+
     try {
-      const response = await fetch(fullUrl, { headers, signal: AbortSignal.timeout(30000) });
+      const response = await fetch(fullUrl, { headers, signal: AbortSignal.timeout(timeoutMs) });
 
       if (!response.ok && response.status !== 206) {
         logFile.warn(`CMS ${response.status} for ${storeKey}`);
@@ -574,58 +587,72 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, confi
           }
         }
 
-        const { writeStream, commit, abort } = store.createTempWrite(
+        const writeHandle = store.createTempWrite(
           storeKey, chunkIndex !== undefined ? chunkIndex : null
         );
 
-        let bytesWritten = 0;
-        let aborted = false;
+        if (!writeHandle) {
+          // Another request is already writing this chunk — stream to client only, skip disk.
+          // The in-flight write will persist the data; we just forward CMS bytes to the client.
+          logFile.info(`Write locked: ${storeKey}${chunkIndex !== undefined ? ` chunk ${chunkIndex}` : ''} — streaming to client only`);
+          fetchStream.pipe(res);
+          fetchStream.on('error', (err) => {
+            logFile.error('Stream error:', err.message);
+            if (!res.headersSent) res.status(500).json({ error: 'Stream error' });
+            else res.end();
+          });
+        } else {
+          const { writeStream, commit, abort } = writeHandle;
 
-        writeStream.on('error', (err) => {
-          if (!aborted) logStore.error('Write stream error:', err.message);
-          aborted = true;
-          abort();
-        });
+          let bytesWritten = 0;
+          let aborted = false;
 
-        req.on('close', () => {
-          if (!res.writableFinished) {
+          writeStream.on('error', (err) => {
+            if (!aborted) logStore.error('Write stream error:', err.message);
             aborted = true;
-            fetchStream.destroy();
-            writeStream.destroy();
             abort();
-          }
-        });
+          });
 
-        fetchStream.on('data', (chunk) => {
-          if (aborted) return;
-          bytesWritten += chunk.length;
-          writeStream.write(chunk);
-          res.write(chunk);
-        });
-
-        fetchStream.on('end', () => {
-          if (aborted) return;
-          writeStream.end(() => {
-            if (aborted) return;
-            try {
-              if (chunkIndex === undefined) meta.size = bytesWritten;
-              commit(meta);
-              logStore.info(`Stored${chunkIndex !== undefined ? ` chunk ${chunkIndex}` : ''}: ${storeKey} (${bytesWritten} bytes)`);
-            } catch (err) {
-              logStore.error('Commit error (non-fatal):', err.message);
+          req.on('close', () => {
+            if (!res.writableFinished) {
+              aborted = true;
+              fetchStream.destroy();
+              writeStream.destroy();
+              abort();
             }
           });
-          res.end();
-          logFile.info(`${response.status} (${bytesWritten} bytes)`);
-        });
 
-        fetchStream.on('error', (err) => {
-          logFile.error('Stream error:', err.message);
-          writeStream.destroy();
-          abort();
-          if (!res.headersSent) res.status(500).json({ error: 'Stream error' });
-          else res.end();
-        });
+          fetchStream.on('data', (chunk) => {
+            if (aborted) return;
+            bytesWritten += chunk.length;
+            writeStream.write(chunk);
+            res.write(chunk);
+          });
+
+          fetchStream.on('end', () => {
+            if (aborted) return;
+            writeStream.end(() => {
+              if (aborted) return;
+              try {
+                if (chunkIndex === undefined) meta.size = bytesWritten;
+                commit(meta);
+                logStore.info(`Stored${chunkIndex !== undefined ? ` chunk ${chunkIndex}` : ''}: ${storeKey} (${bytesWritten} bytes)`);
+              } catch (err) {
+                logStore.error('Commit error (non-fatal):', err.message);
+              }
+            });
+            res.end();
+            logFile.info(`${response.status} (${bytesWritten} bytes)`);
+          });
+
+          fetchStream.on('error', (err) => {
+            logFile.error('Stream error:', err.message);
+            writeStream.destroy();
+            abort();
+            if (!res.headersSent) res.status(500).json({ error: 'Stream error' });
+            else res.end();
+          });
+        }
       } else {
         // No store — stream directly to client
         fetchStream.pipe(res);
@@ -639,7 +666,7 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, confi
     } catch (error) {
       const isTimeout = error.name === 'TimeoutError' || error.name === 'AbortError';
       if (isTimeout) {
-        logFile.warn(`CMS timeout (30s): ${storeKey}`);
+        logFile.warn(`CMS timeout (${Math.round(timeoutMs / 1000)}s): ${storeKey}`);
       } else {
         logFile.warn(`CMS fetch failed: ${storeKey} — ${error.message}`);
       }
