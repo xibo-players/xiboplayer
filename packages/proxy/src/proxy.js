@@ -928,7 +928,6 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, confi
 
       res.status(response.status);
       if (response.body) {
-        const { Readable } = await import('stream');
         Readable.fromWeb(response.body).pipe(res);
       } else {
         res.end();

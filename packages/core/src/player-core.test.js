@@ -86,6 +86,7 @@ describe('PlayerCore', () => {
         if (this._defaultQueue.length <= 1) return null;
         return this._defaultQueue[(this._queuePosition + 1) % this._defaultQueue.length];
       }),
+      invalidateQueue: vi.fn(),
       isSyncEvent: vi.fn(() => false),
       getQueuePosition: vi.fn(function() { return this._queuePosition; }),
       rewindQueue: vi.fn(function(steps) {
