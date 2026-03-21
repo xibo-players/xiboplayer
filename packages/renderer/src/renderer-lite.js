@@ -1338,26 +1338,64 @@ export class RendererLite {
   }
 
   /**
-   * Create a region element
-   * @param {Object} regionConfig - Region configuration
+   * Build a region DOM element and state entry.
+   * Shared by createRegion, preloadLayout, and renderOverlay.
+   *
+   * @param {Object} regionConfig - Region configuration from parsed XLF
+   * @param {string} elementId - DOM element ID for the region div
+   * @param {HTMLElement} parentEl - Parent element to append the region to
+   * @param {Object} [extraState] - Additional properties merged into region state
+   * @returns {Object} Region state object { element, config, widgets, ... }
    */
-  async createRegion(regionConfig) {
-    const regionEl = document.createElement('div');
-    regionEl.id = `region_${regionConfig.id}`;
-    regionEl.className = 'renderer-lite-region';
-    regionEl.style.position = 'absolute';
-    regionEl.style.zIndex = regionConfig.zindex;
-    regionEl.style.overflow = 'hidden';
+  _createRegionEntry(regionConfig, elementId, parentEl, extraState = {}) {
+    const { className = 'renderer-lite-region', ...stateProps } = extraState;
 
-    // Drawer regions start fully hidden — shown only by navWidget actions
-    if (regionConfig.isDrawer) {
-      regionEl.style.display = 'none';
-    }
+    const regionEl = document.createElement('div');
+    regionEl.id = elementId;
+    regionEl.className = className;
+    regionEl.style.position = 'absolute';
+    regionEl.style.zIndex = String(regionConfig.zindex);
+    regionEl.style.overflow = 'hidden';
 
     // Apply scaled positioning
     this.applyRegionScale(regionEl, regionConfig);
 
-    this.container.appendChild(regionEl);
+    parentEl.appendChild(regionEl);
+
+    const sf = this.scaleFactor;
+    return {
+      element: regionEl,
+      config: regionConfig,
+      widgets: regionConfig.widgets,
+      currentIndex: 0,
+      timer: null,
+      width: regionConfig.width * sf,
+      height: regionConfig.height * sf,
+      complete: false,
+      widgetElements: new Map(),
+      ...stateProps,
+    };
+  }
+
+  /**
+   * Create a region element
+   * @param {Object} regionConfig - Region configuration
+   */
+  async createRegion(regionConfig) {
+    const region = this._createRegionEntry(
+      regionConfig,
+      `region_${regionConfig.id}`,
+      this.container,
+      {
+        isDrawer: regionConfig.isDrawer || false,
+        isCanvas: regionConfig.isCanvas || false,
+      }
+    );
+
+    // Drawer regions start fully hidden — shown only by navWidget actions
+    if (regionConfig.isDrawer) {
+      region.element.style.display = 'none';
+    }
 
     // Filter expired widgets (fromDt/toDt time-gating within XLF)
     let widgets = regionConfig.widgets.filter(w => this._isWidgetActive(w));
@@ -1366,22 +1404,9 @@ export class RendererLite {
     if (widgets.some(w => w.cyclePlayback)) {
       widgets = this._applyCyclePlayback(widgets);
     }
+    region.widgets = widgets;
 
-    // Store region state (dimensions use scaled values for transitions)
-    const sf = this.scaleFactor;
-    this.regions.set(regionConfig.id, {
-      element: regionEl,
-      config: regionConfig,
-      widgets,
-      currentIndex: 0,
-      timer: null,
-      width: regionConfig.width * sf,
-      height: regionConfig.height * sf,
-      complete: false, // Track if region has played all widgets once
-      isDrawer: regionConfig.isDrawer || false,
-      isCanvas: regionConfig.isCanvas || false, // Canvas regions render all widgets simultaneously
-      widgetElements: new Map() // widgetId -> DOM element (for element reuse)
-    });
+    this.regions.set(regionConfig.id, region);
   }
 
   /**
@@ -2501,45 +2526,7 @@ export class RendererLite {
    * Render text/ticker widget
    */
   async renderTextWidget(widget, region) {
-    const iframe = document.createElement('iframe');
-    iframe.className = 'renderer-lite-widget';
-    iframe.style.width = '100%';
-    iframe.style.height = '100%';
-    iframe.style.border = 'none';
-    iframe.style.opacity = '0';
-
-    // Get widget HTML (may return { url } for cache-path loading or string for blob)
-    let html = widget.raw;
-    if (this.options.getWidgetHtml) {
-      const result = await this.options.getWidgetHtml(widget);
-      if (result && typeof result === 'object' && result.url) {
-        // Use cache URL — SW serves HTML and intercepts sub-resources
-        iframe.src = result.url;
-
-        // Parse NUMITEMS/DURATION from fallback HTML (cache path)
-        if (result.fallback) {
-          this._parseDurationComments(result.fallback, widget);
-        }
-
-        return iframe;
-      }
-      html = result;
-    }
-
-    if (html) {
-      // Parse NUMITEMS/DURATION HTML comments for dynamic widget duration
-      this._parseDurationComments(html, widget);
-    }
-
-    // Fallback: Create blob URL for iframe
-    const blob = new Blob([html], { type: 'text/html' });
-    const blobUrl = URL.createObjectURL(blob);
-    iframe.src = blobUrl;
-
-    // Track blob URL for lifecycle management
-    this.trackBlobUrl(blobUrl);
-
-    return iframe;
+    return await this._renderIframeWidget(widget, region);
   }
 
   /**
@@ -2722,6 +2709,15 @@ export class RendererLite {
    * Render generic widget (clock, calendar, weather, etc.)
    */
   async renderGenericWidget(widget, region) {
+    return await this._renderIframeWidget(widget, region);
+  }
+
+  /**
+   * Shared iframe rendering for text/ticker and generic widgets.
+   * Creates an iframe, resolves widget HTML via getWidgetHtml (cache URL or blob),
+   * and parses NUMITEMS/DURATION comments for dynamic widget duration.
+   */
+  async _renderIframeWidget(widget, region) {
     const iframe = document.createElement('iframe');
     iframe.className = 'renderer-lite-widget';
     iframe.style.width = '100%';
@@ -2885,33 +2881,12 @@ export class RendererLite {
 
       // Create regions in the hidden wrapper
       const preloadRegions = new Map();
-      const sf = this.scaleFactor;
-
       for (const regionConfig of layout.regions) {
-        const regionEl = document.createElement('div');
-        regionEl.id = `preload_region_${layoutId}_${regionConfig.id}`;
-        regionEl.className = 'renderer-lite-region';
-        regionEl.style.position = 'absolute';
-        regionEl.style.zIndex = regionConfig.zindex;
-        regionEl.style.overflow = 'hidden';
-
-        // Apply scaled positioning
-        this.applyRegionScale(regionEl, regionConfig);
-
-        wrapper.appendChild(regionEl);
-
-        const region = {
-          element: regionEl,
-          config: regionConfig,
-          widgets: regionConfig.widgets,
-          currentIndex: 0,
-          timer: null,
-          width: regionConfig.width * sf,
-          height: regionConfig.height * sf,
-          complete: false,
-          widgetElements: new Map()
-        };
-
+        const region = this._createRegionEntry(
+          regionConfig,
+          `preload_region_${layoutId}_${regionConfig.id}`,
+          wrapper
+        );
         preloadRegions.set(regionConfig.id, region);
       }
 
@@ -2992,20 +2967,7 @@ export class RendererLite {
 
     // ── Tear down old layout ──
     this.removeActionListeners();
-
-    if (this.layoutTimer) {
-      clearTimeout(this.layoutTimer);
-      this.layoutTimer = null;
-    }
-
-    if (this.preloadTimer) {
-      clearTimeout(this.preloadTimer);
-      this.preloadTimer = null;
-    }
-    if (this._preloadRetryTimer) {
-      clearTimeout(this._preloadRetryTimer);
-      this._preloadRetryTimer = null;
-    }
+    this._clearLayoutTimers();
 
     const oldLayoutId = this.currentLayoutId;
     const alreadyEmittedEnd = this.layoutEndEmitted;
@@ -3176,6 +3138,24 @@ export class RendererLite {
   }
 
   /**
+   * Clear all layout-level timers (layout duration, preload, preload retry).
+   */
+  _clearLayoutTimers() {
+    if (this.layoutTimer) {
+      clearTimeout(this.layoutTimer);
+      this.layoutTimer = null;
+    }
+    if (this.preloadTimer) {
+      clearTimeout(this.preloadTimer);
+      this.preloadTimer = null;
+    }
+    if (this._preloadRetryTimer) {
+      clearTimeout(this._preloadRetryTimer);
+      this._preloadRetryTimer = null;
+    }
+  }
+
+  /**
    * Stop current layout
    */
   stopCurrentLayout() {
@@ -3196,18 +3176,7 @@ export class RendererLite {
     this.currentLayoutId = null;
 
     // Clear timers
-    if (this.layoutTimer) {
-      clearTimeout(this.layoutTimer);
-      this.layoutTimer = null;
-    }
-    if (this.preloadTimer) {
-      clearTimeout(this.preloadTimer);
-      this.preloadTimer = null;
-    }
-    if (this._preloadRetryTimer) {
-      clearTimeout(this._preloadRetryTimer);
-      this._preloadRetryTimer = null;
-    }
+    this._clearLayoutTimers();
 
     // Remove interactive action listeners before teardown
     this.removeActionListeners();
@@ -3297,33 +3266,17 @@ export class RendererLite {
 
       // Create regions for overlay
       const overlayRegions = new Map();
-      const sf = this.scaleFactor;
       for (const regionConfig of layout.regions) {
-        const regionEl = document.createElement('div');
-        regionEl.id = `overlay_${layoutId}_region_${regionConfig.id}`;
-        regionEl.className = 'renderer-lite-region overlay-region';
-        regionEl.style.position = 'absolute';
-        regionEl.style.zIndex = String(regionConfig.zindex);
-        regionEl.style.overflow = 'hidden';
-
-        // Apply scaled positioning
-        this.applyRegionScale(regionEl, regionConfig);
-
-        overlayDiv.appendChild(regionEl);
-
-        // Store region state (dimensions use scaled values)
-        overlayRegions.set(regionConfig.id, {
-          element: regionEl,
-          config: regionConfig,
-          widgets: regionConfig.widgets,
-          currentIndex: 0,
-          timer: null,
-          width: regionConfig.width * sf,
-          height: regionConfig.height * sf,
-          complete: false,
-          isCanvas: regionConfig.isCanvas || false,
-          widgetElements: new Map()
-        });
+        const region = this._createRegionEntry(
+          regionConfig,
+          `overlay_${layoutId}_region_${regionConfig.id}`,
+          overlayDiv,
+          {
+            className: 'renderer-lite-region overlay-region',
+            isCanvas: regionConfig.isCanvas || false,
+          }
+        );
+        overlayRegions.set(regionConfig.id, region);
       }
 
       // Pre-create widget elements for overlay
