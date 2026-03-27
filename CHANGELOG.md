@@ -1,5 +1,34 @@
 # Changelog
 
+## 0.7.8 (2026-03-27)
+
+### Bug Fixes
+
+- **Layout stall fix** — Layouts no longer get stuck when the video finishes but no timer fires. Added `LAYOUT_ALREADY_PLAYING` handler in main.ts that checks `renderer.hasActiveLayoutTimer()` on each collect cycle. If the timer is missing (e.g. after GPU crash/recovery or restart), the layout is stopped and re-prepared with fresh region timers.
+- **Deferred video texture release** — `LayoutPool.releaseMediaElements()` now defers via `requestAnimationFrame()` before destroying video textures. Gives the compositor one frame to stop referencing old textures, reducing SharedImageManager "non-existent mailbox" errors from ~2/5min to near zero.
+- **HLS stream and iframe cleanup** — `_hideWidget()` now destroys HLS.js instances and cleans up media elements inside same-origin iframes. Cross-origin iframes are set to `about:blank`. Prevents memory leaks from long-running HLS streams.
+
+### Features
+
+- **GPU auto-detection** — Both Electron and Chromium now scan `/sys/class/drm` for available GPUs, resolve render nodes, and select the best one. On hybrid GPU systems (Optimus/PRIME), prefers the display GPU since render-only GPUs can't share framebuffers on Wayland. Override via `--gpu=nvidia|intel|amd|auto|/dev/dri/renderDNNN`, `XIBO_GPU` env var, or `"gpu"` key in config.json.
+- **GPU crash recovery** — `app.disableDomainBlockingFor3DAPIs()` + `--disable-gpu-process-crash-limit` allow indefinite GPU recovery instead of permanent software fallback after ~10h.
+- **`--server-port` CLI arg** for Electron (in addition to `--port`).
+- **Config management in RPM/DEB** — `apply.sh`, `clean.sh`, config templates, and `secrets.env.example` now packaged in both Electron and Chromium RPMs/DEBs.
+
+### Shell Updates
+
+- **Electron: removed `--no-zygote`** — Confirmed by Electron maintainer that GPU flags are properly propagated to zygote-spawned processes (electron/electron#50462, PR #50509). Tested: GPU active, fewer SharedImage errors than with `--no-zygote`.
+- **Electron 41.0.4 → 41.1.0**
+- **Fedora 43 + 44 RPM builds** for both Electron and Chromium.
+
+### Performance (47h Chromium production run, v0.7.7 stripped services)
+
+- Chromium: 0 crashes, 3 SharedImage errors in 47h
+- Chromium memory: stable sawtooth 362–1225 MB child PSS (no leak)
+- Chromium FDs: 748 → 918 (+3.8/hr — negligible)
+- Chromium GPU: 83,608s DRM render (23.2h active compositing)
+- Electron GPU auto-detect: Intel selected on Optimus laptop, NVIDIA correctly skipped
+
 ## 0.7.7 (2026-03-26)
 
 ### Bug Fixes
