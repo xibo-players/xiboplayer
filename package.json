@@ -17,7 +17,7 @@
     "@biomejs/biome": "^2.4.10",
     "@vitest/coverage-v8": "^4.1.2",
     "fake-indexeddb": "^6.2.5",
-    "jsdom": "^28.1.0",
+    "jsdom": "^29.0.1",
     "vitest": "^4.1.2"
   },
   "author": "Pau Aliagas <linuxnow@gmail.com>",
