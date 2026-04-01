@@ -5,3 +5,4 @@ export { ContentStore } from './content-store.js';
 export { attachSyncRelay } from './sync-relay.js';
 export { getLanIp, advertiseSyncService, discoverSyncLead } from './discovery.js';
 export { migrateContentCache } from './migrate-cache.js';
+export { detectGPUs, selectGPU, getMemoryTuning, GPU_VENDORS } from './hardware.js';

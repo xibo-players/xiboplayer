@@ -7,7 +7,8 @@
   "exports": {
     ".": "./src/index.js",
     "./cli": "./bin/cli.js",
-    "./relay": "./src/sync-relay.js"
+    "./relay": "./src/sync-relay.js",
+    "./hardware": "./src/hardware.js"
   },
   "bin": {
     "xiboplayer-proxy": "./bin/cli.js",
