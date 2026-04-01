@@ -19,15 +19,19 @@ import { readFile } from 'fs/promises';
 import { join, dirname, resolve, basename } from 'path';
 import { fileURLToPath } from 'url';
 import { glob } from 'glob';
+import { CICD_TOOLS } from './tools/cicd.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const SDK_ROOT = resolve(__dirname, '..');
 
 // Sibling repos (configurable via env)
-const PWA_ROOT = process.env.XIBO_PWA_ROOT || resolve(SDK_ROOT, '../xiboplayer-pwa');
+const PWA_ROOT = process.env.XIBO_PWA_ROOT || resolve(SDK_ROOT, 'packages/pwa');
 const ELECTRON_ROOT = process.env.XIBO_ELECTRON_ROOT || resolve(SDK_ROOT, '../xiboplayer-electron');
 const CHROMIUM_ROOT = process.env.XIBO_CHROMIUM_ROOT || resolve(SDK_ROOT, '../xiboplayer-chromium');
+const KIOSK_ROOT = process.env.XIBO_KIOSK_ROOT || resolve(SDK_ROOT, '../xiboplayer-kiosk');
+const AI_ROOT = process.env.XIBO_AI_ROOT || resolve(SDK_ROOT, '../xiboplayer-ai');
+const ANSIBLE_ROOT = process.env.XIBO_ANSIBLE_ROOT || resolve(SDK_ROOT, '../../tecman_ansible');
 
 let documentIndex = [];
 let packageIndex = [];
@@ -207,7 +211,7 @@ async function loadIndex() {
   await indexSDKPackages();
 
   // Player repos
-  await indexPlayerRepo(PWA_ROOT, 'xiboplayer-pwa', [
+  await indexPlayerRepo(PWA_ROOT, 'pwa', [
     'src/main.ts', 'public/sw-pwa.js',
   ]);
   await indexPlayerRepo(ELECTRON_ROOT, 'xiboplayer-electron', [
@@ -216,6 +220,40 @@ async function loadIndex() {
   await indexPlayerRepo(CHROMIUM_ROOT, 'xiboplayer-chromium', [
     'server/server.js',
   ]);
+
+  // Kiosk scripts
+  await indexPlayerRepo(KIOSK_ROOT, 'xiboplayer-kiosk', [
+    'kiosk/gnome-kiosk-script.xibo.sh',
+    'kiosk/gnome-kiosk-script.xibo-init.sh',
+    'kiosk/xibo-show-ip.sh',
+    'kiosk/xibo-show-cms.sh',
+    'rpm/xiboplayer-kiosk.spec',
+  ]);
+
+  // AI service
+  await indexPlayerRepo(AI_ROOT, 'xiboplayer-ai', [
+    'src/agent.js', 'src/app.js', 'src/mcp.js', 'src/tools.js', 'src/server.js',
+  ]);
+
+  // Ansible playbooks (as documents, not source)
+  const ansibleReadme = await safeRead(join(ANSIBLE_ROOT, 'README.md'));
+  if (ansibleReadme) {
+    documentIndex.push({
+      type: 'readme', path: 'tecman_ansible/README.md',
+      content: ansibleReadme, headings: extractHeadings(ansibleReadme),
+      package: 'ansible',
+    });
+  }
+  for (const playbook of ['install.yml', 'deploy-pwa.yml', 'deploy-xibo-cms.yml', 'deploy-xibo-ai.yml',
+    'release-xiboplayer.yml', 'swag-configure.yml', 'publish-npm.yml']) {
+    const content = await safeRead(join(ANSIBLE_ROOT, 'playbooks/services', playbook));
+    if (content) {
+      documentIndex.push({
+        type: 'source', path: `tecman_ansible/playbooks/services/${playbook}`,
+        content, package: 'ansible', headings: [],
+      });
+    }
+  }
 
   // Deduplicate events by name
   const seen = new Set();
@@ -383,6 +421,12 @@ async function main() {
           required: ['symbol'],
         },
       },
+      // CI/CD tools (workflow runs, releases, version drift, PRs)
+      ...CICD_TOOLS.map(t => ({
+        name: t.name,
+        description: t.description,
+        inputSchema: t.inputSchema,
+      })),
     ],
   }));
 
@@ -446,8 +490,15 @@ async function main() {
         return { content: [{ type: 'text', text }] };
       }
 
-      default:
+      default: {
+        // Check CI/CD tools
+        const cicdTool = CICD_TOOLS.find(t => t.name === name);
+        if (cicdTool) {
+          const text = await cicdTool.handler(args || {});
+          return { content: [{ type: 'text', text }] };
+        }
         throw new Error(`Unknown tool: ${name}`);
+      }
     }
   });
 
