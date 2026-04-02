@@ -2,7 +2,7 @@
   "name": "@xiboplayer/player",
   "version": "0.7.13",
   "private": true,
-  "description": "Meta package - installs all Xibo Player packages",
+  "description": "Meta package - installs all xiboplayer packages",
   "type": "module",
   "main": "./src/index.js",
   "exports": {

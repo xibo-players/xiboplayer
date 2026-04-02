@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2024-2026 Pau Aliagas <linuxnow@gmail.com>
 /**
- * Configurable Logger for Xibo Players
+ * Configurable Logger for xiboplayers
  *
  * Supports log levels: DEBUG, INFO, WARNING, ERROR, NONE
  *

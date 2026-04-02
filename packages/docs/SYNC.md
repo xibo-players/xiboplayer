@@ -2,7 +2,7 @@
 
 ## Overview
 
-Xibo Player supports synchronized multi-display playback for video walls. Multiple screens switch layouts simultaneously, play videos in lockstep, and cascade transitions with choreography effects — all coordinated over LAN with <8ms precision.
+xiboplayer supports synchronized multi-display playback for video walls. Multiple screens switch layouts simultaneously, play videos in lockstep, and cascade transitions with choreography effects — all coordinated over LAN with <8ms precision.
 
 ## Architecture
 
@@ -326,7 +326,7 @@ wave-down:            diagonal-br:          simultaneous:
 
 ## Comparison with Xibo Native Sync
 
-| Feature | Xibo Native (Windows) | Xibo Player (PWA) |
+| Feature | Xibo Native (Windows) | xiboplayer (PWA) |
 |---------|----------------------|-------------------|
 | **Platform** | Windows only | Any (Electron, Chromium, Android, webOS) |
 | **Transport** | ZeroMQ (TCP) | WebSocket (HTTP upgrade) |

@@ -28,9 +28,9 @@ test.describe('Setup screen', () => {
     await expect(page.locator('#display-name')).toBeVisible();
   });
 
-  test('setup page has Xibo Player branding', async ({ page }) => {
+  test('setup page has xiboplayer branding', async ({ page }) => {
     await page.goto('/player/setup.html');
 
-    await expect(page).toHaveTitle(/Xibo Player Setup/);
+    await expect(page).toHaveTitle(/xiboplayer Setup/);
   });
 });
