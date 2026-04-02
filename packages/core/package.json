@@ -1,7 +1,7 @@
 {
   "name": "@xiboplayer/core",
   "version": "0.7.13",
-  "description": "Xibo Player core orchestration and lifecycle management",
+  "description": "xiboplayer core orchestration and lifecycle management",
   "type": "module",
   "main": "./src/index.js",
   "types": "./src/index.d.ts",

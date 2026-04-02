@@ -516,7 +516,7 @@ class PwaPlayer {
 
       // Update page title with display name
       if (this.displaySettings) {
-        document.title = `Xibo Player - ${this.displaySettings.getDisplayName()}`;
+        document.title = `xiboplayer - ${this.displaySettings.getDisplayName()}`;
       }
 
       // Set display location from CMS settings

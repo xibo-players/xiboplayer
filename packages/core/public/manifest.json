@@ -1,5 +1,5 @@
 {
-  "name": "Xibo Player",
+  "name": "xiboplayer",
   "short_name": "Xibo",
   "description": "Free Xibo-compatible digital signage player",
   "start_url": "/player/",

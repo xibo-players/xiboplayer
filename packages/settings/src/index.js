@@ -5,7 +5,7 @@ import pkg from '../package.json' with { type: 'json' };
 export const VERSION = pkg.version;
 
 /**
- * Settings manager for Xibo Player
+ * Settings manager for xiboplayer
  * @module @xiboplayer/settings
  */
 export { DisplaySettings } from './settings.js';

@@ -1,4 +1,4 @@
-# Xibo Player Configuration
+# xiboplayer Configuration
 
 Both the Electron and Chromium players are configured through a `config.json` file.
 The file is sparse — only include keys you want to override; defaults apply for the rest.

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2024-2026 Pau Aliagas <linuxnow@gmail.com>
 /**
- * Test Utilities for Xibo Player Core
+ * Test Utilities for xiboplayer Core
  *
  * Provides mocking utilities, test helpers, and fixtures for unit tests.
  */

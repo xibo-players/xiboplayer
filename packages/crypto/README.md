@@ -1,6 +1,6 @@
 # @xiboplayer/crypto
 
-RSA key management for Xibo Player XMR registration.
+RSA key management for xiboplayer XMR registration.
 
 Generates RSA-1024 key pairs via the Web Crypto API for display registration with Xibo CMS. The public key is sent during `RegisterDisplay` so the CMS can associate it with the display record.
 

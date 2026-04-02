@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2024-2026 Pau Aliagas <linuxnow@gmail.com>
 /**
- * @xiboplayer/proxy — CORS proxy + static server for Xibo Player
+ * @xiboplayer/proxy — CORS proxy + static server for xiboplayer
  *
  * Provides Express middleware that:
  * - Proxies XMDS SOAP requests (/xmds-proxy)
