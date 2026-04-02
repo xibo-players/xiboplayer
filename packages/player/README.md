@@ -1,6 +1,6 @@
 # @xiboplayer/player Documentation
 
-**Meta package - installs all Xibo Player packages.**
+**Meta package - installs all xiboplayer packages.**
 
 ## Overview
 

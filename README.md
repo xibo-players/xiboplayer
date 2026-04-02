@@ -1,4 +1,4 @@
-# Xibo Player SDK
+# xiboplayer SDK
 
 Modular JavaScript SDK for building [Xibo](https://xibosignage.com) digital signage players. Each package handles one concern — combine them to build a full player, or use individual packages in your own projects.
 

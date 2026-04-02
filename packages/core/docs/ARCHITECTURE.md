@@ -1,6 +1,6 @@
 # Architecture Documentation
 
-Technical architecture and design decisions for the Xibo Player multi-platform implementation.
+Technical architecture and design decisions for the xiboplayer multi-platform implementation.
 
 ## Table of Contents
 
@@ -13,7 +13,7 @@ Technical architecture and design decisions for the Xibo Player multi-platform i
 
 ## Overview
 
-The Xibo Player is a free, open-source implementation of a Xibo-compatible digital signage player with full compatibility with Xibo CMS.
+The xiboplayer is a free, open-source implementation of a Xibo-compatible digital signage player with full compatibility with Xibo CMS.
 
 ###Key Design Principles
 

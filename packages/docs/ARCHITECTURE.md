@@ -1,6 +1,6 @@
-# Xibo Player SDK Architecture
+# xiboplayer SDK Architecture
 
-Technical architecture of the Xibo Player SDK.
+Technical architecture of the xiboplayer SDK.
 
 ## Design Philosophy
 

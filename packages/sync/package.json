@@ -1,7 +1,7 @@
 {
   "name": "@xiboplayer/sync",
   "version": "0.7.13",
-  "description": "Multi-display synchronization for Xibo Player",
+  "description": "Multi-display synchronization for xiboplayer",
   "type": "module",
   "main": "src/sync-manager.js",
   "types": "src/index.d.ts",

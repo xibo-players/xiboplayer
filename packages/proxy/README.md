@@ -1,6 +1,6 @@
 # @xiboplayer/proxy
 
-**CORS proxy and static server for Xibo Player shells.**
+**CORS proxy and static server for xiboplayer shells.**
 
 ## Overview
 
