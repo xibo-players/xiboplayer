@@ -250,7 +250,7 @@ export class RestClient {
       clientCode: this.config.clientCode || 400,
       operatingSystem: os,
       macAddress: this.config.macAddress || 'n/a',
-      xmrChannel: this.config.xmrChannel,
+      xmrChannel: this.config.xmrChannel || '',
       xmrPubKey: this.config.xmrPubKey || '',
     });
 
