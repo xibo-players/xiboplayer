@@ -2965,4 +2965,231 @@ describe('RendererLite', () => {
       expect(renderer.currentLayoutId === createdForLayoutId).toBe(false);
     });
   });
+
+  describe('Layout-to-layout transitions (#337)', () => {
+    describe('parseXlf: layoutTransitionIn attributes', () => {
+      it('returns null layoutTransitionIn when attribute is absent (backwards compat)', () => {
+        const xlf = `<layout width="1920" height="1080" duration="60"><region id="r1" width="1920" height="1080" top="0" left="0"/></layout>`;
+        const layout = renderer.parseXlf(xlf);
+        expect(layout.layoutTransitionIn).toBeNull();
+      });
+
+      it('parses layoutTransitionIn type + duration + direction', () => {
+        const xlf = `<layout width="1920" height="1080" duration="60"
+                             layoutTransitionIn="fade"
+                             layoutTransitionInDuration="750">
+          <region id="r1" width="1920" height="1080" top="0" left="0"/>
+        </layout>`;
+        const layout = renderer.parseXlf(xlf);
+        expect(layout.layoutTransitionIn).toEqual({
+          type: 'fade',
+          duration: 750,
+          direction: undefined,
+        });
+      });
+
+      it('parses slide transition with direction', () => {
+        const xlf = `<layout width="1920" height="1080" duration="60"
+                             layoutTransitionIn="slide"
+                             layoutTransitionInDuration="500"
+                             layoutTransitionInDirection="E">
+          <region id="r1" width="1920" height="1080" top="0" left="0"/>
+        </layout>`;
+        const layout = renderer.parseXlf(xlf);
+        expect(layout.layoutTransitionIn.type).toBe('slide');
+        expect(layout.layoutTransitionIn.direction).toBe('E');
+      });
+
+      it('leaves duration undefined when only type is provided', () => {
+        const xlf = `<layout width="1920" height="1080" duration="60"
+                             layoutTransitionIn="fade">
+          <region id="r1" width="1920" height="1080" top="0" left="0"/>
+        </layout>`;
+        const layout = renderer.parseXlf(xlf);
+        expect(layout.layoutTransitionIn.duration).toBeUndefined();
+      });
+    });
+
+    describe('_normalizeLayoutTransition + _resolveLayoutTransition', () => {
+      it('defaults to instant when options.layoutTransition is absent', () => {
+        // The beforeEach renderer has no layoutTransition option
+        expect(renderer.layoutTransition).toEqual({
+          type: 'instant',
+          duration: 500,
+          direction: undefined,
+        });
+      });
+
+      it('honours player-wide default from constructor options', () => {
+        const customContainer = document.createElement('div');
+        document.body.appendChild(customContainer);
+        const custom = new RendererLite(
+          { cmsUrl: 'https://test.com', hardwareKey: 'k' },
+          customContainer,
+          {
+            getWidgetHtml: () => Promise.resolve('<x/>'),
+            layoutTransition: { type: 'fade', duration: 750 },
+          }
+        );
+        expect(custom.layoutTransition.type).toBe('fade');
+        expect(custom.layoutTransition.duration).toBe(750);
+        custom.cleanup();
+        customContainer.remove();
+      });
+
+      it('per-layout layoutTransitionIn beats renderer default', () => {
+        renderer.layoutTransition = {
+          type: 'fade',
+          duration: 500,
+          direction: undefined,
+        };
+        const layout = {
+          layoutTransitionIn: { type: 'slide', duration: 1000, direction: 'E' },
+        };
+        const spec = renderer._resolveLayoutTransition(layout);
+        expect(spec).toEqual({ type: 'slide', duration: 1000, direction: 'E' });
+      });
+
+      it('missing fields in per-layout override fall back to defaults', () => {
+        renderer.layoutTransition = {
+          type: 'fade',
+          duration: 500,
+          direction: 'N',
+        };
+        const layout = {
+          layoutTransitionIn: { type: 'wipe' }, // no duration or direction
+        };
+        const spec = renderer._resolveLayoutTransition(layout);
+        expect(spec.type).toBe('wipe');
+        expect(spec.duration).toBe(500);
+        expect(spec.direction).toBe('N');
+      });
+
+      it('layout with null layoutTransitionIn uses renderer default', () => {
+        renderer.layoutTransition = {
+          type: 'fade',
+          duration: 500,
+          direction: undefined,
+        };
+        const spec = renderer._resolveLayoutTransition({
+          layoutTransitionIn: null,
+        });
+        expect(spec).toBe(renderer.layoutTransition);
+      });
+    });
+
+    describe('Transitions: slideIn / slideOut / wipeIn', () => {
+      let el;
+      beforeEach(() => {
+        el = document.createElement('div');
+        document.body.appendChild(el);
+      });
+      afterEach(() => {
+        el.remove();
+      });
+
+      it('slideIn returns a running Animation with translate transform', () => {
+        const anim = Transitions.slideIn(el, 500, 'E', 1920, 1080);
+        expect(anim).toBeTruthy();
+        // Web Animations API: an animation has a playState property
+        expect(typeof anim.cancel).toBe('function');
+      });
+
+      it('slideOut returns a running Animation', () => {
+        const anim = Transitions.slideOut(el, 500, 'W', 1920, 1080);
+        expect(anim).toBeTruthy();
+        expect(typeof anim.cancel).toBe('function');
+      });
+
+      it('wipeIn returns a running Animation for every compass direction', () => {
+        for (const dir of ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW']) {
+          const anim = Transitions.wipeIn(el, 500, dir);
+          expect(anim).toBeTruthy();
+          anim.cancel();
+        }
+      });
+
+      it('Transitions.apply dispatches slide / wipe correctly', () => {
+        const slideAnim = Transitions.apply(
+          el, { type: 'slide', duration: 500, direction: 'E' }, true, 1920, 1080
+        );
+        expect(slideAnim).toBeTruthy();
+        slideAnim.cancel();
+
+        const wipeAnim = Transitions.apply(
+          el, { type: 'wipe', duration: 500, direction: 'E' }, true, 1920, 1080
+        );
+        expect(wipeAnim).toBeTruthy();
+        wipeAnim.cancel();
+      });
+
+      it('Transitions.apply returns null for wipe outgoing (wipe is reveal-only)', () => {
+        const result = Transitions.apply(
+          el, { type: 'wipe', duration: 500, direction: 'E' }, false, 1920, 1080
+        );
+        expect(result).toBeNull();
+      });
+    });
+
+    describe('_swapToPreloadedLayout dispatch', () => {
+      it('routes to instant path when spec type is instant', async () => {
+        // Spy on both branches so we can verify the dispatch choice
+        const instantSpy = vi.spyOn(
+          renderer, '_swapToPreloadedLayoutInstant'
+        ).mockResolvedValue();
+        const transitionSpy = vi.spyOn(
+          renderer, '_swapToPreloadedLayoutWithTransition'
+        ).mockResolvedValue();
+
+        // Seed the pool with a fake preloaded entry (no transition)
+        const wrapper = document.createElement('div');
+        container.appendChild(wrapper);
+        renderer.layoutPool.add(42, {
+          container: wrapper,
+          layout: { width: 1920, height: 1080, bgcolor: '#000', regions: [] },
+          regions: new Map(),
+          blobUrls: new Set(),
+        });
+
+        await renderer._swapToPreloadedLayout(42);
+
+        expect(instantSpy).toHaveBeenCalledTimes(1);
+        expect(transitionSpy).not.toHaveBeenCalled();
+      });
+
+      it('routes to transition path when spec type is non-instant', async () => {
+        const instantSpy = vi.spyOn(
+          renderer, '_swapToPreloadedLayoutInstant'
+        ).mockResolvedValue();
+        const transitionSpy = vi.spyOn(
+          renderer, '_swapToPreloadedLayoutWithTransition'
+        ).mockResolvedValue();
+
+        const wrapper = document.createElement('div');
+        container.appendChild(wrapper);
+        renderer.layoutPool.add(43, {
+          container: wrapper,
+          layout: {
+            width: 1920, height: 1080, bgcolor: '#000', regions: [],
+            layoutTransitionIn: { type: 'fade', duration: 500 },
+          },
+          regions: new Map(),
+          blobUrls: new Set(),
+        });
+
+        await renderer._swapToPreloadedLayout(43);
+
+        expect(transitionSpy).toHaveBeenCalledTimes(1);
+        expect(instantSpy).not.toHaveBeenCalled();
+      });
+
+      it('logs error and returns when layout is not in pool', async () => {
+        const errorSpy = vi.spyOn(renderer.log, 'error');
+        await renderer._swapToPreloadedLayout(999);
+        expect(errorSpy).toHaveBeenCalledWith(
+          expect.stringContaining('not in pool')
+        );
+      });
+    });
+  });
 });
