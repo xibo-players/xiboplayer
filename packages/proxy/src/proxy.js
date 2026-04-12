@@ -551,7 +551,7 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, confi
         if (store) {
           const staleInfo = store.getMetadata(storeKey);
           if (staleInfo) {
-            const ageMin = Math.round((Date.now() - (staleInfo.metadata?.createdAt || 0)) / 60000);
+            const ageMin = Math.round((Date.now() - (staleInfo?.createdAt || 0)) / 60000);
             logFile.warn(`Serving stale cache for ${storeKey} (${ageMin}min old, CMS returned ${response.status})`);
             res.setHeader('X-Stale-Cache', `${ageMin}min`);
             return serveFromStore(req, res, storeKey);
@@ -683,7 +683,7 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, confi
       if (store && !res.headersSent) {
         const staleInfo = store.getMetadata(storeKey);
         if (staleInfo) {
-          const ageMin = Math.round((Date.now() - (staleInfo.metadata?.createdAt || 0)) / 60000);
+          const ageMin = Math.round((Date.now() - (staleInfo?.createdAt || 0)) / 60000);
           logFile.warn(`Serving stale cache for ${storeKey} (${ageMin}min old, CMS unreachable)`);
           res.setHeader('X-Stale-Cache', `${ageMin}min`);
           return serveFromStore(req, res, storeKey);
