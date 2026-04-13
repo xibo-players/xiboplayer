@@ -704,6 +704,9 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, confi
    */
   function serveFromStore(req, res, storeKey) {
     if (!store) return res.status(501).json({ error: 'ContentStore not configured' });
+    // Client disconnected before we got here — nothing to serve.
+    // Prevents ERR_STREAM_UNABLE_TO_PIPE from pipelineImpl's sync pre-flight.
+    if (res.destroyed || res.writableEnded) return;
 
     let info;
     try {
@@ -739,11 +742,18 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, confi
       res.setHeader('Access-Control-Allow-Origin', '*');
 
       const stream = store.getReadStream(storeKey, { start, end });
-      pipeline(stream, res, (err) => {
-        if (err && err.code !== 'ERR_STREAM_PREMATURE_CLOSE') {
-          logStore.error(`Stream error serving ${storeKey}: ${err.message}`);
+      try {
+        pipeline(stream, res, (err) => {
+          if (err && err.code !== 'ERR_STREAM_PREMATURE_CLOSE') {
+            logStore.error(`Stream error serving ${storeKey}: ${err.message}`);
+          }
+        });
+      } catch (err) {
+        if (err.code !== 'ERR_STREAM_UNABLE_TO_PIPE' && err.code !== 'ERR_STREAM_PREMATURE_CLOSE') {
+          logStore.error(`Pipe setup error for ${storeKey}: ${err.message}`);
         }
-      });
+        // Client disconnected between guard and pipeline — silently drop.
+      }
     } else {
       res.status(200);
       res.setHeader('Content-Type', contentType);
@@ -752,11 +762,18 @@ export function createProxyApp({ pwaPath, appVersion = '0.0.0', pwaConfig, confi
       res.setHeader('Access-Control-Allow-Origin', '*');
 
       const stream = store.getReadStream(storeKey);
-      pipeline(stream, res, (err) => {
-        if (err && err.code !== 'ERR_STREAM_PREMATURE_CLOSE') {
-          logStore.error(`Stream error serving ${storeKey}: ${err.message}`);
+      try {
+        pipeline(stream, res, (err) => {
+          if (err && err.code !== 'ERR_STREAM_PREMATURE_CLOSE') {
+            logStore.error(`Stream error serving ${storeKey}: ${err.message}`);
+          }
+        });
+      } catch (err) {
+        if (err.code !== 'ERR_STREAM_UNABLE_TO_PIPE' && err.code !== 'ERR_STREAM_PREMATURE_CLOSE') {
+          logStore.error(`Pipe setup error for ${storeKey}: ${err.message}`);
         }
-      });
+        // Client disconnected between guard and pipeline — silently drop.
+      }
     }
   }
 
