@@ -41,3 +41,28 @@ jobs:
         ```
 
         Full list: `@xiboplayer/{core,cache,proxy,renderer,stats,utils,pwa,xmds,xmr,sw,settings,sync,schedule,layout-runtime,timeline,widget-host}`.
+
+  # Generate a CycloneDX SBOM for the tagged release and attach it to the
+  # GitHub Release. Framed as "software inventory for transparency", not
+  # a CRA compliance claim (see xiboplayer-compliance/cra/ RFC-0001).
+  # Downstream commercial redistributors need it for their own work.
+  sbom:
+    needs: release
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate CycloneDX SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          path: .
+          format: cyclonedx-json
+          output-file: xiboplayer-sdk-sbom.cdx.json
+
+      - name: Upload SBOM to Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${GITHUB_REF_NAME}" xiboplayer-sdk-sbom.cdx.json --clobber
