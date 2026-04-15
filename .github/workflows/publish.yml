@@ -14,7 +14,7 @@ permissions:
 
 jobs:
   publish:
-    uses: xibo-players/.github/.github/workflows/publish-npm.yml@5c3b3699cd05c12bb3ec76e5d1d317d539dd69b4  # main
+    uses: xibo-players/.github/.github/workflows/publish-npm.yml@3dcfbc978c4b1be83b2eea590f3d591a7142cdd1  # main
     with:
       publish-command: 'pnpm --filter @xiboplayer/pwa build && pnpm -r publish --no-git-checks --access public'
 
