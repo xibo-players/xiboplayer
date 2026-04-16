@@ -208,17 +208,56 @@ xiboplayer grows an HTTP submit pathway.
 - `packages/renderer/vitest.config.js` — alias for standalone runs
 - `pnpm-lock.yaml` — workspace edge
 
-## Unresolved questions for the user
+## Decisions locked 2026-04-16
 
-1. **Cross-repo evaluator move** — should I publish `@xiboplayer/expr@0.7.22`
-   and update `xiboplayer-smil-tools` to import it, eliminating the
-   duplicate? Or stage that after TB3 lands?
+1. **Q1 — Cross-repo evaluator move: DO IT NOW.** Publish
+   `@xiboplayer/expr` on next release bump; update
+   `xiboplayer-smil-tools` to import it; delete the translator's
+   inline copies. Single source of truth, round-trip guarantee.
+   **Do this BEFORE TB3** — setvalue dispatcher gets to reuse the
+   shared evaluator from day one.
 
-2. **Setvalue carrier format (a/b/c above).** This is the biggest
-   architectural call for TB3 and should be made before the next agent
-   picks it up. My lean: **(b) `xp:action` `effect.type = "setState"`** —
-   reuses the already-wired CMS round-trip path.
+2. **Q2 — Setvalue carrier format: (b) `xp:action` overload.**
+   Extend the existing `xp:action` grammar with
+   `effect.type = "setState"` / `"newState"` / `"delState"`.
+   Reuses the already-wired CMS round-trip path; no new XLF
+   schema extensions; no parallel SMIL playback lane.
 
-3. **`@xiboplayer/expr` version bumping** — package is at `0.7.21` to match
-   the rest of the monorepo. First publish will need `release-xiboplayer.yml`
-   to pick it up. Verify nothing special is needed.
+   Concrete shape (to implement in TB3):
+
+   ```xml
+   <text xp:action='{"trigger":{"type":"keyPress","code":"1"},
+                     "effect":{"type":"setState",
+                               "ref":"kiosk/language",
+                               "value":"'en'"}}'>
+     Press 1 for English
+   </text>
+   ```
+
+   TB3 implementation:
+   - Extend `ada/grammar/xp/xp-v1.2.xsd` to add `setState`/
+     `newState`/`delState` as permissible `effect.type` values
+   - Extend `xiboplayer-smil-tools/src/xlf-builder.js` to emit
+     these as `<action actionType="command"
+     commandCode="xp:setState" …>` (or similar — final XLF shape
+     TBD per Xibo CMS round-trip test)
+   - Extend PWA renderer to dispatch these commands into
+     `XpStateStore.set/delete` at action-fire time
+   - Bump xp:* spec to v1.3 documenting the additions
+
+3. **Q3 — `@xiboplayer/expr` version bumping**: verified OK.
+   Package tracks monorepo version (0.7.21). First publish via
+   `release-xiboplayer.yml` picks it up automatically since it's
+   a workspace package. No special handling.
+
+## Next agent's brief (TB3)
+
+When the next session picks up Track B:
+
+1. First: move `evalExpr` out of `xiboplayer-smil-tools/src/xlf-builder.js`
+   into `@xiboplayer/expr` (publish tag first, then update
+   smil-tools deps, delete inline). Round-trip guarantee
+   enforced.
+2. Then: implement Q2 (b) — `xp:action` overload for setState
+   in translator + PWA dispatcher + spec bump to xp:v1.3.
+3. Then: TB6 scope promotions — 3 W3C State tests flip to in-scope.
