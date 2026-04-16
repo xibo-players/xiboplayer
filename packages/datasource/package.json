@@ -1,0 +1,42 @@
+{
+  "name": "@xiboplayer/datasource",
+  "version": "0.7.21",
+  "description": "Shared data-source cache with dedup, TTL, offline fallback + localStorage persistence for ADA xp:datasource widgets (#235 G9)",
+  "type": "module",
+  "main": "./src/index.js",
+  "types": "./src/index.d.ts",
+  "exports": {
+    ".": "./src/index.js",
+    "./client": "./src/datasource-client.js",
+    "./jsonpath": "./src/jsonpath.js",
+    "./preamble": "./src/widget-preamble.js"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
+  },
+  "dependencies": {
+    "@xiboplayer/utils": "workspace:*"
+  },
+  "devDependencies": {
+    "vitest": "^4.1.2"
+  },
+  "keywords": [
+    "xibo",
+    "digital-signage",
+    "datasource",
+    "cache",
+    "offline",
+    "jsonpath",
+    "ada"
+  ],
+  "author": "Pau Aliagas <linuxnow@gmail.com>",
+  "license": "AGPL-3.0-or-later",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/xibo-players/xiboplayer.git",
+    "directory": "packages/datasource"
+  },
+  "homepage": "https://xiboplayer.org"
+}
