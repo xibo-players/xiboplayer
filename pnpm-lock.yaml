@@ -224,6 +224,9 @@ importers:
       '@xiboplayer/cache':
         specifier: workspace:*
         version: link:../cache
+      '@xiboplayer/expr':
+        specifier: workspace:*
+        version: link:../expr
       '@xiboplayer/schedule':
         specifier: workspace:*
         version: link:../schedule
