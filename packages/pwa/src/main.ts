@@ -68,6 +68,8 @@ class PwaPlayer {
   private _screenshotInFlight = false; // Concurrency guard — one capture at a time
   private _wakeLock: any = null; // Screen Wake Lock sentinel
   private syncManager: any = null; // Multi-display sync coordinator
+  private _syncGroupDebounceTimer: ReturnType<typeof setTimeout> | null = null; // #236 tag→group bridge
+  private _pendingSyncGroup: string | null = null; // Latest group observed on a layout while debouncing
   private _currentLayoutEnableStat: boolean = true; // enableStat from current layout XLF
   private _probeTimer: any = null; // Debounce timer for duration probing
   private _mediaStatusTimer: ReturnType<typeof setTimeout> | null = null; // Debounce timer for media status check
@@ -755,6 +757,77 @@ class PwaPlayer {
       const dur = id ? this.core.getLayoutDuration(id) : undefined;
       this.timelineOverlay?.update(timeline, id, dur);
     });
+  }
+
+  /**
+   * Layout-tag → sync-group bridge (#236, Design A).
+   *
+   * Called from the renderer's `layoutStart` handler. Inspects the
+   * newly-active layout's parsed `<tags>` for a single
+   * `xp-sync-group:NAME` marker (emitted by the
+   * xiboplayer-smil-tools translator). When NAME differs from the
+   * current `syncManager.syncConfig.syncGroup`, schedules a
+   * debounced `setSyncGroup(NAME)` call 2 s out.
+   *
+   * Debouncing coalesces rapid back-to-back layout changes (day-part
+   * boundaries, preemption) so we tear down the transport at most
+   * once per 2 s window.
+   *
+   * Design decision — no-op when the layout has NO `xp-sync-group:*`
+   * tag:
+   *   The translator only emits the tag when the source SMIL had
+   *   `xp:sync-group="…"`. A plain layout without the tag is
+   *   "not-grouped by author intent", not "explicitly leave the
+   *   group". Forcing `setSyncGroup(null)` on every ungrouped layout
+   *   would churn the cohort on each rotation. Explicit leave needs
+   *   an explicit mechanism (e.g. `<tag>xp-sync-group:none</tag>`
+   *   or an empty-value variant) — deferred until someone asks for
+   *   it. Multiple `xp-sync-group:*` tags on one layout: take the
+   *   first and log a warning.
+   */
+  private handleLayoutSyncGroupTag(tags: string[]) {
+    if (!this.syncManager || !Array.isArray(tags) || tags.length === 0) return;
+
+    const prefix = 'xp-sync-group:';
+    const matches = tags.filter((t) => typeof t === 'string' && t.startsWith(prefix));
+    if (matches.length === 0) return; // No tag → keep current group (see decision note above)
+
+    if (matches.length > 1) {
+      log.warn(`[Sync] Multiple xp-sync-group tags on layout — using first: ${matches.map((m) => m.slice(prefix.length)).join(', ')}`);
+    }
+
+    const groupName = matches[0].slice(prefix.length).trim();
+    if (!groupName) return;
+
+    const current = this.syncManager.syncConfig?.syncGroup == null
+      ? null
+      : String(this.syncManager.syncConfig.syncGroup);
+    if (groupName === current) return; // Already in this group — fast-path no-op
+
+    this._pendingSyncGroup = groupName;
+    if (this._syncGroupDebounceTimer) {
+      clearTimeout(this._syncGroupDebounceTimer);
+    }
+
+    this._syncGroupDebounceTimer = setTimeout(() => {
+      this._syncGroupDebounceTimer = null;
+      const target = this._pendingSyncGroup;
+      this._pendingSyncGroup = null;
+      if (!target || !this.syncManager) return;
+
+      // Re-check vs current in case another handler already switched us.
+      const now = this.syncManager.syncConfig?.syncGroup == null
+        ? null
+        : String(this.syncManager.syncConfig.syncGroup);
+      if (target === now) return;
+
+      log.info(`[Sync] Layout tag → setSyncGroup('${target}') (was '${now ?? 'none'}')`);
+      try {
+        this.syncManager.setSyncGroup(target);
+      } catch (err) {
+        log.error('[Sync] setSyncGroup failed:', err);
+      }
+    }, 2000);
   }
 
   /**
@@ -1632,6 +1705,15 @@ class PwaPlayer {
       this.updateStatus(`Playing layout ${layoutId}`);
 
       this.core.setCurrentLayout(layoutId);
+
+      // #236: layout-tag → sync-group bridge. Inspect the incoming
+      // layout's <tags> for xp-sync-group:NAME and debounce a
+      // setSyncGroup() call. Falls back to renderer.getCurrentLayoutTags()
+      // if the event payload didn't carry tags directly.
+      const tags: string[] = Array.isArray(_layout?.tags)
+        ? _layout.tags
+        : (this.renderer.getCurrentLayoutTags?.() ?? []);
+      this.handleLayoutSyncGroupTag(tags);
 
       // Store layout-level enableStat for use in layoutEnd
       this._currentLayoutEnableStat = _layout?.enableStat !== false;

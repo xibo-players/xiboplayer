@@ -7,7 +7,7 @@
  * The full init() flow requires a live DOM + SW and is covered by Playwright e2e.
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 
 // Since PwaPlayer methods are private, we test the logic by reimplementing
 // the pure functions here. This is a practical approach for a class with
@@ -267,5 +267,175 @@ describe('IC routing', () => {
     const res = routeIC('/criteria', '', null);
     expect(res.status).toBe(200);
     expect(JSON.parse(res.body).playerType).toBe('pwa');
+  });
+});
+
+// ── #236 layout-tag → sync-group bridge (handleLayoutSyncGroupTag) ──
+//
+// Re-implements the PwaPlayer method with the same shape + semantics
+// using an injectable syncManager + log. Any behavioural change in
+// the real method must be mirrored here (and vice-versa).
+describe('handleLayoutSyncGroupTag (#236)', () => {
+  function makeHandler(syncManager: any, logger: { warn: any; info: any; error: any }) {
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+    let pending: string | null = null;
+
+    return {
+      call(tags: string[]) {
+        if (!syncManager || !Array.isArray(tags) || tags.length === 0) return;
+        const prefix = 'xp-sync-group:';
+        const matches = tags.filter((t) => typeof t === 'string' && t.startsWith(prefix));
+        if (matches.length === 0) return;
+        if (matches.length > 1) {
+          logger.warn(`multiple tags: ${matches.join(',')}`);
+        }
+        const groupName = matches[0].slice(prefix.length).trim();
+        if (!groupName) return;
+        const current = syncManager.syncConfig?.syncGroup == null
+          ? null
+          : String(syncManager.syncConfig.syncGroup);
+        if (groupName === current) return;
+
+        pending = groupName;
+        if (debounceTimer) clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(() => {
+          debounceTimer = null;
+          const target = pending;
+          pending = null;
+          if (!target || !syncManager) return;
+          const now = syncManager.syncConfig?.syncGroup == null
+            ? null
+            : String(syncManager.syncConfig.syncGroup);
+          if (target === now) return;
+          try { syncManager.setSyncGroup(target); } catch (err) { logger.error(err); }
+        }, 2000);
+      },
+    };
+  }
+
+  function makeSyncManager(initialGroup: string | null = 'lobby') {
+    const sm: any = {
+      syncConfig: { syncGroup: initialGroup },
+      calls: [] as string[],
+      setSyncGroup(name: string | null) {
+        this.calls.push(String(name));
+        this.syncConfig.syncGroup = name;
+      },
+    };
+    return sm;
+  }
+
+  const noopLog = { warn: () => {}, info: () => {}, error: () => {} };
+
+  it('no-ops when syncManager is null', () => {
+    const h = makeHandler(null, noopLog);
+    // Must not throw
+    h.call(['xp-sync-group:foo']);
+  });
+
+  it('no-ops when tags array is empty', () => {
+    const sm = makeSyncManager('lobby');
+    const h = makeHandler(sm, noopLog);
+    h.call([]);
+    expect(sm.calls).toEqual([]);
+  });
+
+  it('no-ops when layout has no xp-sync-group:* tag (keeps current group)', () => {
+    const sm = makeSyncManager('lobby');
+    const h = makeHandler(sm, noopLog);
+    h.call(['smil-imported', 'campaign:spring']);
+    // Advance past debounce — still no setSyncGroup call
+    vi.useFakeTimers();
+    vi.advanceTimersByTime(2500);
+    vi.useRealTimers();
+    expect(sm.calls).toEqual([]);
+  });
+
+  it('no-ops when tag matches current group', () => {
+    const sm = makeSyncManager('lobby-wall');
+    const h = makeHandler(sm, noopLog);
+    h.call(['xp-sync-group:lobby-wall']);
+    vi.useFakeTimers();
+    vi.advanceTimersByTime(2500);
+    vi.useRealTimers();
+    expect(sm.calls).toEqual([]);
+  });
+
+  it('calls setSyncGroup with the tag name after 2s debounce', () => {
+    vi.useFakeTimers();
+    const sm = makeSyncManager('lobby');
+    const h = makeHandler(sm, noopLog);
+    h.call(['xp-sync-group:atrium']);
+    // Before debounce — not yet called
+    vi.advanceTimersByTime(1999);
+    expect(sm.calls).toEqual([]);
+    // At 2 s — fires
+    vi.advanceTimersByTime(1);
+    expect(sm.calls).toEqual(['atrium']);
+    vi.useRealTimers();
+  });
+
+  it('coalesces rapid successive layout changes into one setSyncGroup', () => {
+    vi.useFakeTimers();
+    const sm = makeSyncManager('lobby');
+    const h = makeHandler(sm, noopLog);
+    h.call(['xp-sync-group:atrium']);
+    vi.advanceTimersByTime(500);
+    h.call(['xp-sync-group:wayfinding']);
+    vi.advanceTimersByTime(500);
+    h.call(['xp-sync-group:final']);
+    // None of the earlier timers fire — only the latest wins
+    vi.advanceTimersByTime(2000);
+    expect(sm.calls).toEqual(['final']);
+    vi.useRealTimers();
+  });
+
+  it('handles integration case: layout with xp-sync-group:lobby-wall tag', () => {
+    vi.useFakeTimers();
+    const sm = makeSyncManager('different-group');
+    const h = makeHandler(sm, noopLog);
+    // Layout-change event fires with tags parsed from XLF
+    const layoutTags = ['smil-imported', 'xp-sync-group:lobby-wall'];
+    h.call(layoutTags);
+    vi.advanceTimersByTime(2000);
+    expect(sm.calls).toEqual(['lobby-wall']);
+    expect(sm.syncConfig.syncGroup).toBe('lobby-wall');
+    vi.useRealTimers();
+  });
+
+  it('takes first group and warns when multiple xp-sync-group tags present', () => {
+    vi.useFakeTimers();
+    const warn = vi.fn();
+    const sm = makeSyncManager('lobby');
+    const h = makeHandler(sm, { warn, info: () => {}, error: () => {} });
+    h.call(['xp-sync-group:atrium', 'xp-sync-group:wayfinding']);
+    vi.advanceTimersByTime(2000);
+    expect(sm.calls).toEqual(['atrium']);
+    expect(warn).toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
+  it('ignores tag with empty group name', () => {
+    vi.useFakeTimers();
+    const sm = makeSyncManager('lobby');
+    const h = makeHandler(sm, noopLog);
+    h.call(['xp-sync-group:']);
+    vi.advanceTimersByTime(2500);
+    expect(sm.calls).toEqual([]);
+    vi.useRealTimers();
+  });
+
+  it('swallows setSyncGroup errors', () => {
+    vi.useFakeTimers();
+    const errSpy = vi.fn();
+    const sm: any = {
+      syncConfig: { syncGroup: 'lobby' },
+      setSyncGroup() { throw new Error('transport down'); },
+    };
+    const h = makeHandler(sm, { warn: () => {}, info: () => {}, error: errSpy });
+    h.call(['xp-sync-group:atrium']);
+    expect(() => vi.advanceTimersByTime(2000)).not.toThrow();
+    expect(errSpy).toHaveBeenCalled();
+    vi.useRealTimers();
   });
 });
