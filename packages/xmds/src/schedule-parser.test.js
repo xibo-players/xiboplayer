@@ -264,6 +264,82 @@ describe('parseScheduleResponse', () => {
     expect(layout.playCount).toBe(2);
   });
 
+  // ── Layout tag surfacing (#236 sync bridge) ───────────────────
+  //
+  // Upstream Xibo CMS does NOT currently emit <tags> as a child of
+  // <layout> in Schedule XMDS responses (only <dependants>,
+  // <criteria>). The authoritative source for layout tags is the XLF
+  // file itself, parsed by renderer-lite. These tests exercise the
+  // defensive path for forks / future upstream that DO emit <tags>,
+  // and document that the default is an empty array.
+
+  describe('layout tag surfacing (#236)', () => {
+    it('defaults tags to empty array on standalone layouts', () => {
+      const xml = `<schedule>
+        <layout file="100.xlf" fromdt="2025-01-01 00:00:00" todt="2025-12-31 23:59:59"
+                scheduleid="1" priority="0"/>
+      </schedule>`;
+      const result = parseScheduleResponse(xml);
+      expect(result.layouts[0].tags).toEqual([]);
+    });
+
+    it('defaults tags to empty array on campaign layouts', () => {
+      const xml = `<schedule>
+        <campaign id="c1" priority="5" fromdt="2025-01-01 00:00:00" todt="2025-12-31 23:59:59"
+                  scheduleid="30">
+          <layout file="500.xlf"/>
+        </campaign>
+      </schedule>`;
+      const result = parseScheduleResponse(xml);
+      expect(result.campaigns[0].layouts[0].tags).toEqual([]);
+    });
+
+    it('parses <tags> when present on standalone layouts', () => {
+      const xml = `<schedule>
+        <layout file="700.xlf" fromdt="2025-01-01 00:00:00" todt="2025-12-31 23:59:59"
+                scheduleid="7" priority="0">
+          <tags>
+            <tag>xp-sync-group:lobby-wall</tag>
+            <tag>smil-imported</tag>
+          </tags>
+        </layout>
+      </schedule>`;
+      const result = parseScheduleResponse(xml);
+      expect(result.layouts[0].tags).toEqual([
+        'xp-sync-group:lobby-wall',
+        'smil-imported',
+      ]);
+    });
+
+    it('parses <tags> when present on campaign layouts', () => {
+      const xml = `<schedule>
+        <campaign id="c1" priority="5" fromdt="2025-01-01 00:00:00" todt="2025-12-31 23:59:59"
+                  scheduleid="30">
+          <layout file="500.xlf">
+            <tags><tag>xp-sync-group:atrium</tag></tags>
+          </layout>
+        </campaign>
+      </schedule>`;
+      const result = parseScheduleResponse(xml);
+      expect(result.campaigns[0].layouts[0].tags).toEqual(['xp-sync-group:atrium']);
+    });
+
+    it('skips empty and whitespace-only <tag> elements', () => {
+      const xml = `<schedule>
+        <layout file="800.xlf" fromdt="2025-01-01 00:00:00" todt="2025-12-31 23:59:59"
+                scheduleid="8" priority="0">
+          <tags>
+            <tag>  xp-sync-group:lobby  </tag>
+            <tag></tag>
+            <tag>   </tag>
+          </tags>
+        </layout>
+      </schedule>`;
+      const result = parseScheduleResponse(xml);
+      expect(result.layouts[0].tags).toEqual(['xp-sync-group:lobby']);
+    });
+  });
+
   it('should use consistent lowercase casing for fromdt/todt/scheduleid on overlays', () => {
     const xml = `<schedule>
       <overlays>

@@ -31,6 +31,35 @@ function parseCriteria(parentEl) {
 }
 
 /**
+ * Parse a `<tags>` child element (if present) into a flat string array.
+ *
+ * Used by the #236 sync bridge when a schedule response exposes
+ * per-layout tags (e.g. `<tag>xp-sync-group:NAME</tag>`). Upstream
+ * Xibo CMS does NOT currently emit `<tags>` inside schedule `<layout>`
+ * entries — the authoritative source is the XLF file itself, parsed
+ * by renderer-lite.parseXlf(). This helper exists so that:
+ *   1. A forked CMS that DOES emit per-layout `<tags>` (or future
+ *      upstream) gets them surfaced for free.
+ *   2. Callers can treat `layout.tags` as a stable field (empty array
+ *      when absent).
+ *
+ * @param {Element} parentEl - Layout/campaign-layout element
+ * @returns {string[]} Tags parsed from a direct <tags> child, or [].
+ */
+function parseLayoutTags(parentEl) {
+  const tags = [];
+  for (const child of parentEl.children) {
+    if (child.tagName !== 'tags') continue;
+    for (const tagEl of child.children) {
+      if (tagEl.tagName !== 'tag') continue;
+      const text = (tagEl.textContent || '').trim();
+      if (text) tags.push(text);
+    }
+  }
+  return tags;
+}
+
+/**
  * Parse Schedule XML response into a normalized schedule object.
  *
  * @param {string} xml - Raw XML string from CMS schedule endpoint
@@ -121,7 +150,8 @@ export function parseScheduleResponse(xml) {
         groupKey: layoutEl.getAttribute('groupKey') || null,
         playCount: parseInt(layoutEl.getAttribute('playCount') || '0'),
         dependants: depEls.length > 0 ? [...depEls].map(el => el.textContent) : [],
-        criteria: parseCriteria(layoutEl)
+        criteria: parseCriteria(layoutEl),
+        tags: parseLayoutTags(layoutEl) // #236 sync bridge (currently no-op upstream; forks may emit)
       });
     }
 
@@ -154,7 +184,8 @@ export function parseScheduleResponse(xml) {
       recurrenceRepeatsOn: layoutEl.getAttribute('recurrenceRepeatsOn') || null,
       recurrenceRange: layoutEl.getAttribute('recurrenceRange') || null,
       dependants: depEls.length > 0 ? [...depEls].map(el => el.textContent) : [],
-      criteria: parseCriteria(layoutEl)
+      criteria: parseCriteria(layoutEl),
+      tags: parseLayoutTags(layoutEl) // #236 sync bridge (currently no-op upstream; forks may emit)
     });
   }
 
