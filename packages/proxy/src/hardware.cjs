@@ -22,9 +22,18 @@ const path = require('path');
 const os = require('os');
 
 const GPU_VENDORS = {
-  '0x10de': { name: 'nvidia', label: 'NVIDIA', rank: 3, vaDriver: 'nvidia' },
-  '0x1002': { name: 'amd', label: 'AMD', rank: 2, vaDriver: 'radeonsi' },
-  '0x8086': { name: 'intel', label: 'Intel', rank: 1, vaDriver: 'iHD' },
+  '0x10de': { name: 'nvidia', label: 'NVIDIA', rank: 3, vaDriver: 'nvidia',   isVirtual: false },
+  '0x1002': { name: 'amd',    label: 'AMD',    rank: 2, vaDriver: 'radeonsi', isVirtual: false },
+  '0x8086': { name: 'intel',  label: 'Intel',  rank: 1, vaDriver: 'iHD',      isVirtual: false },
+  // Virtual GPUs — detection finds them (they expose a DRM render
+  // node) but hardware-accelerated Electron/Chromium ops fail at
+  // runtime with EACCES on DRM_IOCTL_MODE_CREATE_DUMB. Ranked -1 so
+  // real GPUs always win on hybrid setups. Consumers that care can
+  // check `gpu.isVirtual` and skip --render-node-override so the
+  // software-rendering path kicks in.
+  '0x1af4': { name: 'virtio', label: 'virtio-GPU',  rank: -1, vaDriver: null, isVirtual: true },
+  '0x1234': { name: 'qemu',   label: 'QEMU VGA',    rank: -1, vaDriver: null, isVirtual: true },
+  '0x15ad': { name: 'vmware', label: 'VMware SVGA', rank: -1, vaDriver: null, isVirtual: true },
 };
 
 /**
@@ -78,6 +87,7 @@ function detectGPUs() {
         label: vendor,
         rank: 0,
         vaDriver: null,
+        isVirtual: false,
       };
       gpus.push({
         card,
