@@ -238,10 +238,16 @@ describe('ProtocolDetector', () => {
       await detector.detect(config);
       const firstProbe = detector.lastProbeTime;
 
-      // Small delay to ensure different timestamp
-      await new Promise(r => setTimeout(r, 5));
-
-      await detector.reprobe(config);
+      // Advance fake clock 5ms to guarantee a different timestamp without
+      // a real wait. Uses the `toFake: ['Date']` mode so setTimeout-based
+      // async plumbing continues to work.
+      vi.useFakeTimers({ toFake: ['Date'] });
+      try {
+        vi.setSystemTime(Date.now() + 5);
+        await detector.reprobe(config);
+      } finally {
+        vi.useRealTimers();
+      }
       expect(detector.lastProbeTime).toBeGreaterThanOrEqual(firstProbe);
     });
   });

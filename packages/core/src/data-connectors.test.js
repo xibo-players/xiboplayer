@@ -81,11 +81,12 @@ describe('DataConnectorManager', () => {
       manager.setConnectors([{ dataKey: 'weather', url: 'https://api.test/w', updateInterval: 60 }]);
       manager.startPolling();
 
-      // Wait for the immediate fetch to resolve
-      await new Promise(r => setTimeout(r, 50));
-
+      // Event-based wait: poll until the immediate fetch resolves AND the
+      // result has been written into the manager's data store. This covers
+      // the full path (fetch → response handler → data cache) without a
+      // fixed timeout.
+      await vi.waitFor(() => expect(manager.getData('weather')).toEqual({ temp: 20 }));
       expect(fetchWithRetry).toHaveBeenCalledTimes(1);
-      expect(manager.getData('weather')).toEqual({ temp: 20 });
     });
 
     it('sets up interval timer', () => {
@@ -247,12 +248,11 @@ describe('DataConnectorManager', () => {
       fetchWithRetry.mockResolvedValue(jsonResponse({}));
       manager.setConnectors([{ dataKey: 'k', url: 'https://api.test', updateInterval: 60 }]);
       manager.startPolling();
-      await new Promise(r => setTimeout(r, 50));
+      await vi.waitFor(() => expect(fetchWithRetry).toHaveBeenCalled());
 
       fetchWithRetry.mockClear();
       manager.refreshAll();
-      await new Promise(r => setTimeout(r, 50));
-      expect(fetchWithRetry).toHaveBeenCalled();
+      await vi.waitFor(() => expect(fetchWithRetry).toHaveBeenCalled());
     });
   });
 
