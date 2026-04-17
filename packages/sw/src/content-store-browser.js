@@ -9,6 +9,32 @@
  *
  * Used when the PWA runs directly on the CMS without a Node.js proxy.
  * The Service Worker imports this instead of the filesystem ContentStore.
+ *
+ * ─────────────────────────────────────────────────────────────────
+ *  Practical size limit: ~50 MB per media file (this revision)
+ * ─────────────────────────────────────────────────────────────────
+ *
+ * The current impl has two in-memory chokepoints that break for
+ * large files:
+ *
+ *   1. `assembleChunks(key)` concatenates all chunks into a single
+ *      `new Blob([...])` — peak RAM ≈ 2 × file size during assembly.
+ *   2. `getResponse(key, range)` reads the whole cached blob into
+ *      memory to `.slice()` for range serving. Video playback issues
+ *      many range requests; each one reloads the full blob.
+ *
+ * Combined with per-origin CacheStorage quotas that cap individual
+ * `Response` bodies (~1 GB on Safari, ~2 GB on Chrome desktop, much
+ * less on mobile/WebView), this limits practical media to ~50 MB.
+ *
+ * Beyond that size, use one of:
+ *   - Electron/Chromium kiosk deployments (fs-backed ContentStore
+ *     via @xiboplayer/proxy — streams via Node, no limit).
+ *   - Wait for the large-media streaming rewrite tracked in
+ *     xibo-players/xiboplayer#373: keep chunks separate in
+ *     CacheStorage permanently, build a `ReadableStream` that pulls
+ *     chunks lazily. Memory peak becomes one chunk size regardless
+ *     of total file size.
  */
 
 import { createLogger } from '@xiboplayer/utils';
