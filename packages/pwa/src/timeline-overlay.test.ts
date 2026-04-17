@@ -208,6 +208,91 @@ describe('TimelineOverlay', () => {
     });
   });
 
+  // ── State transitions (refs #359, #253 remaining, #231 regression) ─
+
+  describe('state transitions', () => {
+    it('keeps current layout visible when timeline array is empty on next tick', () => {
+      // Reproduces the xiboplayer#253 remaining item: "no upcoming layouts"
+      // shown despite a layout playing. If currentLayoutId is set, the
+      // empty-state placeholder MUST NOT render.
+      vi.useFakeTimers();
+      const overlay = new TimelineOverlay(true);
+      overlay.update([makeEntry({ layoutFile: '42.xlf', duration: 30 })], 42, 30);
+
+      // Next tick from the scheduler: timeline empty (e.g. end of queue),
+      // but the current layout is still playing.
+      overlay.update([], 42, 30);
+
+      const html = getOverlayEl()!.innerHTML;
+      expect(html).not.toContain('no upcoming layouts');
+      expect(html).toContain('#42');
+      overlay.destroy();
+    });
+
+    it('shows previousLayout then currentLayoutId after a transition', () => {
+      vi.useFakeTimers();
+      const overlay = new TimelineOverlay(true);
+
+      // First layout renders
+      overlay.update([makeEntry({ layoutFile: '100.xlf', duration: 30 })], 100, 30);
+
+      // 30s later, second layout takes over
+      vi.advanceTimersByTime(30_000);
+      overlay.update([makeEntry({ layoutFile: '200.xlf', duration: 60 })], 200, 60);
+
+      const html = getOverlayEl()!.innerHTML;
+      expect(html).toContain('#100'); // previous (strikethrough)
+      expect(html).toContain('#200'); // current
+      // Header count: 1 previous + 1 current = 2
+      expect(html).toContain('2 scheduled');
+      overlay.destroy();
+    });
+
+    it('does not regress to "no upcoming" after setOffline(true)', () => {
+      vi.useFakeTimers();
+      const overlay = new TimelineOverlay(true);
+      overlay.update([makeEntry({ layoutFile: '42.xlf', duration: 30 })], 42, 30);
+
+      overlay.setOffline(true);
+
+      const html = getOverlayEl()!.innerHTML;
+      expect(html).toContain('OFFLINE');
+      expect(html).not.toContain('no upcoming layouts');
+      expect(html).toContain('#42');
+      overlay.destroy();
+    });
+
+    it('resets layoutStartedAt on same-id replay (regression guard for #231)', () => {
+      // Same-layout replays (494 → 494) must reset the countdown clock,
+      // otherwise the timeline overlay freezes at 0 after the first cycle.
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-04-17T10:00:00Z'));
+      const overlay = new TimelineOverlay(true);
+
+      // First play of layout 42: 30s duration
+      overlay.update([makeEntry({ layoutFile: '42.xlf', duration: 30 })], 42, 30);
+
+      // 25s later, 5s remaining — render should show ~5s remaining
+      vi.advanceTimersByTime(25_000);
+      overlay['render']();
+      const midHtml = getOverlayEl()!.innerHTML;
+      // Current layout countdown formatted as "5s" (non-breaking spaces pad
+      // the duration column, so allow up to ~200 chars of padding/markup
+      // between "#42" and the countdown value).
+      expect(midHtml).toMatch(/#42[\s\S]{0,200}5s/);
+
+      // Same-layout replay at t+30s. `layoutStartedAt` must reset.
+      vi.advanceTimersByTime(5_000);
+      overlay.update([makeEntry({ layoutFile: '42.xlf', duration: 30 })], 42, 30);
+
+      // Immediately after the replay-triggered update, the full 30s
+      // should be shown again, not the stale countdown value.
+      const replayHtml = getOverlayEl()!.innerHTML;
+      expect(replayHtml).toMatch(/#42[\s\S]{0,200}(30s|29s)/);
+      overlay.destroy();
+    });
+  });
+
   // ── setOffline ────────────────────────────────────────────
 
   describe('setOffline', () => {
