@@ -91,7 +91,7 @@ jobs:
             --method POST \
             -H "Accept: application/vnd.github+json" \
             -H "X-GitHub-Api-Version: 2022-11-28" \
-            /repos/xibo-players/xiboplayer-www/dispatches \
+            /repos/xiboplayer/xiboplayer-www/dispatches \
             -f event_type=sdk-published \
             -f "client_payload[version]=${VER}" \
             -f "client_payload[source]=xiboplayer-sdk" \
