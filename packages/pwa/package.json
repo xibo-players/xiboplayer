@@ -32,8 +32,8 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.62.1",
-    "@types/node": "^25.9.5",
-    "typescript": "^6.0.3",
+    "@types/node": "^26.4.1",
+    "typescript": "^7.0.2",
     "vite": "^8.2.2"
   },
   "author": "Pau Aliagas <linuxnow@gmail.com>",
