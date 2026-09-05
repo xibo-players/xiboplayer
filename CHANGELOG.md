@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.7.24 (2026-09-05)
+
+### Build
+
+- **Dependency refresh** — biome 2.5, playwright 1.62, vite 8.2, ws 8.21, bonjour-service 1.4; jsdom 30, TypeScript 7 + @types/node 26, pdfjs-dist 6. vitest stays on 4.x (5.0 breaks 8 xmds tests, #420).
+- **Fedora 43 and 44** RPM wrappers (electron, chromium) build from this version.
+
+### CI
+
+- **Nightly integration job restored** — `packages/cms-testing/tests/e2e/e2e-helpers.js` was never committed; every spec imported it.
+- **Publish workflow** dispatches the docs regeneration to the renamed `xiboplayer` org and pins `xiboplayer/.github@cb1cc45`.
+
 ## 0.7.12 (2026-04-02)
 
 ### Build
