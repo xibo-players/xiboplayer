@@ -14,9 +14,13 @@ permissions:
 
 jobs:
   publish:
-    uses: xiboplayer/.github/.github/workflows/publish-npm.yml@cb1cc4593f5292fa2d5bd9c69b2d5c49dddde55a  # main
+    uses: xiboplayer/.github/.github/workflows/publish-npm.yml@ddf0388a4fcd8a4ce00e6b2590b23dcb90afac52  # main
     with:
       publish-command: 'pnpm --filter @xiboplayer/pwa build && pnpm -r publish --no-git-checks --access public'
+    # NPM_TOKEN fallback: the npm trusted-publisher entries still name the
+    # pre-rename org (xibo-players/xiboplayer), so OIDC publishing fails with
+    # ENEEDAUTH. Drop this once they are updated on npmjs.com.
+    secrets: inherit
 
   # Create a GitHub Release for every tagged SDK bump. Needed so
   # `list_releases` and other tooling can see the SDK's published
