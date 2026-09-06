@@ -11,7 +11,7 @@ on:
 
 jobs:
   unit:
-    uses: xiboplayer/.github/.github/workflows/test.yml@cb1cc4593f5292fa2d5bd9c69b2d5c49dddde55a  # main
+    uses: xiboplayer/.github/.github/workflows/test.yml@9af382cf12830bca426a1a99e4b59532ee72a711  # main
     with:
       lint-command: 'pnpm lint'
       typecheck: true
@@ -19,7 +19,7 @@ jobs:
   integration:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     needs: unit
-    uses: xiboplayer/.github/.github/workflows/integration-test.yml@cb1cc4593f5292fa2d5bd9c69b2d5c49dddde55a  # main
+    uses: xiboplayer/.github/.github/workflows/integration-test.yml@9af382cf12830bca426a1a99e4b59532ee72a711  # main
     with:
       cms-url: 'https://xibo-dev.superpantalles.com'
     secrets:
