@@ -5,22 +5,27 @@
 #
 # Env vars:
 #   CMS_URL       — CMS base URL (e.g., http://localhost:18080)
-#   CMS_ADMIN_USER — admin username (default: admin)
+#   CMS_ADMIN_USER — admin username (default: xibo_admin)
 #   CMS_ADMIN_PASS — admin password (default: password)
-#   CLIENT_ID     — OAuth2 client ID to create
-#   CLIENT_SECRET — OAuth2 client secret to create
+#   CLIENT_ID     — existing OAuth2 client id, if the CMS was provisioned
+#   CLIENT_SECRET — its secret. On CMS 4.x a client created here gets a
+#                   server-generated id and secret, which are written to
+#                   GITHUB_ENV as SEEDED_CLIENT_ID / SEEDED_CLIENT_SECRET
+#                   so later CI steps pick them up.
 
 set -euo pipefail
 
 CMS_URL="${CMS_URL:?CMS_URL is required}"
-CMS_ADMIN_USER="${CMS_ADMIN_USER:-admin}"
+CMS_ADMIN_USER="${CMS_ADMIN_USER:-xibo_admin}"
 CMS_ADMIN_PASS="${CMS_ADMIN_PASS:-password}"
 CLIENT_ID="${CLIENT_ID:-ci-test-client}"
 CLIENT_SECRET="${CLIENT_SECRET:-ci-test-secret}"
+CLIENT_NAME="${CLIENT_NAME:-CI Test Client}"
 
 echo "[seed] Waiting for CMS at $CMS_URL..."
 for i in $(seq 1 60); do
-  if curl -sf "$CMS_URL/api/about" > /dev/null 2>&1; then
+  # /api/about requires OAuth on CMS 4.x (401), so probe the login page.
+  if curl -sf "$CMS_URL/login" > /dev/null 2>&1; then
     echo "[seed] CMS is ready"
     break
   fi
@@ -39,35 +44,72 @@ TOKEN=$(curl -sf "$CMS_URL/api/authorize/access_token" \
   -d "client_secret=$CLIENT_SECRET" 2>/dev/null | jq -r '.access_token // empty' || true)
 
 if [ -z "$TOKEN" ]; then
-  echo "[seed] OAuth client not found — creating via admin session..."
-  # Fall back to cookie-based admin login to create the OAuth app
+  # Create the application through the admin session.
+  #
+  # CMS 4.x changed all three moving parts this used to rely on: the login
+  # page is a JS app (the CSRF token lives in a <meta name="token"> tag, not
+  # a form field), /application/add is gone in favour of the /json/ API, and
+  # the CMS generates the client id and secret itself — they can no longer be
+  # chosen. So the requested CLIENT_ID/CLIENT_SECRET only apply to a CMS that
+  # was provisioned outside this script; otherwise we adopt what we are given
+  # back and export it for later steps.
+  echo "[seed] OAuth client not usable — creating one via the admin session..."
   COOKIE_JAR=$(mktemp)
-  trap "rm -f $COOKIE_JAR" EXIT
+  trap 'rm -f "$COOKIE_JAR"' EXIT
 
-  # Login to web UI
-  curl -sf -c "$COOKIE_JAR" "$CMS_URL/login" > /dev/null
-  CSRF=$(curl -sf -b "$COOKIE_JAR" "$CMS_URL/login" | grep -oP 'name="token" value="\K[^"]+' || true)
-
-  if [ -n "$CSRF" ]; then
-    curl -sf -b "$COOKIE_JAR" -c "$COOKIE_JAR" "$CMS_URL/login" \
-      -d "username=$CMS_ADMIN_USER" \
-      -d "password=$CMS_ADMIN_PASS" \
-      -d "token=$CSRF" > /dev/null 2>&1
-
-    echo "[seed] Creating OAuth2 application..."
-    curl -sf -b "$COOKIE_JAR" "$CMS_URL/application/add" \
-      -d "name=CI Test Client" \
-      -d "clientId=$CLIENT_ID" \
-      -d "clientSecret=$CLIENT_SECRET" \
-      -d "authCode=0" \
-      -d "clientCredentials=1" > /dev/null 2>&1 || echo "[seed] OAuth app may already exist"
+  CSRF=$(curl -sf -c "$COOKIE_JAR" "$CMS_URL/login" \
+    | grep -oP 'name="token" content="\K[^"]+' || true)
+  if [ -z "$CSRF" ]; then
+    echo "[seed] WARNING: no CSRF token on the login page; cannot create a client."
+    exit 0
   fi
 
-  # Try again
+  LOGIN=$(curl -s -b "$COOKIE_JAR" -c "$COOKIE_JAR" -X POST "$CMS_URL/login" \
+    -H "X-XSRF-TOKEN: $CSRF" \
+    -d "username=$CMS_ADMIN_USER" \
+    -d "password=$CMS_ADMIN_PASS" || true)
+  if ! echo "$LOGIN" | grep -q '"status":"ok"'; then
+    echo "[seed] WARNING: admin login failed for '$CMS_ADMIN_USER' — $LOGIN"
+    exit 0
+  fi
+
+  # The token rotates with the session, so read it again after logging in.
+  CSRF=$(curl -sf -b "$COOKIE_JAR" "$CMS_URL/login" \
+    | grep -oP 'name="token" content="\K[^"]+' || true)
+
+  echo "[seed] Creating OAuth2 application..."
+  APP=$(curl -sf -b "$COOKIE_JAR" -X POST "$CMS_URL/json/application" \
+    -H "Content-Type: application/json" \
+    -H "X-XSRF-TOKEN: $CSRF" \
+    -d "{\"name\":\"$CLIENT_NAME\"}" || true)
+  CLIENT_ID=$(echo "$APP" | jq -r '.key // empty')
+  CLIENT_SECRET=$(echo "$APP" | jq -r '.secret // empty')
+
+  if [ -z "$CLIENT_ID" ] || [ -z "$CLIENT_SECRET" ]; then
+    echo "[seed] WARNING: could not create an application — $APP"
+    exit 0
+  fi
+
+  # A new application has no grants; turn on client_credentials.
+  curl -sf -b "$COOKIE_JAR" -X PUT "$CMS_URL/json/application/$CLIENT_ID" \
+    -H "Content-Type: application/json" \
+    -H "X-XSRF-TOKEN: $CSRF" \
+    -d "{\"name\":\"$CLIENT_NAME\",\"authCode\":0,\"clientCredentials\":1,\"isConfidential\":1}" \
+    > /dev/null || true
+
+  # Hand the generated credentials to the steps that follow.
+  if [ -n "${GITHUB_ENV:-}" ]; then
+    {
+      echo "SEEDED_CLIENT_ID=$CLIENT_ID"
+      echo "SEEDED_CLIENT_SECRET=$CLIENT_SECRET"
+    } >> "$GITHUB_ENV"
+    echo "[seed] Exported the generated credentials to GITHUB_ENV"
+  fi
+
   TOKEN=$(curl -sf "$CMS_URL/api/authorize/access_token" \
     -d "grant_type=client_credentials" \
     -d "client_id=$CLIENT_ID" \
-    -d "client_secret=$CLIENT_SECRET" | jq -r '.access_token')
+    -d "client_secret=$CLIENT_SECRET" | jq -r '.access_token // empty' || true)
 fi
 
 if [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ]; then
