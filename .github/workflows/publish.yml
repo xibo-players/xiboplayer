@@ -14,7 +14,7 @@ permissions:
 
 jobs:
   publish:
-    uses: xiboplayer/.github/.github/workflows/publish-npm.yml@9af382cf12830bca426a1a99e4b59532ee72a711  # main
+    uses: xiboplayer/.github/.github/workflows/publish-npm.yml@e8649f4861f729365d7f15c9f5715f5df64dc2c7  # main
     with:
       publish-command: 'pnpm --filter @xiboplayer/pwa build && pnpm -r publish --no-git-checks --access public'
     # NPM_TOKEN fallback: the npm trusted-publisher entries still name the
